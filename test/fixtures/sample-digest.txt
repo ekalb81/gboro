@@ -1,0 +1,21 @@
+Hi Blake — 5 new Greensboro items since the last check.
+
+EVENTS
+1. Eddie McGee Piano Journeys at A Special Blend Coffee
+Pianist Eddie McGee plays a live "Piano Journeys" set on Saturday, Nov 14, 2–4 PM.
+ITEM | event | Eddie McGee Piano Journeys at A Special Blend Coffee | A Special Blend Coffee | 3900 W Market St, Greensboro, NC | Nov 14, 2026 2:00 PM EST | Nov 14, 2026 4:00 PM EST | https://www.facebook.com/permalink.php?story_fbid=example1 | Triad Jazz Depot | organization | Nov 11, 2026 10:20 AM EST | no
+
+2. Inaugural Honoring the Unclaimed Deceased of Guilford County
+ITEM | event | Inaugural Honoring the Unclaimed Deceased of Guilford County | n/a | 1000 West Friendly Ave, Greensboro, NC | 2026-11-18 | n/a | https://www.facebook.com/GuilfordCounty/posts/example2 | Guilford County Government | organization | 2026-11-11 2:01 PM EST | yes
+
+3. A sample party posted by a person
+ITEM | event | Sample Friday party | Sample Lounge | 120 W Lewis St, Greensboro, NC 27406 | Nov 13, 2026 10:00 PM EST | Nov 14, 2026 1:00 AM EST | https://www.instagram.com/p/example3/ | Sample Person | individual | Nov 11, 2026 12:05 PM EST | no
+
+GOVERNMENT / NEWS
+4. Greensboro neighbors seek fixes at dangerous intersection
+ITEM | news | Greensboro neighbors seek fixes at dangerous intersection | n/a | South Benbow Road and Julian Street, Greensboro, NC | n/a | n/a | https://www.threads.com/@myfox8/post/example4 | FOX8 WGHP | news | Nov 10, 2026 8:47 PM EST | yes
+
+5. A malformed line Muse might send someday
+ITEM | event | Too few fields | n/a
+
+— floop

@@ -1,0 +1,5 @@
+node_modules/
+# Raw digests and held items name private individuals: keep them out of git.
+data/raw/
+data/held.json
+.DS_Store

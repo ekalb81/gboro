@@ -1,0 +1,29 @@
+{
+  "_note": "Hand-placed, functional layout of Greensboro. Tile coordinates on a 96x60 grid. Accurate enough to navigate by (Elm St runs north-south, Market St east-west, A&T to the east, UNCG to the southwest), not to scale.",
+  "width": 96,
+  "height": 60,
+  "roads": [
+    { "name": "Elm St", "kind": "main", "points": [[48, 2], [48, 58]] },
+    { "name": "Market St", "kind": "main", "points": [[4, 24], [92, 24]] },
+    { "name": "Friendly Ave", "kind": "street", "points": [[6, 16], [48, 16]] },
+    { "name": "Spring Garden St", "kind": "street", "points": [[10, 31], [48, 31]] },
+    { "name": "Gate City Blvd / Lee St", "kind": "main", "points": [[8, 44], [92, 44]] },
+    { "name": "Benbow Rd", "kind": "street", "points": [[64, 24], [64, 57]] },
+    { "name": "Battleground Ave", "kind": "street", "points": [[47, 15], [20, 2]] },
+    { "name": "Aycock St", "kind": "street", "points": [[30, 16], [30, 44]] }
+  ],
+  "railroad": { "y": 35 },
+  "districts": [
+    { "id": "downtown",    "name": "Downtown",              "x": 51, "y": 17, "w": 7, "h": 6, "wall": "#b9b4a8", "roof": "#6d7a8c", "landmark": "City Hall" },
+    { "id": "south-elm",   "name": "South Elm",             "x": 51, "y": 37, "w": 6, "h": 5, "wall": "#b5654a", "roof": "#5a3a32", "landmark": "South Elm storefronts" },
+    { "id": "college-hill","name": "College Hill",          "x": 38, "y": 18, "w": 5, "h": 4, "wall": "#c9a77c", "roof": "#7a4b3a", "landmark": "Greensboro College" },
+    { "id": "uncg",        "name": "UNCG",                  "x": 32, "y": 26, "w": 8, "h": 4, "wall": "#c8b48a", "roof": "#2f3f6b", "landmark": "UNCG campus" },
+    { "id": "coliseum",    "name": "Coliseum",              "x": 26, "y": 46, "w": 9, "h": 5, "wall": "#9aa3ad", "roof": "#3b4d63", "landmark": "Greensboro Coliseum" },
+    { "id": "westside",    "name": "West Market & Friendly","x": 12, "y": 18, "w": 8, "h": 4, "wall": "#d8c9a6", "roof": "#3f6b4a", "landmark": "Friendly Center" },
+    { "id": "ncat",        "name": "NC A&T",                "x": 72, "y": 17, "w": 8, "h": 5, "wall": "#b88a4a", "roof": "#24365f", "landmark": "NC A&T campus" },
+    { "id": "southeast",   "name": "Southeast",             "x": 67, "y": 46, "w": 6, "h": 4, "wall": "#c4a98a", "roof": "#6b4a3a", "landmark": "Benbow & Lee" },
+    { "id": "north",       "name": "Battleground",          "x": 24, "y": 8,  "w": 6, "h": 4, "wall": "#a8b89a", "roof": "#4a5d3a", "landmark": "Battleground Ave" },
+    { "id": "board",       "name": "Town Board",            "x": 42, "y": 26, "w": 3, "h": 3, "wall": "#8a6a44", "roof": "#5a432a", "landmark": "Center City Park bulletin board" },
+    { "id": "away",        "name": "Out of town",           "x": 86, "y": 40, "w": 3, "h": 3, "wall": "#7a7a7a", "roof": "#4a4a4a", "landmark": "Road out of town" }
+  ]
+}
