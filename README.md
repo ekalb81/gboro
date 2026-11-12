@@ -32,3 +32,13 @@ Next step: fetch the digests automatically from a project inbox instead of savin
 ## Map
 
 `public/data/map.json` is a hand-placed, functional layout on a 96x60 tile grid: Elm St runs north-south, Market St east-west, the railroad crosses south of downtown, A&T is east, UNCG and the Coliseum are southwest. It is meant to be navigable, not to scale. Add districts or roads there; add placement rules in `locate()` in `scripts/lib.mjs`.
+
+## Crime by district
+
+`npm run crime` writes `public/data/crime.json`: reported incidents per Greensboro Police division for the last full Monday-to-Sunday week, next to the week before. It shows up in the side panel as "Week by district" (`public/crime.js`). Crime is never drawn on the map.
+
+- **Source:** the City of Greensboro's open data ("GPD - Crime", ArcGIS layer `OpenGateCity/OpenData_ES_MS/MapServer/4`). Free, no key.
+- **Privacy by construction:** the fetcher only ever requests `inci_id`, `district`, `ibr_code` and `date_rept`. No addresses, coordinates, premises or victim fields are requested, so none can reach the site. A test checks this.
+- **Counting:** each incident counts once, under its most serious offense (violent, property, other). Sheriff and other agencies' incidents go in an "Other agencies" row.
+- **Half-filled weeks:** if the newest week is far below the weeks before it (records still arriving), it steps back a week rather than show a fake drop.
+- **Stale feed:** as of November 2026 the City's feed stopped at October 6, 2025. The page says so and shows the latest full week the City published. It picks up new data on its own once the City resumes.
