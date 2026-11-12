@@ -1,9 +1,11 @@
 // Fetch Greensboro restaurants, bars, cafes and breweries from OpenStreetMap and write public/data/eats.json.
-// Usage: node scripts/fetch-eats.mjs [--source=overpass|osm-api] [--keep-chains]
+// Usage: node scripts/fetch-eats.mjs [--source=auto|overpass|osm-api] [--keep-chains]
 //
-// overpass (default): one query to the Overpass API, the right tool for reading OSM data.
-// osm-api: tiles of the main OSM API's /map call around each hub. Only for networks that block Overpass;
-//          it downloads whole map tiles, so use it sparingly (it's OSM's editing API).
+// auto (default): Overpass first, and the main OSM API if Overpass doesn't answer. Overpass servers are often
+//                 busy or unreachable, so a scheduled job shouldn't depend on them alone.
+// overpass: one query to the Overpass API, the right tool for reading OSM data.
+// osm-api: tiles of the main OSM API's /map call around each hub. Heavier (whole map tiles from OSM's
+//          editing API), so run it at most daily; places change slowly.
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -12,7 +14,7 @@ import { HUBS, toPlace } from './eats-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
-const source = [...args].find((a) => a.startsWith('--source='))?.split('=')[1] || 'overpass';
+const source = [...args].find((a) => a.startsWith('--source='))?.split('=')[1] || 'auto';
 const keepChains = args.has('--keep-chains');
 const UA = { 'user-agent': 'gso-village/0.1 (community map of Greensboro; github.com/ekalb81/gboro)' };
 
@@ -39,7 +41,7 @@ async function fromOverpass() {
       return (await r.json()).elements;
     } catch (e) { last = e; console.warn(`  ${url} failed: ${e.message}`); }
   }
-  throw new Error(`Overpass unreachable (${last?.message}). On a network that blocks it, try --source=osm-api.`);
+  throw new Error(`Overpass unreachable (${last?.message})`);
 }
 
 async function fromOsmApi() {
@@ -75,7 +77,14 @@ async function fromOsmApi() {
   return [...byId.values()];
 }
 
-const elements = source === 'osm-api' ? await fromOsmApi() : await fromOverpass();
+let used = source;
+let elements;
+if (source === 'osm-api') elements = await fromOsmApi();
+else if (source === 'overpass') elements = await fromOverpass();
+else {
+  try { elements = await fromOverpass(); used = 'overpass'; }
+  catch (e) { console.warn(`${e.message}; falling back to the main OSM API.`); elements = await fromOsmApi(); used = 'osm-api'; }
+}
 const places = [];
 const skipped = {};
 const seen = new Set();
@@ -92,7 +101,7 @@ places.sort((a, b) => a.hub.localeCompare(b.hub) || a.name.localeCompare(b.name)
 await mkdir(join(root, 'public', 'data'), { recursive: true });
 await writeFile(join(root, 'public', 'data', 'eats.json'), JSON.stringify({
   generatedAt: new Date().toISOString(),
-  source,
+  source: used,
   attribution: '© OpenStreetMap contributors, ODbL',
   places,
 }, null, 1));
