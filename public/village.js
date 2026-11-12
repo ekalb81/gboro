@@ -1,6 +1,8 @@
 // GSO Village renderer: a procedural pixel map of Greensboro with live items pinned to districts.
 // Plain canvas, no build step. Data: data/map.json (layout) and data/items.json (from scripts/ingest.mjs).
 
+import { initRoads, drawRoads, isClosed } from './roads.js';
+
 const T = 8; // tile size in canvas pixels
 const TZ = 'America/New_York';
 const CAT_COLORS = { event: '#e0a020', news: '#c8553d', business: '#3d8ac8', government: '#7a5ad0', community: '#4a9a5a' };
@@ -229,7 +231,7 @@ function stepWalker(f) {
   const gx = f.tx * T + 2, gy = f.ty * T;
   if (Math.abs(f.px - gx) < 0.5 && Math.abs(f.py - gy) < 0.5) {
     f.px = gx; f.py = gy;
-    const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => isRoad(f.tx + dx, f.ty + dy));
+    const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => isRoad(f.tx + dx, f.ty + dy) && !isClosed(f.tx + dx, f.ty + dy));
     const ahead = opts.filter(([dx, dy]) => !(dx === -f.dir[0] && dy === -f.dir[1]));
     const keep = ahead.find(([dx, dy]) => dx === f.dir[0] && dy === f.dir[1]);
     f.dir = keep && rnd() < 0.85 ? keep : pick(ahead.length ? ahead : opts) || [0, 0];
@@ -331,6 +333,7 @@ function frame(t) {
     ctx.fillStyle = 'rgba(255,214,110,.85)';
     for (const [x, y, s = 2] of windows) if ((x * 7 + y * 13) % 5) ctx.fillRect(x, y, s, s);
   }
+  drawRoads(t, a); // after the night tint, so barrel lamps and crash lights stand out
   drawMarkers(t);
   for (const f of folks) if (f.say && f.say.until > t) drawBubble(f); else if (f.say) f.say = null;
   requestAnimationFrame(frame);
@@ -405,6 +408,7 @@ map = await loadJSON('data/map.json');
 buildBackground();
 for (let i = 0; i < 40; i++) folks.push(newWalker());
 await refreshItems();
+initRoads({ T, ctx, canvas, map });
 tickClock();
 setInterval(tickClock, 15e3);
 setInterval(refreshItems, 60e3); // pick up new digests without a reload

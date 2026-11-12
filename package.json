@@ -7,7 +7,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "ingest": "node scripts/ingest.mjs",
-    "dev": "node scripts/ingest.mjs && node scripts/serve.mjs",
+    "roads": "node scripts/fetch-roads.mjs",
+    "dev": "node scripts/ingest.mjs && (node scripts/fetch-roads.mjs || true) && node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "test": "node --test test/*.test.mjs"
   }
