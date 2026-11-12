@@ -386,10 +386,10 @@ function renderList() {
     const m2 = document.createElement('div'); m2.className = 'm';
     const civic = it.platform === 'City of Greensboro';
     m2.textContent = civic
-      ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : 'City of Greensboro calendar'} `
+      ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : it.recording ? 'Recording on the City’s YouTube' : it.account || 'City of Greensboro'} `
       : `${it.platform} · ${it.account || 'a local post'} `;
     if (/^https:\/\//.test(it.url)) {
-      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: civic ? 'Details ↗' : 'View post ↗' });
+      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: civic ? (/youtube\.com/.test(it.url) ? 'Watch ↗' : 'Details ↗') : 'View post ↗' });
       a.onclick = (e) => e.stopPropagation();
       m2.append(a);
     }

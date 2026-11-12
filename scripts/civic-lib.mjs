@@ -190,32 +190,43 @@ export function expandRRule(rule, start, until, maxCount = 500) {
 // Melvin Municipal Office Building, where council meets.
 const isCityHall = (it) => /council chamber|melvin municipal|300 w\.? washington|city hall/i.test(`${it.venue || ''} ${it.address || ''}`) || (it.kind === 'council' && !it.venue);
 
-// ---------- usual schedule ----------
+// ---------- council schedule ----------
 
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 /**
- * Regular meetings from config.usual (e.g. 1st and 3rd Tuesday at 17:30), for `days` days from `from`.
- * Dates in config.skip are left out; config.extra adds one-off meetings. These are marked
- * `scheduled: "usual"` so the page can say they come from the usual schedule, not a posted agenda.
+ * Council meetings from `back` days ago to `days` days ahead.
+ * For a year listed in config.schedules, the City's published dates are used (scheduled: "published").
+ * For any other year, config.usual fills in (e.g. 1st and 3rd Tuesday at 17:30; scheduled: "usual").
+ * Dates in config.skip are left out; config.extra adds one-off meetings.
  */
-export function usualMeetings(config, from = new Date(), days = 45) {
+export function usualMeetings(config, from = new Date(), days = 45, back = 0) {
   const out = [];
   const skip = new Set(config.skip || []);
   const today = new Date(from.toLocaleDateString('en-CA', { timeZone: TZ }) + 'T12:00:00Z');
-  for (let i = 0; i < days; i++) {
+  const first = new Date(today.getTime() - back * 864e5).toISOString().slice(0, 10);
+  const pub = (sched, rule, date) => usualItem({ ...rule, scheduled: 'published', source: sched.source }, ...date.split('-').map(Number), config);
+  for (let i = -back; i < days; i++) {
     const day = new Date(today.getTime() + i * 864e5);
     const [y, mo, d] = [day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()];
     const date = `${y}-${pad(mo)}-${pad(d)}`;
+    if (skip.has(date)) continue;
+    const sched = config.schedules?.[y];
+    if (sched) {
+      if ((sched.council || []).includes(date)) out.push(pub(sched, { title: 'City Council meeting', time: sched.councilTime || '17:30', hours: 3 }, date));
+      for (const r of (sched.retreat || []).filter((r) => r.date === date)) out.push(pub(sched, r, date));
+      if ((sched.subcommittees || []).includes(date)) {
+        out.push(pub({ source: sched.subcommitteeSource || sched.source }, { title: sched.subcommitteeTitle || 'City Council subcommittees', time: sched.subcommitteeTime || '10:30', hours: sched.subcommitteeHours || 6, venue: sched.subcommitteeVenue }, date));
+      }
+      continue;
+    }
     const nth = Math.ceil(d / 7);
     for (const rule of config.usual || []) {
-      if (WEEKDAYS[day.getUTCDay()] !== rule.weekday || !rule.weeks.includes(nth) || skip.has(date)) continue;
-      out.push(usualItem(rule, y, mo, d, config));
+      if (WEEKDAYS[day.getUTCDay()] === rule.weekday && rule.weeks.includes(nth)) out.push(usualItem(rule, y, mo, d, config));
     }
   }
   for (const x of config.extra || []) {
-    const [y, mo, d] = x.date.split('-').map(Number);
-    if (x.date >= today.toISOString().slice(0, 10)) out.push(usualItem(x, y, mo, d, config));
+    if (x.date >= first && !skip.has(x.date)) out.push(usualItem({ ...x, scheduled: 'published' }, ...x.date.split('-').map(Number), config));
   }
   return out;
 }
@@ -223,23 +234,70 @@ export function usualMeetings(config, from = new Date(), days = 45) {
 function usualItem(rule, y, mo, d, config) {
   const [h, mi] = rule.time.split(':').map(Number);
   const start = easternISO(y, mo, d, h, mi);
-  const end = easternISO(y, mo, d, h + (rule.hours ?? 3), mi);
+  const end = shiftISO(start, (rule.hours ?? 3) * 3600e3);
+  const scheduled = rule.scheduled || 'usual';
   return {
     id: id(`usual|${rule.title}|${start}`),
     category: 'government',
-    kind: classify(rule.title),
+    kind: /subcommittee/i.test(rule.title) ? 'board' : classify(rule.title),
     title: rule.title,
     venue: rule.venue || config.venue,
     address: rule.address || config.address,
     start, end, allDay: false,
     url: config.url,
+    ...(rule.source ? { source: rule.source } : {}),
     platform: 'City of Greensboro',
-    account: 'Usual council schedule',
+    account: scheduled === 'published' ? 'City Council meeting schedule' : 'Usual council schedule',
     accountType: 'government',
     verified: true,
-    scheduled: 'usual',
+    scheduled,
     district: 'downtown',
   };
+}
+
+// ---------- City YouTube channel ----------
+
+/** Entries from a YouTube channel feed (Atom): { title, url, published }. */
+export function parseYouTube(xml) {
+  const dec = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, e]) => ({
+    title: dec(e.match(/<title>([^<]*)<\/title>/)?.[1] || '').trim(),
+    url: e.match(/<link rel="alternate" href="([^"]+)"/)?.[1] || null,
+    published: e.match(/<published>([^<]+)<\/published>/)?.[1] || null,
+  })).filter((v) => v.title && /^https:\/\/www\.youtube\.com\//.test(v.url || ''));
+}
+
+/**
+ * Attach recordings ("Greensboro City Council Meeting 11/10/2026") to council meetings on that date,
+ * and turn the newest "On the Town - Week of November 9, 2026" video into a week-long town-board item.
+ */
+export function applyVideos(items, videos) {
+  const out = items.map((it) => ({ ...it }));
+  for (const v of videos) {
+    const m = v.title.match(/city council (?:meeting|work session)\D*(\d{1,2})[\/_.-](\d{1,2})[\/_.-](\d{2,4})/i);
+    if (!m) continue;
+    const y = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+    const date = `${y}-${pad(+m[1])}-${pad(+m[2])}`;
+    const meeting = out.find((it) => it.kind === 'council' && it.start.slice(0, 10) === date && !it.recording);
+    if (meeting) { meeting.recording = v.url; meeting.url = v.url; }
+  }
+  const town = videos.map((v) => ({ v, m: v.title.match(/^On the Town\s*[-–]\s*Week of ([A-Za-z]+) (\d{1,2}), (\d{4})/i) })).find((x) => x.m);
+  if (town) {
+    const mo = new Date(`${town.m[1]} 1, 2000`).getMonth() + 1;
+    if (mo) {
+      const startDate = `${town.m[3]}-${pad(mo)}-${pad(+town.m[2])}`;
+      out.push({
+        id: id(`onthetown|${town.v.url}`),
+        category: 'event', kind: 'event',
+        title: "On the Town: this week's events around Greensboro",
+        venue: 'Greensboro Television Network', address: null,
+        start: startDate, end: addDays(startDate, 7), allDay: true,
+        url: town.v.url, platform: 'City of Greensboro', account: 'GTN On the Town', accountType: 'government',
+        verified: true, district: 'board',
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -254,8 +312,11 @@ export function mergeCivic(feedItems, usual) {
   return [...byId.values()].sort((a, b) => a.start.localeCompare(b.start));
 }
 
-/** Keep things that haven't ended and start within `days` days. */
-export function upcoming(items, now = new Date(), days = 45) {
+/**
+ * Keep things that haven't ended and start within `days` days. Meetings that ended in the last
+ * `recentDays` days stay when they have a recording, so the page can link to it.
+ */
+export function upcoming(items, now = new Date(), days = 45, recentDays = 0) {
   const nowMs = now.getTime();
   const todayET = now.toLocaleDateString('en-CA', { timeZone: TZ });
   const horizon = nowMs + days * 864e5;
@@ -264,6 +325,6 @@ export function upcoming(items, now = new Date(), days = 45) {
     if (startMs > horizon) return false;
     if (it.allDay) return it.end ? it.end > todayET : it.start >= todayET; // all-day DTEND is exclusive
     const endMs = it.end ? Date.parse(it.end) : startMs + 3 * 3600e3;
-    return endMs >= nowMs;
+    return endMs >= nowMs || (it.recording && endMs >= nowMs - recentDays * 864e5);
   });
 }

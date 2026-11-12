@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseICS, icsTime, eventsToItems, expandRRule, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
+import { parseICS, icsTime, eventsToItems, expandRRule, parseYouTube, applyVideos, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
 
 const ics = await readFile(new URL('./fixtures/sample-city.ics', import.meta.url), 'utf8');
 const config = {
@@ -103,4 +103,54 @@ test('all-day events end the day before DTEND', () => {
   assert.equal(upcoming(fest, new Date('2026-11-21T17:00:00Z')).length, 1);
   assert.equal(upcoming(fest, new Date('2026-11-22T17:00:00Z')).length, 0);
   assert.equal(upcoming([{ start: '2026-11-21', end: null, allDay: true }], new Date('2026-11-21T23:00:00Z')).length, 1);
+});
+
+const published = {
+  ...config,
+  schedules: { 2026: {
+    source: 'https://example.gov/schedule.pdf',
+    council: ['2026-11-10', '2026-11-17', '2026-12-01', '2026-12-15'], councilTime: '17:30',
+    subcommittees: ['2026-11-24'], subcommitteeTime: '10:30', subcommitteeHours: 6, subcommitteeTitle: 'City Council subcommittees', subcommitteeVenue: 'Plaza Level Conference Room',
+  } },
+};
+
+test('published schedule beats the usual rule (Nov 10 moved for Election Day)', () => {
+  const items = usualMeetings(published, new Date('2026-11-02T12:00:00Z'), 30);
+  const council = items.filter((i) => i.kind === 'council').map((i) => i.start);
+  assert.deepEqual(council, ['2026-11-10T17:30:00-05:00', '2026-11-17T17:30:00-05:00', '2026-12-01T17:30:00-05:00']);
+  assert.ok(items.every((i) => i.scheduled === 'published'));
+  const sub = items.find((i) => i.kind === 'board');
+  assert.equal(sub.start, '2026-11-24T10:30:00-05:00');
+  assert.equal(sub.end, '2026-11-24T16:30:00-05:00');
+  assert.equal(sub.venue, 'Plaza Level Conference Room');
+  assert.equal(sub.source, 'https://example.gov/schedule.pdf');
+});
+
+test('years without a published schedule fall back to the usual rule; back days reach into the past', () => {
+  const jan = usualMeetings(published, new Date('2026-12-28T12:00:00Z'), 25).map((i) => i.start);
+  assert.deepEqual(jan, ['2027-01-05T17:30:00-05:00', '2027-01-19T17:30:00-05:00']);
+  const back = usualMeetings(published, new Date('2026-11-12T12:00:00Z'), 1, 7).map((i) => i.start);
+  assert.deepEqual(back, ['2026-11-10T17:30:00-05:00']);
+  assert.equal(usualMeetings({ ...published, skip: ['2026-11-17'] }, new Date('2026-11-12T12:00:00Z'), 10).length, 0);
+});
+
+test('reads the City YouTube feed', async () => {
+  const videos = parseYouTube(await readFile(new URL('./fixtures/sample-youtube.xml', import.meta.url), 'utf8'));
+  assert.equal(videos.length, 4);
+  assert.equal(videos[2].title, 'GTN\'s "This is Greensboro" with a guest');
+});
+
+test('recordings attach to meetings, and the newest On the Town video becomes a week-long item', async () => {
+  const videos = parseYouTube(await readFile(new URL('./fixtures/sample-youtube.xml', import.meta.url), 'utf8'));
+  const now = new Date('2026-11-12T17:00:00Z');
+  const items = applyVideos(usualMeetings(published, now, 30, 7), videos);
+  const nov10 = items.find((i) => i.start.startsWith('2026-11-10'));
+  assert.equal(nov10.recording, 'https://www.youtube.com/watch?v=AAA');
+  assert.equal(nov10.url, nov10.recording);
+  const town = items.filter((i) => i.title.startsWith('On the Town'));
+  assert.equal(town.length, 1);
+  assert.deepEqual([town[0].start, town[0].end, town[0].allDay, town[0].district], ['2026-11-09', '2026-11-16', true, 'board']);
+  const shown = upcoming(items, now, 45, 7);
+  assert.ok(shown.includes(nov10)); // past, but has a recording
+  assert.ok(!upcoming(items, new Date('2026-11-20T17:00:00Z'), 45, 7).includes(nov10)); // more than a week ago
 });

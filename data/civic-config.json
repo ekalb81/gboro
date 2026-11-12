@@ -1,12 +1,35 @@
 {
-  "_note": "Settings for npm run civic. 'feeds' are iCalendar (.ics) URLs to fetch; .ics files saved in data/civic/ are read too. 'usual' is the regular council schedule from the city's Televised Meetings page ('First and third Tuesday at 5:30 pm'); it fills in when no feed lists a council meeting that day. Put dates the city moves or cancels in 'skip' (YYYY-MM-DD) and one-off meetings in 'extra'.",
-  "feeds": [],
+  "_note": "Settings for npm run civic. 'schedules' holds the dates the City publishes once a year (City Council Regular Meetings Schedule and Subcommittee Meeting Schedule PDFs linked from 'url'); add next year's when the City posts it. For any year without a published schedule, 'usual' fills in (first and third Tuesday at 5:30 PM, per the city's Televised Meetings page). 'youtube' is the City's channel feed, used for meeting recordings and the weekly 'On the Town' events video. 'skip' (YYYY-MM-DD) drops a date the City cancels later; 'extra' adds a one-off meeting. .ics files in data/civic/ and URLs in 'feeds' are optional extra calendars.",
   "url": "https://www.greensboro-nc.gov/government/city-council/council-meetings",
   "venue": "Katie Dorsett Council Chamber, Melvin Municipal Office Building",
   "address": "300 W. Washington St, Greensboro, NC",
+  "youtube": "https://www.youtube.com/feeds/videos.xml?user=CityofGreensboroNC",
+  "schedules": {
+    "2026": {
+      "source": "https://www.greensboro-nc.gov/home/showpublisheddocument/65180/639161739697830000",
+      "council": [
+        "2026-01-06", "2026-01-20", "2026-02-03", "2026-02-17", "2026-03-02", "2026-03-17",
+        "2026-04-07", "2026-04-21", "2026-05-04", "2026-05-19", "2026-06-02", "2026-06-16",
+        "2026-07-21", "2026-08-03", "2026-08-18", "2026-09-01", "2026-09-15", "2026-10-06",
+        "2026-10-20", "2026-11-10", "2026-11-17", "2026-12-01", "2026-12-15"
+      ],
+      "councilTime": "17:30",
+      "retreat": [
+        { "date": "2026-02-25", "time": "09:00", "hours": 8, "title": "City Council retreat" },
+        { "date": "2026-02-26", "time": "09:00", "hours": 8, "title": "City Council retreat" }
+      ],
+      "subcommitteeSource": "https://www.greensboro-nc.gov/home/showpublisheddocument/67163/639172931437170000",
+      "subcommittees": ["2026-05-26", "2026-06-23", "2026-07-28", "2026-08-25", "2026-09-22", "2026-10-27", "2026-11-24", "2026-12-22"],
+      "subcommitteeTime": "10:30",
+      "subcommitteeHours": 6,
+      "subcommitteeTitle": "City Council subcommittees: housing and safety, transportation, economic development, regional affairs",
+      "subcommitteeVenue": "Plaza Level Conference Room, Melvin Municipal Office Building"
+    }
+  },
   "usual": [
     { "title": "City Council meeting", "weekday": "tue", "weeks": [1, 3], "time": "17:30", "hours": 3 }
   ],
   "skip": [],
-  "extra": []
+  "extra": [],
+  "feeds": []
 }
