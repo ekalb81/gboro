@@ -1,0 +1,45 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Sample//Greensboro test calendar//EN
+BEGIN:VEVENT
+UID:council-2026-11-17@example
+DTSTART;TZID=America/New_York:20261117T173000
+DTEND;TZID=America/New_York:20261117T210000
+SUMMARY:City Council Meeting
+LOCATION:Katie Dorsett Council Chamber\, Melvin Municipal Office Building\,
+  300 W. Washington St
+URL:https://www.greensboro-nc.gov/Home/Components/Calendar/Event/1001
+END:VEVENT
+BEGIN:VEVENT
+UID:work-session@example
+DTSTART:20261110T190000Z
+SUMMARY:City Council Work Session
+LOCATION:Plaza Level Conference Room
+END:VEVENT
+BEGIN:VEVENT
+UID:zoning@example
+DTSTART;TZID=America/New_York:20261116T173000
+SUMMARY:Zoning Commission
+LOCATION:Katie Dorsett Council Chamber
+END:VEVENT
+BEGIN:VEVENT
+UID:lights@example
+DTSTART;VALUE=DATE:20261121
+DTEND;VALUE=DATE:20261122
+SUMMARY:Festival of Lights
+LOCATION:South Elm St\, Downtown Greensboro
+DESCRIPTION:Carolers\, carriage rides\nand a tree lighting.
+END:VEVENT
+BEGIN:VEVENT
+UID:summer@example
+DTSTART;TZID=America/New_York:20260704T210000
+SUMMARY:Fireworks at the Coliseum
+LOCATION:Greensboro Coliseum Complex\, 1921 W Gate City Blvd
+END:VEVENT
+BEGIN:VEVENT
+UID:gone@example
+DTSTART;TZID=America/New_York:20261118T100000
+SUMMARY:Parks Commission
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR

@@ -1,6 +1,8 @@
 // GSO Village renderer: a procedural pixel map of Greensboro with live items pinned to districts.
 // Plain canvas, no build step. Data: data/map.json (layout) and data/items.json (from scripts/ingest.mjs).
 
+import { loadCivic, councilState, drawCouncilNight, councilLine } from './civic.js';
+
 const T = 8; // tile size in canvas pixels
 const TZ = 'America/New_York';
 const CAT_COLORS = { event: '#e0a020', news: '#c8553d', business: '#3d8ac8', government: '#7a5ad0', community: '#4a9a5a' };
@@ -17,6 +19,7 @@ const pick = (a) => a[Math.floor(rnd() * a.length)];
 
 let map, items = [], byDistrict = new Map(), selected = null, windows = [];
 let roadMask, W, H;
+let civicCount = 0, hallWindows = [], council = { lit: false };
 const bg = document.createElement('canvas');
 
 // ---------- data ----------
@@ -28,16 +31,22 @@ async function loadJSON(url) {
 
 async function refreshItems() {
   try {
-    const data = await loadJSON('data/items.json');
-    items = data.items;
+    const [data, civic] = await Promise.all([
+      loadJSON('data/items.json').catch(() => ({ items: [], digests: 0, generatedAt: null })),
+      loadCivic(),
+    ]);
+    if (!data.generatedAt && !civic.generatedAt) throw new Error('no data');
+    items = [...data.items, ...civic.items].sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
+    civicCount = civic.items.length;
+    council = councilState(civic.items);
     byDistrict = new Map();
     for (const it of items) {
       if (!byDistrict.has(it.district)) byDistrict.set(it.district, []);
       byDistrict.get(it.district).push(it);
     }
-    const when = new Date(data.generatedAt).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+    const when = new Date(data.generatedAt || civic.generatedAt).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
     document.getElementById('status').textContent =
-      `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}. Updated ${when}.`;
+      `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}${civicCount ? ' and the city calendar' : ''}. Updated ${when}.`;
     renderList();
     spawnCrowds();
   } catch (e) {
@@ -210,6 +219,7 @@ function drawLandmark(g, d) {
   for (let wy = y + roofH + 3; wy < y + h - 6; wy += 6) for (let wx = x + 3; wx < x + w - 4; wx += 5) {
     g.fillStyle = '#9cc4d8'; g.fillRect(wx, wy, 3, 3);
     windows.push([wx, wy, 3]);
+    if (d.id === 'downtown') hallWindows.push([wx, wy, 3]);
   }
   g.fillStyle = '#3a2618'; g.fillRect(x + (w >> 1) - 2, y + h - 6, 5, 6);
 }
@@ -331,6 +341,7 @@ function frame(t) {
     ctx.fillStyle = 'rgba(255,214,110,.85)';
     for (const [x, y, s = 2] of windows) if ((x * 7 + y * 13) % 5) ctx.fillRect(x, y, s, s);
   }
+  drawCouncilNight(ctx, map.districts.find((d) => d.id === 'downtown'), T, hallWindows, council, t);
   drawMarkers(t);
   for (const f of folks) if (f.say && f.say.until > t) drawBubble(f); else if (f.say) f.say = null;
   requestAnimationFrame(frame);
@@ -340,7 +351,9 @@ function tickClock() {
   const now = new Date().toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const h = etHour();
   const part = h >= 20 || h < 6 ? 'Night' : h < 7 || h >= 18 ? 'Dusk' : 'Daytime';
-  document.getElementById('clock').innerHTML = `Greensboro · <b>${now}</b> · ${part}`;
+  council = councilState(items);
+  const c = councilLine(council);
+  document.getElementById('clock').innerHTML = `Greensboro · <b>${now}</b> · ${part}${c ? ` · <b>${c}</b>` : ''}`;
 }
 
 // ---------- side list & interaction ----------
@@ -371,9 +384,12 @@ function renderList() {
     const m1 = document.createElement('div'); m1.className = 'm';
     m1.textContent = [isOver(it) ? 'Earlier' : isToday(it) ? 'Today' : null, when, it.venue || d?.name].filter(Boolean).join(' · ');
     const m2 = document.createElement('div'); m2.className = 'm';
-    m2.textContent = `${it.platform} · ${it.account || 'a local post'} `;
+    const civic = it.platform === 'City of Greensboro';
+    m2.textContent = civic
+      ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : 'City of Greensboro calendar'} `
+      : `${it.platform} · ${it.account || 'a local post'} `;
     if (/^https:\/\//.test(it.url)) {
-      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: 'View post ↗' });
+      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: civic ? 'Details ↗' : 'View post ↗' });
       a.onclick = (e) => e.stopPropagation();
       m2.append(a);
     }

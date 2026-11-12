@@ -32,3 +32,7 @@ Next step: fetch the digests automatically from a project inbox instead of savin
 ## Map
 
 `public/data/map.json` is a hand-placed, functional layout on a 96x60 tile grid: Elm St runs north-south, Market St east-west, the railroad crosses south of downtown, A&T is east, UNCG and the Coliseum are southwest. It is meant to be navigable, not to scale. Add districts or roads there; add placement rules in `locate()` in `scripts/lib.mjs`.
+
+## Council meetings and city events
+
+`npm run civic` builds `public/data/civic.json` from city calendar `.ics` files and the usual council schedule; City Hall lights up on council nights. See [docs/civic.md](docs/civic.md).

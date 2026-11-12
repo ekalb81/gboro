@@ -1,0 +1,12 @@
+{
+  "_note": "Settings for npm run civic. 'feeds' are iCalendar (.ics) URLs to fetch; .ics files saved in data/civic/ are read too. 'usual' is the regular council schedule from the city's Televised Meetings page ('First and third Tuesday at 5:30 pm'); it fills in when no feed lists a council meeting that day. Put dates the city moves or cancels in 'skip' (YYYY-MM-DD) and one-off meetings in 'extra'.",
+  "feeds": [],
+  "url": "https://www.greensboro-nc.gov/government/city-council/council-meetings",
+  "venue": "Katie Dorsett Council Chamber, Melvin Municipal Office Building",
+  "address": "300 W. Washington St, Greensboro, NC",
+  "usual": [
+    { "title": "City Council meeting", "weekday": "tue", "weeks": [1, 3], "time": "17:30", "hours": 3 }
+  ],
+  "skip": [],
+  "extra": []
+}
