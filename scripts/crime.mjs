@@ -51,11 +51,12 @@ function addDays(day, n) {
 }
 
 // The last full Monday-Sunday week that ended on or before `anchor`, and the week before it.
-export function weeksEndingBy(anchor) {
+// `back` steps further back by whole Eastern calendar weeks (not fixed hours, so DST can't skip a week).
+export function weeksEndingBy(anchor, back = 0) {
   const today = etDay(anchor);
   const dow = new Date(`${today}T12:00:00Z`).getUTCDay(); // 0 = Sunday
   // If the anchor is Sunday the week isn't finished yet, so step back to the Sunday before.
-  const lastSunday = addDays(today, dow === 0 ? -7 : -dow);
+  const lastSunday = addDays(today, (dow === 0 ? -7 : -dow) - 7 * back);
   const thisStart = addDays(lastSunday, -6);
   const prevStart = addDays(thisStart, -7);
   return {
@@ -159,15 +160,14 @@ export async function fetchCrime({ now = new Date(), fetchImpl = fetch } = {}) {
   const latestMs = stats.features?.[0]?.attributes?.latest;
   const latestReport = latestMs ? new Date(latestMs) : null;
   // Count the last full week the City has actually published, so a paused feed shows real numbers, labeled with their dates.
-  let anchor = latestReport && latestReport < now ? latestReport : now;
+  const anchor = latestReport && latestReport < now ? latestReport : now;
   // Records arrive in batches, so the newest week can be half-filled. Step back past any week whose
   // count is well under the weeks before it (at most twice), rather than show a misleading drop.
   const count = async (w) => (await query({ where: whereBetween(w.start, w.end), returnCountOnly: 'true' }, fetchImpl)).count;
   const recent = [];
-  for (let k = 0; k < 6; k++) recent.push(await count(weeksEndingBy(new Date(anchor.getTime() - k * 7 * 86400e3)).thisWeek));
+  for (let k = 0; k < 6; k++) recent.push(await count(weeksEndingBy(anchor, k).thisWeek));
   const skip = weeksToSkip(recent);
-  anchor = new Date(anchor.getTime() - skip * 7 * 86400e3);
-  const weeks = weeksEndingBy(anchor);
+  const weeks = weeksEndingBy(anchor, skip);
   const [thisRows, lastRows] = await Promise.all([rowsBetween(weeks.thisWeek, fetchImpl), rowsBetween(weeks.lastWeek, fetchImpl)]);
   return buildReport({ thisRows, lastRows, weeks, latestReport, skipped: skip, now });
 }

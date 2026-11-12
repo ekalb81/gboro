@@ -38,6 +38,14 @@ test('weeks run Monday to Sunday and only full weeks count', () => {
   assert.equal(weeksEndingBy(new Date('2026-11-09T02:00:00Z')).thisWeek.end, '2026-11-01');
 });
 
+test('steps back by calendar weeks across the spring DST change', () => {
+  // Just after midnight Eastern on the Monday after DST starts (Mar 8 2026).
+  const anchor = new Date('2026-03-09T04:30:00Z');
+  assert.equal(weeksEndingBy(anchor).thisWeek.start, '2026-03-02');
+  assert.deepEqual(weeksEndingBy(anchor, 1).thisWeek, { start: '2026-02-23', end: '2026-03-01' });
+  assert.deepEqual(weeksEndingBy(anchor, 1).lastWeek, { start: '2026-02-16', end: '2026-02-22' });
+});
+
 test('date filter uses Greensboro midnight in UTC, across DST', () => {
   assert.equal(whereBetween('2026-11-02', '2026-11-08'),
     "date_rept >= timestamp '2026-11-02 05:00:00' AND date_rept < timestamp '2026-11-09 05:00:00'");
