@@ -316,15 +316,21 @@ async function refreshWeather() {
   }
   const bits = [wx.tempF != null ? `${wx.tempF}°F` : null, wx.text, wx.windMph ? `wind ${wx.windMph} mph` : null].filter(Boolean);
   document.getElementById('weather').textContent = bits.length ? `· ${bits.join(' · ')}` : '';
+  renderAlerts();
+  seedWeather();
+}
+
+// Alerts can end between fetches (or a fetch can fail), so check their end time every time we draw the banner.
+function renderAlerts() {
+  const live = (wx.alerts || []).filter((a) => !a.ends || new Date(a.ends).getTime() > Date.now());
   const banner = document.getElementById('alert');
-  banner.hidden = !wx.alerts?.length;
+  banner.hidden = !live.length;
   banner.innerHTML = '';
-  for (const a of wx.alerts || []) {
+  for (const a of live) {
     const line = document.createElement('div');
     line.append(Object.assign(document.createElement('b'), { textContent: a.event }), a.headline ? ` · ${a.headline}` : '');
     banner.append(line);
   }
-  seedWeather();
 }
 
 function seedWeather() {
@@ -498,6 +504,7 @@ await refreshItems();
 await refreshWeather();
 tickClock();
 setInterval(refreshWeather, 5 * 60e3);
+setInterval(renderAlerts, 60e3);
 setInterval(tickClock, 15e3);
 setInterval(refreshItems, 60e3); // pick up new digests without a reload
 setInterval(chatter, 5e3);

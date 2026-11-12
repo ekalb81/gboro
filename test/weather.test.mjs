@@ -31,6 +31,8 @@ test('classifies the sky', () => {
   assert.equal(classify('Light Snow and Fog/Mist').precip, 'snow');
   assert.equal(classify('Light Snow and Fog/Mist').fog, true);
   assert.equal(classify('Freezing Rain').precip, 'snow');
+  assert.equal(classify('Freezing Drizzle').precip, 'snow');
+  assert.deepEqual([classify('Freezing Fog').precip, classify('Freezing Fog').fog], ['none', true]);
   assert.equal(classify('').precip, 'none');
 });
 

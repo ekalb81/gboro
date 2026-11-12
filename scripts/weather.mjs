@@ -18,7 +18,7 @@ export function classify(text = '', cloudLayers = []) {
   const t = text.toLowerCase();
   let precip = 'none';
   if (/thunder|t-storm|tstm/.test(t)) precip = 'storm';
-  else if (/snow|sleet|flurr|ice pellets|freezing/.test(t)) precip = 'snow';
+  else if (/snow|sleet|flurr|ice pellets|freezing (rain|drizzle)/.test(t)) precip = 'snow';
   else if (/rain|shower|drizzle/.test(t)) precip = 'rain';
 
   let intensity = 'moderate';
