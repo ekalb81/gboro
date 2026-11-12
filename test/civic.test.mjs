@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseICS, icsTime, eventsToItems, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
+import { parseICS, icsTime, eventsToItems, expandRRule, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
 
 const ics = await readFile(new URL('./fixtures/sample-city.ics', import.meta.url), 'utf8');
 const config = {
@@ -13,7 +13,8 @@ const config = {
 
 test('parses VEVENTs with folded lines and escapes', () => {
   const evs = parseICS(ics);
-  assert.equal(evs.length, 6);
+  assert.equal(evs.length, 9);
+  assert.equal(evs[6].EXDATES.length, 1);
   assert.equal(evs[0].LOCATION.value, 'Katie Dorsett Council Chamber, Melvin Municipal Office Building, 300 W. Washington St');
   assert.equal(evs[3].DESCRIPTION.value, 'Carolers, carriage rides\nand a tree lighting.');
 });
@@ -34,8 +35,8 @@ test('classifies council, boards and events', () => {
 });
 
 test('turns events into village items in the right places', () => {
-  const items = eventsToItems(parseICS(ics), { defaultUrl: config.url });
-  assert.equal(items.length, 5); // cancelled one dropped
+  const items = eventsToItems(parseICS(ics), { defaultUrl: config.url, until: new Date('2026-12-31T00:00:00Z') }).filter((i) => !i.cancelled);
+  assert.equal(items.filter((i) => !i.title.startsWith('Thursday Market')).length, 5);
   const council = items.find((i) => i.title === 'City Council Meeting');
   assert.equal(council.district, 'downtown');
   assert.equal(council.category, 'government');
@@ -63,4 +64,43 @@ test('calendar meetings replace the usual schedule on the same day; past items d
   assert.ok(!merged.some((i) => i.title.endsWith('Work Session'))); // Nov 10 is past
   assert.ok(!merged.some((i) => i.title.startsWith('Fireworks')));
   assert.ok(merged.some((i) => i.title === 'Festival of Lights'));
+});
+
+test('expands recurring events, minus EXDATEs and overridden occurrences', () => {
+  const items = eventsToItems(parseICS(ics), { until: new Date('2026-12-31T00:00:00Z') }).filter((i) => i.title.startsWith('Thursday Market'));
+  assert.deepEqual(items.map((i) => i.start), [
+    '2026-11-05T09:00:00-05:00', '2026-11-12T09:00:00-05:00', '2026-11-19T09:00:00-05:00',
+    '2026-12-10T09:00:00-05:00', '2026-12-17T09:00:00-05:00', '2026-12-24T09:00:00-05:00',
+    '2026-12-03T10:00:00-05:00', // the override entry
+  ]);
+  assert.equal(items[0].end, '2026-11-05T12:00:00-05:00');
+  assert.equal(new Set(items.map((i) => i.id)).size, items.length);
+  assert.ok(items.every((i) => i.district === 'downtown'));
+  const now = new Date('2026-11-12T12:00:00Z');
+  assert.ok(upcoming(mergeCivic(items, []), now, 45).some((i) => i.start === '2026-11-12T09:00:00-05:00'));
+});
+
+test('RRULE shapes: monthly by nth weekday, until, interval, DST', () => {
+  const start = { iso: '2026-10-06T17:30:00-04:00', allDay: false };
+  assert.deepEqual(expandRRule('FREQ=MONTHLY;BYDAY=1TU,3TU;UNTIL=20261201T120000Z', start, new Date('2027-01-01')),
+    ['2026-10-06T17:30:00-04:00', '2026-10-20T17:30:00-04:00', '2026-11-03T17:30:00-05:00', '2026-11-17T17:30:00-05:00']);
+  assert.deepEqual(expandRRule('FREQ=WEEKLY;INTERVAL=2', start, new Date('2026-11-04')),
+    ['2026-10-06T17:30:00-04:00', '2026-10-20T17:30:00-04:00', '2026-11-03T17:30:00-05:00']);
+  assert.deepEqual(expandRRule('FREQ=MONTHLY;BYDAY=-1FR;COUNT=2', start, new Date('2027-01-01')),
+    ['2026-10-30T17:30:00-04:00', '2026-11-27T17:30:00-05:00']);
+  assert.deepEqual(expandRRule('FREQ=HOURLY', start, new Date('2027-01-01')), [start.iso]); // unsupported: first only
+});
+
+test('a cancelled council meeting keeps the usual schedule from filling its day', () => {
+  const now = new Date('2026-11-12T12:00:00Z');
+  const merged = mergeCivic(eventsToItems(parseICS(ics)), usualMeetings(config, now, 45));
+  assert.ok(!merged.some((i) => i.start.startsWith('2026-12-01')));
+  assert.ok(!merged.some((i) => i.cancelled));
+});
+
+test('all-day events end the day before DTEND', () => {
+  const fest = [{ start: '2026-11-21', end: '2026-11-22', allDay: true }];
+  assert.equal(upcoming(fest, new Date('2026-11-21T17:00:00Z')).length, 1);
+  assert.equal(upcoming(fest, new Date('2026-11-22T17:00:00Z')).length, 0);
+  assert.equal(upcoming([{ start: '2026-11-21', end: null, allDay: true }], new Date('2026-11-21T23:00:00Z')).length, 1);
 });

@@ -23,7 +23,8 @@ export function parseICS(text) {
     const name = m[1].toUpperCase();
     const params = Object.fromEntries([...m[2].matchAll(/;([^=;]+)=("[^"]*"|[^:;]*)/g)].map(([, k, v]) => [k.toUpperCase(), v.replace(/^"|"$/g, '')]));
     const value = /^(DTSTART|DTEND|RRULE|URL)$/.test(name) ? m[3] : unescapeText(m[3]);
-    if (!(name in cur)) cur[name] = { value, params }; // first one wins
+    if (name === 'EXDATE') (cur.EXDATES ||= []).push(...value.split(',').map((v) => ({ value: v, params })));
+    else if (!(name in cur)) cur[name] = { value, params }; // first one wins
   }
   return events;
 }
@@ -76,28 +77,30 @@ export function classify(title) {
 
 const id = (s) => createHash('sha1').update(s).digest('hex').slice(0, 10);
 
-/** Convert parsed VEVENTs to village items. Cancelled events and ones without a start are dropped. */
-export function eventsToItems(events, { source = 'City of Greensboro calendar', defaultUrl } = {}) {
+/**
+ * Convert parsed VEVENTs to village items. Recurring events (RRULE) are expanded up to `until`,
+ * minus EXDATEs and occurrences that a RECURRENCE-ID entry overrides. Cancelled entries come back
+ * with `cancelled: true` so mergeCivic can keep the usual schedule from filling their day; they are never shown.
+ */
+export function eventsToItems(events, { source = 'City of Greensboro calendar', defaultUrl, until = new Date(Date.now() + 60 * 864e5) } = {}) {
   const out = [];
+  const overridden = new Set(events.filter((e) => e.UID && e['RECURRENCE-ID']).map((e) => `${e.UID.value}|${icsTime(e['RECURRENCE-ID'])?.iso}`));
   for (const ev of events) {
     const title = ev.SUMMARY?.value;
     const start = icsTime(ev.DTSTART);
     if (!title || !start) continue;
-    if (/^CANCELLED$/i.test(ev.STATUS?.value || '') || /^cancel+ed\b/i.test(title)) continue;
+    const cancelled = /^CANCELLED$/i.test(ev.STATUS?.value || '') || /^cancel+ed\b/i.test(title);
     const end = icsTime(ev.DTEND);
     const kind = classify(title);
     const location = ev.LOCATION?.value || null;
     const [venue, ...rest] = (location || '').split(/\n|,(?=\s*\d)/);
     const url = /^https:\/\//.test(ev.URL?.value || '') ? ev.URL.value : defaultUrl || null;
-    const item = {
-      id: id(ev.UID?.value || `${title}|${start.iso}`),
+    const base = {
       category: kind === 'event' ? 'event' : 'government',
       kind,
       title,
       venue: venue?.trim() || null,
       address: rest.join(',').trim() || (location && /\d/.test(location) ? location : null),
-      start: start.iso,
-      end: end?.iso ?? null,
       allDay: start.allDay,
       url,
       platform: 'City of Greensboro',
@@ -105,10 +108,83 @@ export function eventsToItems(events, { source = 'City of Greensboro calendar', 
       accountType: 'government',
       verified: true,
     };
-    item.district = isCityHall(item) ? 'downtown' : locate({ ...item, address: item.address || location });
-    out.push(item);
+    base.district = isCityHall(base) ? 'downtown' : locate({ ...base, address: base.address || location });
+    const uid = ev.UID?.value || `${title}|${start.iso}`;
+    const recurring = ev.RRULE && !ev['RECURRENCE-ID'];
+    const exdates = new Set((ev.EXDATES || []).map((x) => icsTime(x)?.iso));
+    const starts = recurring ? expandRRule(ev.RRULE.value, start, until) : [start.iso];
+    const durMs = end && start ? isoMs(end.iso) - isoMs(start.iso) : null;
+    for (const s of starts) {
+      if (recurring && (exdates.has(s) || overridden.has(`${ev.UID?.value}|${s}`))) continue;
+      const e = durMs == null ? null : start.allDay ? addDays(s, Math.round(durMs / 864e5)) : shiftISO(s, durMs);
+      const item = { id: id(recurring ? `${uid}|${s}` : uid), ...base, start: s, end: e };
+      if (cancelled) item.cancelled = true;
+      out.push(item);
+    }
   }
   return out;
+}
+
+// ---------- recurrence (the common RRULE shapes: DAILY, WEEKLY, MONTHLY, YEARLY) ----------
+
+const isoMs = (iso) => (iso.length === 10 ? Date.parse(iso + 'T00:00:00Z') : Date.parse(iso));
+const ymd = (iso) => iso.slice(0, 10).split('-').map(Number);
+function addDays(isoDate, n) {
+  const d = new Date(Date.UTC(...ymdArgs(isoDate)) + n * 864e5);
+  return d.toISOString().slice(0, 10);
+}
+const ymdArgs = (iso) => { const [y, m, d] = ymd(iso); return [y, m - 1, d]; };
+/** Add milliseconds to an Eastern ISO time, keeping wall-clock correctness across DST. */
+function shiftISO(iso, ms) {
+  const t = Date.parse(iso) + ms;
+  const e = new Date(t + easternOffset(t) * 60000);
+  return easternISO(e.getUTCFullYear(), e.getUTCMonth() + 1, e.getUTCDate(), e.getUTCHours(), e.getUTCMinutes());
+}
+const BYDAY = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+/** Start times (same wall-clock time as DTSTART) of each occurrence up to `until`. */
+export function expandRRule(rule, start, until, maxCount = 500) {
+  const r = Object.fromEntries(rule.split(';').map((kv) => kv.split('=')).map(([k, v]) => [k.toUpperCase(), v]));
+  const freq = r.FREQ;
+  if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(freq) || r.BYSETPOS || r.BYHOUR || r.BYWEEKNO || r.BYYEARDAY) return [start.iso];
+  const interval = +(r.INTERVAL || 1);
+  const count = r.COUNT ? +r.COUNT : Infinity;
+  const untilMs = Math.min(until.getTime(), r.UNTIL ? isoMs(icsTime({ value: r.UNTIL, params: {} }).iso) + (/T/.test(r.UNTIL) ? 0 : 864e5 - 1) : Infinity);
+  const [y0, m0, d0] = ymd(start.iso);
+  const [hh, mi] = start.allDay ? [0, 0] : start.iso.slice(11, 16).split(':').map(Number);
+  const day0 = Date.UTC(y0, m0 - 1, d0);
+  const wd0 = new Date(day0).getUTCDay();
+  const byday = (r.BYDAY || '').split(',').filter(Boolean).map((x) => { const m = x.match(/^([+-]?\d+)?([A-Z]{2})$/); return m && { n: m[1] ? +m[1] : null, wd: BYDAY[m[2]] }; }).filter(Boolean);
+  const bymonthday = (r.BYMONTHDAY || '').split(',').filter(Boolean).map(Number);
+  const bymonth = (r.BYMONTH || '').split(',').filter(Boolean).map(Number);
+  const out = [];
+  let n = 0;
+  for (let i = 0; i < 3 * 366 && n < count; i++) {
+    const dayMs = day0 + i * 864e5;
+    const d = new Date(dayMs);
+    const [y, m, dd, wd] = [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), d.getUTCDay()];
+    const iso = start.allDay ? `${y}-${pad(m)}-${pad(dd)}` : easternISO(y, m, dd, hh, mi);
+    if (isoMs(iso) > untilMs) break;
+    let hit = false;
+    if (freq !== 'YEARLY' && bymonth.length && !bymonth.includes(m)) hit = false;
+    else if (freq === 'DAILY') hit = i % interval === 0 && (!byday.length || byday.some((b) => b.wd === wd));
+    else if (freq === 'WEEKLY') {
+      const week = Math.floor((i + ((wd0 + 6) % 7)) / 7); // weeks start Monday
+      hit = week % interval === 0 && (byday.length ? byday.some((b) => b.wd === wd) : wd === wd0);
+    } else {
+      const stepOk = freq === 'MONTHLY'
+        ? ((y - y0) * 12 + (m - m0)) % interval === 0
+        : (y - y0) % interval === 0 && (bymonth.length ? bymonth.includes(m) : m === m0);
+      if (stepOk) {
+        const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        if (byday.length) hit = byday.some((b) => b.wd === wd && (b.n == null || (b.n > 0 ? Math.ceil(dd / 7) === b.n : Math.ceil((dim - dd + 1) / 7) === -b.n)));
+        else if (bymonthday.length) hit = bymonthday.some((x) => (x > 0 ? x : dim + x + 1) === dd);
+        else hit = dd === d0;
+      }
+    }
+    if (hit) { out.push(iso); n++; }
+  }
+  return out.length ? out : [start.iso];
 }
 
 // Melvin Municipal Office Building, where council meets.
@@ -166,12 +242,15 @@ function usualItem(rule, y, mo, d, config) {
   };
 }
 
-/** Feed items win; a usual-schedule meeting is dropped when the feed has a council meeting that day. */
+/**
+ * Feed items win; a usual-schedule meeting is dropped when the feed has a council meeting that day,
+ * including a cancelled one. Cancelled items are left out of the result.
+ */
 export function mergeCivic(feedItems, usual) {
   const day = (it) => it.start.slice(0, 10);
   const councilDays = new Set(feedItems.filter((it) => it.kind === 'council').map(day));
   const byId = new Map();
-  for (const it of [...feedItems, ...usual.filter((u) => !councilDays.has(day(u)))]) byId.set(it.id, it);
+  for (const it of [...feedItems.filter((it) => !it.cancelled), ...usual.filter((u) => !councilDays.has(day(u)))]) byId.set(it.id, it);
   return [...byId.values()].sort((a, b) => a.start.localeCompare(b.start));
 }
 
@@ -183,7 +262,7 @@ export function upcoming(items, now = new Date(), days = 45) {
   return items.filter((it) => {
     const startMs = it.allDay ? Date.parse(it.start + 'T00:00:00Z') : Date.parse(it.start);
     if (startMs > horizon) return false;
-    if (it.allDay) return (it.end || it.start) >= todayET;
+    if (it.allDay) return it.end ? it.end > todayET : it.start >= todayET; // all-day DTEND is exclusive
     const endMs = it.end ? Date.parse(it.end) : startMs + 3 * 3600e3;
     return endMs >= nowMs;
   });
