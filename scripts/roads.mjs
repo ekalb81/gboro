@@ -255,11 +255,10 @@ async function fetchPublic(get) {
     if (!page.data?.length || rows.length >= (page.recordsTotal ?? 0)) break;
   }
   const where = new Map();
+  // A failed layer would silently drop its events' locations, so fail the whole fetch and keep the last file.
   for (const layer of DRIVENC.layers) {
-    try {
-      const icons = await get(`/map/mapIcons/${layer}`);
-      for (const it of icons.item2 || []) where.set(String(it.itemId), it.location);
-    } catch { /* a missing layer just means fewer locations */ }
+    const icons = await get(`/map/mapIcons/${layer}`);
+    for (const it of icons.item2 || []) where.set(String(it.itemId), it.location);
   }
   return rows.map((r) => fromListRow(r, where.get(String(r.id))));
 }

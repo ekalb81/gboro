@@ -88,3 +88,8 @@ test('fetchRoads uses the Events API when given a key', async () => {
   assert.deepEqual([out.events[0].kind, out.events[0].on, out.events[0].full], ['crash', 'Elm St', true]);
   assert.equal(fromApiEvent({ ...ev, StartDate: NOW / 1000 + 3600 }, NOW).upcoming, true);
 });
+
+test('fetchRoads fails, rather than dropping locations, when a map layer fails', async () => {
+  const fake = async (url) => (url.includes('/map/mapIcons/') ? { ok: false, status: 503 } : { ok: true, json: async () => list });
+  await assert.rejects(fetchRoads(map, { fetchImpl: fake, now: NOW }), /HTTP 503/);
+});

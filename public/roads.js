@@ -44,7 +44,11 @@ async function refreshRoads() {
   } catch {
     return; // no roads.json yet: quiet streets
   }
-  events = (data.events || []).filter((e) => !e.end || new Date(e.end).getTime() > Date.now());
+  const now = Date.now();
+  events = (data.events || [])
+    .filter((e) => !e.end || new Date(e.end).getTime() > now)
+    // Events that have started since roads.json was written are live now.
+    .map((e) => (e.upcoming && e.start && new Date(e.start).getTime() <= now ? { ...e, upcoming: false } : e));
   closed.clear();
   for (const e of onMap()) if (e.full && e.on) for (const [x, y] of blockTiles(e)) closed.add(key(x, y));
   renderRoadList(data);
