@@ -17,7 +17,13 @@ export async function getAccessToken({ clientId, clientSecret, refreshToken }, f
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.access_token) {
-    throw new Error(`Gmail token refresh failed (${res.status}): ${body.error_description || body.error || 'no access token'}`);
+    const why = [body.error, body.error_description].filter(Boolean).join(': ') || 'no access token';
+    const hint = body.error === 'invalid_client'
+      ? ' (check GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET: both from the same Web application client, no spaces or quotes)'
+      : body.error === 'invalid_grant'
+        ? ' (the refresh token was revoked, expired, or issued to a different client: get a new one)'
+        : '';
+    throw new Error(`Gmail token refresh failed (${res.status}): ${why}${hint}`);
   }
   return body.access_token;
 }
