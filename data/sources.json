@@ -1,0 +1,10 @@
+{
+  "_note": "Feeds for scripts/fetch-feeds.mjs. URLs and handles are unverified until the first live run; drop any that fail. mustMatch is a case-insensitive regex for regional outlets that also cover other cities.",
+  "rss": [
+    { "name": "The Rhino Times of Greensboro", "url": "https://www.rhinotimes.com/feed/" },
+    { "name": "Greensboro News & Record", "url": "https://greensboro.com/search/?f=rss&t=article&c=news/local&l=50&s=start_time&sd=desc", "mustMatch": "Greensboro|Guilford|GSO" },
+    { "name": "FOX8 WGHP", "url": "https://myfox8.com/feed/", "mustMatch": "Greensboro|Guilford|GSO|A&T|UNCG" },
+    { "name": "WXII 12 News", "url": "https://www.wxii12.com/topstories-rss", "mustMatch": "Greensboro|Guilford|GSO|A&T|UNCG" }
+  ],
+  "bluesky": []
+}
