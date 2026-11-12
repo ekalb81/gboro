@@ -7,6 +7,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "ingest": "node scripts/ingest.mjs",
+    "fetch": "node scripts/fetch-digests.mjs",
+    "feeds": "node scripts/fetch-feeds.mjs",
     "dev": "node scripts/ingest.mjs && node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "crime": "node scripts/fetch-crime.mjs",
