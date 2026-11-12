@@ -47,18 +47,26 @@ test('fetches both series with the key and the GPD agency code', async () => {
 });
 
 test('retries an FBI outage, then gives up with the last error', async () => {
-  const { getWithRetry } = await import('../scripts/crime-fbi.mjs');
+  const { getJsonWithRetry: getWithRetry } = await import('../scripts/crime-fbi.mjs');
   const waits = [];
   const wait = async (ms) => { waits.push(ms); };
   let calls = 0;
-  const flaky = async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200 });
-  assert.equal((await getWithRetry('u', { fetchImpl: flaky, wait })).status, 200);
+  const flaky = async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200, json: async () => ({ fine: 1 }) });
+  assert.deepEqual(await getWithRetry('u', { fetchImpl: flaky, wait }), { fine: 1 });
   assert.deepEqual(waits, [5000, 10000]);
 
   calls = 0;
   const down = async () => { calls++; throw Object.assign(new Error('t'), { name: 'TimeoutError' }); };
   await assert.rejects(getWithRetry('u', { fetchImpl: down, wait, timeoutMs: 1000 }), /timed out after 1s/);
   assert.equal(calls, 3);
+
+  // Headers arrive, then the body stalls past the time limit: that's retried too.
+  calls = 0;
+  const stall = async () => (++calls < 2
+    ? { ok: true, status: 200, json: async () => { throw Object.assign(new Error('t'), { name: 'TimeoutError' }); } }
+    : { ok: true, status: 200, json: async () => ({ fine: 2 }) });
+  assert.deepEqual(await getWithRetry('u', { fetchImpl: stall, wait }), { fine: 2 });
+  assert.equal(calls, 2);
 
   calls = 0;
   const badKey = async () => { calls++; return { ok: false, status: 403 }; };

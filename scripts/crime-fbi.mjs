@@ -55,16 +55,18 @@ export function buildMonthly({ violent, property, keys }) {
 // The CDE API has outages where it hangs, then answers 502/503/504. Give each try a time limit and retry
 // those (and timeouts) a few times. A 4xx, such as a bad key, fails at once.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-export async function getWithRetry(url, { fetchImpl = fetch, tries = 3, timeoutMs = 25_000, wait = sleep } = {}) {
+export async function getJsonWithRetry(url, { fetchImpl = fetch, tries = 3, timeoutMs = 25_000, wait = sleep } = {}) {
   let last;
   for (let i = 1; i <= tries; i++) {
     let r;
     try {
+      // The time limit covers the body too: the API sometimes sends headers and then stalls.
       r = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (r.ok) return await r.json();
     } catch (e) {
       last = e.name === 'TimeoutError' ? new Error(`FBI CDE timed out after ${timeoutMs / 1000}s`) : e;
+      r = null;
     }
-    if (r?.ok) return r;
     if (r) {
       last = new Error(`FBI CDE ${r.status}`);
       if (r.status < 500) throw last; // bad key, bad request: retrying won't help
@@ -79,8 +81,7 @@ export async function fetchFbiMonthly({ apiKey, now = new Date(), fetchImpl = fe
   const series = {};
   for (const [name, path] of Object.entries(KINDS)) {
     const q = new URLSearchParams({ from: keys[0], to: keys[keys.length - 1], API_KEY: apiKey });
-    const r = await getWithRetry(`${FBI_SOURCE.api}/${GPD_ORI}/${path}?${q}`, { fetchImpl, wait });
-    const s = agencySeries(await r.json());
+    const s = agencySeries(await getJsonWithRetry(`${FBI_SOURCE.api}/${GPD_ORI}/${path}?${q}`, { fetchImpl, wait }));
     if (!s) throw new Error('FBI CDE: no Greensboro series in the response');
     series[name] = s;
   }
