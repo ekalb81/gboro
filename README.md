@@ -73,3 +73,14 @@ npm run feeds -- --days=3      # only look back 3 days (default 7)
 - **Bluesky sources** take `handle`, `name`, `accountType` (default `organization`) and optionally `category` and `mustMatch`. Only the account's own posts are used, not reposts or replies, via the public `getAuthorFeed` endpoint, which needs no login. List organizations only, not private individuals.
 
 The feed URLs in `data/sources.json` haven't been checked against the live sites yet. Drop any that fail on the first run.
+
+## Crime
+
+`npm run crime` writes `public/data/crime.json`, shown in the side panel by `public/crime.js`. Crime is never drawn on the map. Two sources, fetched independently (if one fails, its last good copy is kept):
+
+1. **Crime by month (FBI):** citywide violent and property offenses for the newest complete month, next to the month before, from the FBI Crime Data Explorer (GPD agency code `NC0410200`). Current and automatic, but citywide only and about six weeks behind. Needs a free key from https://api.data.gov/signup/ in `FBI_API_KEY`; without it this part is skipped. If the newest month is well under the months before it (still filling in), it uses the month before.
+2. **Week by district (City):** reported incidents per Greensboro Police division for the last full Monday-to-Sunday week, next to the week before, from the City's open data ("GPD - Crime", ArcGIS layer `OpenGateCity/OpenData_ES_MS/MapServer/4`, no key). As of November 2026 the City's feed stopped at October 6, 2025, so the panel shows only the monthly table plus a note. The division table comes back on its own once the City's feed is current again.
+
+- **Privacy by construction:** the City fetcher only ever requests `inci_id`, `district`, `ibr_code` and `date_rept`, never addresses, coordinates, premises or victim fields (a test checks this). The FBI data is citywide totals.
+- **Counting (City):** each incident counts once, under its most serious offense (violent, property, other). Sheriff and other agencies go in an "Other agencies" row. A half-filled newest week is skipped rather than shown as a fake drop.
+- **Scheduling:** registered in `scripts/collectors.json` with no `env` entry, so the City part runs even without the key. The publish workflow passes the `FBI_API_KEY` repo secret to it.
