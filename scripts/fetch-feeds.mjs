@@ -3,7 +3,7 @@
 //
 // Usage: node scripts/fetch-feeds.mjs [--no-ingest] [--dry-run] [--days=N]
 
-import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readdir, readFile, appendFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -70,7 +70,11 @@ const file = `feeds-${stamp}Z.txt`;
 if (!lines.length) console.log('No new feed items.');
 else if (dryRun) console.log(`Would save ${lines.length} new items to data/raw/${file}:\n${lines.join('\n')}`);
 else {
-  await writeFile(join(rawDir, file), `Source: news feeds and Bluesky (scripts/fetch-feeds.mjs)\nFetched: ${new Date().toISOString()}\n\n${lines.join('\n')}\n`);
+  // Append, never overwrite: a second run in the same minute must not drop the first run's items.
+  const target = join(rawDir, file);
+  const header = `Source: news feeds and Bluesky (scripts/fetch-feeds.mjs)\nFetched: ${new Date().toISOString()}\n\n`;
+  const isNew = !(await readdir(rawDir)).includes(file);
+  await appendFile(target, `${isNew ? header : ''}${lines.join('\n')}\n`);
   console.log(`Saved ${lines.length} new items to data/raw/${file}.`);
 }
 
