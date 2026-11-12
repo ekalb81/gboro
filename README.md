@@ -13,7 +13,8 @@ Muse digest email  ->  data/raw/*.txt  ->  npm run ingest  ->  public/data/items
 Needs Node 20 or newer. No packages to install.
 
 ```sh
-npm run dev      # ingest the digests, then serve on http://localhost:8080
+npm run dev      # ingest the digests, fetch the weather, then serve on http://localhost:8080
+npm run weather  # refresh just the weather
 npm test         # parser, date, placement and privacy-rule tests
 ```
 
@@ -22,6 +23,12 @@ npm test         # parser, date, placement and privacy-rule tests
 - **Ingest** (`scripts/ingest.mjs`, `scripts/lib.mjs`): reads every `data/raw/*.txt`, pulls out the `ITEM | ...` lines (12 pipe-separated fields, `n/a` for blanks), normalizes dates to Eastern time, dedupes by post URL, and places each item in a village district by address, venue or title.
 - **Public-site rules** (in `applyRules`): individuals' names are never shown (their items read as "a local post"), personal posts from individuals are held back, and unverified news is held back. Held items go to `data/held.json`, which is outside `public/` and ignored by git.
 - **Village** (`public/village.js`): a seeded, procedural pixel map built from `public/data/map.json` (roads, railroad, district landmarks), with villagers walking the roads, a marker over each district that has something on, crowds outside places with events today, overheard "chatter" bubbles, and a day/night tint on Greensboro time. Click a building to filter the side list. It re-reads `items.json` every minute.
+
+## Weather
+
+`npm run weather` reads the latest observation from the Greensboro airport station (KGSO) and any active alerts for downtown from the National Weather Service API (free, no key), and writes `public/data/weather.json`. The village shows rain, snow, storms with lightning, fog and drifting cloud shadows, darkens under bad weather, and shows active alerts in a red banner. It re-reads the file every 5 minutes. If a fetch fails, the last file is kept.
+
+To preview a sky without waiting for it, add `?weather=rain`, `snow`, `storm`, `fog`, `cloudy`, `partly` or `clear` to the URL.
 
 ## Getting digests into `data/raw/`
 
