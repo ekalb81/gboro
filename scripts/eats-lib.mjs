@@ -133,7 +133,7 @@ export function openAt(week, day, minute) {
 // ---------- normalizing ----------
 const httpsOnly = (u) => (u && /^https?:\/\//i.test(u) ? u.replace(/^http:/i, 'https:') : null);
 
-/** One OSM element (from Overpass `out center tags` or the OSM API) to a village place, or a reason it was skipped. */
+/** One OSM element (from Overpass `out body center` or the OSM API) to a village place, or a reason it was skipped. */
 export function toPlace(el, { keepChains = false } = {}) {
   const t = el.tags || {};
   if (!t.name) return { skip: 'unnamed' };

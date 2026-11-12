@@ -29,7 +29,7 @@ async function fromOverpass() {
   const q = `[out:json][timeout:90];(
     nwr["amenity"~"^(restaurant|food_court|fast_food|cafe|ice_cream|bar|pub|biergarten|nightclub)$"]["name"](${bb});
     nwr["craft"~"^(brewery|distillery|winery)$"]["name"](${bb});
-  );out center tags;`;
+  );out body center;`; // body keeps node coordinates; center adds them for ways
   const mirrors = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   let last;
   for (const url of mirrors) {
