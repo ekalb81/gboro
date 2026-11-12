@@ -33,12 +33,13 @@ Next step: fetch the digests automatically from a project inbox instead of savin
 
 `public/data/map.json` is a hand-placed, functional layout on a 96x60 tile grid: Elm St runs north-south, Market St east-west, the railroad crosses south of downtown, A&T is east, UNCG and the Coliseum are southwest. It is meant to be navigable, not to scale. Add districts or roads there; add placement rules in `locate()` in `scripts/lib.mjs`.
 
-## Crime by district
+## Crime
 
-`npm run crime` writes `public/data/crime.json`: reported incidents per Greensboro Police division for the last full Monday-to-Sunday week, next to the week before. It shows up in the side panel as "Week by district" (`public/crime.js`). Crime is never drawn on the map.
+`npm run crime` writes `public/data/crime.json`, shown in the side panel by `public/crime.js`. Crime is never drawn on the map. Two sources, fetched independently (if one fails, its last good copy is kept):
 
-- **Source:** the City of Greensboro's open data ("GPD - Crime", ArcGIS layer `OpenGateCity/OpenData_ES_MS/MapServer/4`). Free, no key.
-- **Privacy by construction:** the fetcher only ever requests `inci_id`, `district`, `ibr_code` and `date_rept`. No addresses, coordinates, premises or victim fields are requested, so none can reach the site. A test checks this.
-- **Counting:** each incident counts once, under its most serious offense (violent, property, other). Sheriff and other agencies' incidents go in an "Other agencies" row.
-- **Half-filled weeks:** if the newest week is far below the weeks before it (records still arriving), it steps back a week rather than show a fake drop.
-- **Stale feed:** as of November 2026 the City's feed stopped at October 6, 2025. The page says so and shows the latest full week the City published. It picks up new data on its own once the City resumes.
+1. **Crime by month (FBI):** citywide violent and property offenses for the newest complete month, next to the month before, from the FBI Crime Data Explorer (GPD agency code `NC0410200`). Current and automatic, but citywide only and about six weeks behind. Needs a free key from https://api.data.gov/signup/ in `FBI_API_KEY`; without it this part is skipped. If the newest month is well under the months before it (still filling in), it uses the month before.
+2. **Week by district (City):** reported incidents per Greensboro Police division for the last full Monday-to-Sunday week, next to the week before, from the City's open data ("GPD - Crime", ArcGIS layer `OpenGateCity/OpenData_ES_MS/MapServer/4`, no key). As of November 2026 the City's feed stopped at October 6, 2025, so the panel shows only the monthly table plus a note. The division table comes back on its own once the City's feed is current again.
+
+- **Privacy by construction:** the City fetcher only ever requests `inci_id`, `district`, `ibr_code` and `date_rept`, never addresses, coordinates, premises or victim fields (a test checks this). The FBI data is citywide totals.
+- **Counting (City):** each incident counts once, under its most serious offense (violent, property, other). Sheriff and other agencies go in an "Other agencies" row. A half-filled newest week is skipped rather than shown as a fake drop.
+- **Scheduling:** add `{ "name": "Crime (City + FBI)", "script": "scripts/fetch-crime.mjs" }` to `scripts/collectors.json` (no `env` entry, so the City part runs even without the key) and pass `FBI_API_KEY: ${{ secrets.FBI_API_KEY }}` in the publish workflow's collect step.

@@ -1,4 +1,4 @@
-// "Week by district": reported crime per GPD division, this week next to last week.
+// Crime in the paper: citywide by month (FBI) and, while the City's feed is current, per GPD division by week.
 // Lives in the paper (the side panel) only. Crime is never drawn on the map, pinned to a block or animated.
 // Data: data/crime.json from scripts/fetch-crime.mjs.
 
@@ -36,45 +36,53 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
-function render(c) {
-  section.innerHTML = '';
+const monthName = (iso) => new Date(`${iso}-15T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
+const link = (url, text) => el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', textContent: text });
+const row = (label, a, b, cls = '') => el('tr', { className: cls }, el('td', {}, ...[].concat(label)), el('td', { textContent: a }), el('td', { textContent: b }));
+
+// Citywide, by month, from the FBI. Current even when the City's own feed stalls.
+function renderMonthly(m) {
+  const a = m.thisMonth, b = m.lastMonth;
+  section.append(
+    el('h2', { textContent: 'Crime by month' }),
+    el('div', { className: 'sub', textContent: `Offenses reported by Greensboro Police citywide, ${monthName(a.month)} next to the month before. Monthly figures run about six weeks behind.` }),
+    el('table', {},
+      el('tr', {}, el('th', { textContent: '' }), el('th', { textContent: monthName(a.month) }), el('th', { textContent: monthName(b.month) })),
+      row('Violent', a.violent, b.violent),
+      row('Property', a.property, b.property),
+      row('Total', a.total, b.total, 'total'),
+    ),
+    el('div', { className: 'sub' }, 'Source: ', link(m.source.url, 'FBI Crime Data Explorer'), '.'),
+  );
+}
+
+// Weekly, per police division, from the City's open data.
+function renderDivisions(c) {
   section.append(
     el('h2', { textContent: 'Week by district' }),
     el('div', { className: 'sub', textContent: `Reported incidents per police division, ${range(c.thisWeek)}, next to the week before. No addresses.` }),
   );
-  if (c.stale && c.latestReport) {
-    const since = new Date(c.latestReport).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric' });
-    section.append(el('div', { className: 'stale', textContent: `The City hasn't updated its crime data since ${since}, so this is the latest full week it published.` }));
-  }
-  const table = el('table', {},
-    el('tr', {}, el('th', { textContent: 'Division' }), el('th', { textContent: short(c.thisWeek) }), el('th', { textContent: short(c.lastWeek) })),
-  );
-  for (const d of c.divisions) {
-    table.append(el('tr', {},
-      el('td', {}, d.name, ' ', el('span', { className: 'area', textContent: `(${d.area})` })),
-      el('td', { textContent: d.thisWeek.total }),
-      el('td', { textContent: d.lastWeek.total }),
-    ));
-  }
-  if (c.outsideGPD.thisWeek.total || c.outsideGPD.lastWeek.total) {
-    table.append(el('tr', {},
-      el('td', { className: 'area', textContent: 'Other agencies' }),
-      el('td', { textContent: c.outsideGPD.thisWeek.total }),
-      el('td', { textContent: c.outsideGPD.lastWeek.total }),
-    ));
-  }
-  table.append(el('tr', { className: 'total' },
-    el('td', { textContent: 'Citywide' }),
-    el('td', { textContent: c.city.thisWeek.total }),
-    el('td', { textContent: c.city.lastWeek.total }),
-  ));
+  if (c.stale && c.latestReport) section.append(el('div', { className: 'stale', textContent: `The City hasn't updated its crime data since ${since(c)}, so this is the latest full week it published.` }));
+  const table = el('table', {}, el('tr', {}, el('th', { textContent: 'Division' }), el('th', { textContent: short(c.thisWeek) }), el('th', { textContent: short(c.lastWeek) })));
+  for (const d of c.divisions) table.append(row([d.name, ' ', el('span', { className: 'area', textContent: `(${d.area})` })], d.thisWeek.total, d.lastWeek.total));
+  if (c.outsideGPD.thisWeek.total || c.outsideGPD.lastWeek.total) table.append(row('Other agencies', c.outsideGPD.thisWeek.total, c.outsideGPD.lastWeek.total));
+  table.append(row('Citywide', c.city.thisWeek.total, c.city.lastWeek.total, 'total'));
   const t = c.city.thisWeek;
   section.append(table, el('div', { className: 'sub' },
     `${short(c.thisWeek)}: ${t.violent} violent, ${t.property} property, ${t.other} other. Source: `,
-    el('a', { href: c.source.url, target: '_blank', rel: 'noopener noreferrer', textContent: 'City of Greensboro open data' }),
-    '.',
+    link(c.source.url, 'City of Greensboro open data'), '.',
   ));
-  section.hidden = false;
+}
+
+const since = (c) => new Date(c.latestReport).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric' });
+
+function render(c) {
+  section.innerHTML = '';
+  if (c.monthly) renderMonthly(c.monthly);
+  // With current monthly numbers on show, a months-old division table would only confuse, so it waits for the City's feed.
+  if (c.divisions && (!c.stale || !c.monthly)) renderDivisions(c);
+  else if (c.divisions && c.latestReport) section.append(el('div', { className: 'sub', textContent: `Weekly counts by police division come back when the City resumes its crime data (paused since ${since(c)}).` }));
+  section.hidden = !section.childElementCount;
 }
 
 async function refresh() {
