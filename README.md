@@ -41,7 +41,7 @@ It needs three environment variables:
 
 | Variable | What it is |
 |---|---|
-| `GMAIL_CLIENT_ID` | OAuth client ID (Desktop app type) from a Google Cloud project with the Gmail API enabled |
+| `GMAIL_CLIENT_ID` | OAuth client ID (Web application type) from a Google Cloud project with the Gmail API enabled |
 | `GMAIL_CLIENT_SECRET` | That client's secret |
 | `GMAIL_REFRESH_TOKEN` | A refresh token for the inbox, granted only the `https://www.googleapis.com/auth/gmail.readonly` scope |
 
@@ -49,8 +49,8 @@ One-time setup:
 
 1. In Google Cloud Console, create a project and enable the Gmail API.
 2. Configure the OAuth consent screen as External and add the inbox as a test user. Then **publish the app to "In production"**. While the app is in "Testing", Google expires refresh tokens after 7 days. An unverified app used only by its owner is fine; Google shows an "unverified app" warning once, which you click through.
-3. Create an OAuth client of type **Desktop app**.
-4. Get a refresh token. In the [OAuth 2.0 Playground](https://developers.google.com/oauthplayground), open the gear menu, tick "Use your own OAuth credentials", paste the client ID and secret, authorize the `gmail.readonly` scope while signed in as the inbox, then exchange the code for tokens.
+3. Create an OAuth client of type **Web application**, with `https://developers.google.com/oauthplayground` as an authorized redirect URI. The OAuth Playground only works with a web client.
+4. Get a refresh token. In the [OAuth 2.0 Playground](https://developers.google.com/oauthplayground), open the gear menu, set OAuth flow to **Server-side** (client-side gives no refresh token), tick "Use your own OAuth credentials", paste the client ID and secret, authorize the `gmail.readonly` scope while signed in as the inbox, then exchange the code for tokens. The refresh token only works with the client that issued it, so use that same client's ID and secret below.
 5. Put the three values in GitHub Actions secrets, or locally in `.env` (git-ignored) and run `node --env-file=.env scripts/fetch-digests.mjs`.
 
 Point it at a dedicated project inbox rather than a personal account if you can. A Gmail filter can forward only the "Greensboro update" emails there, so the token can't read anything else.
