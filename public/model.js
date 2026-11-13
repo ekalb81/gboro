@@ -30,7 +30,8 @@ const LAT=36.0726,LON=-79.792;
 function sunPos(d){const n=d.getTime()/86400000+2440587.5-2451545.0;const L=(280.46+0.9856474*n)%360,g=((357.528+0.9856003*n)%360)*rad;const lam=(L+1.915*Math.sin(g)+0.02*Math.sin(2*g))*rad,eps=(23.439-4e-7*n)*rad;
   const ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam)),dec=Math.asin(Math.sin(eps)*Math.sin(lam));const gmst=((18.697374558+24.06570982441908*n)%24+24)%24;const ha=(gmst*15+LON)*rad-ra;const la=LAT*rad;
   const alt=Math.asin(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(ha));const A=Math.atan2(Math.sin(ha),Math.cos(ha)*Math.sin(la)-Math.tan(dec)*Math.cos(la));return{alt:alt/rad,az:((A/rad+180)%360+360)%360}}
-const nyParts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23',weekday:'short'}).formatToParts(d).map(p=>[p.type,p.value]));
+const NYF=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23',weekday:'short'});
+const nyParts=d=>Object.fromEntries(NYF.formatToParts(d).map(p=>[p.type,p.value]));
 function nyDate(h,m){const now=new Date(),p=nyParts(now);const guess=Date.UTC(+p.year,+p.month-1,+p.day,h,m);const q=nyParts(new Date(guess));const off=(Date.UTC(+q.year,+q.month-1,+q.day,+q.hour,+q.minute)-guess);return new Date(guess-off)}
 const fmtTime=d=>{const p=nyParts(d);let h=+p.hour%12;if(!h)h=12;return h+':'+p.minute.padStart(2,'0')};
 const ampm=d=>+nyParts(d).hour<12?'AM':'PM';
@@ -468,7 +469,7 @@ function drawCut(box,fn,cuts,dst){
   const T_={c:scr[0],e:scr[1],g:scr[2],de:0,dg:0};TGT=T_;fn();scrInk[1]=T_.de;scrInk[2]=T_.dg;
   const k=1/BT[0],pd=2*k+1,ax=-BT[4]*k-(ox-BOX),ay=-BT[5]*k-(oy-BOY),cb=[ax-pd,ay-pd,ax+w_*k+pd,ay+h_*k+pd];
   for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb))c.fill(q.p);c.restore()}
-  BT=b0;TGT=t0;
+  BT=b0;TGT=t0;if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
   for(const d of [dst.e,dst.g]){d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
   const ds=[dst.c,dst.e,dst.g];for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const d=ds[i];d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}}
 
@@ -502,8 +503,9 @@ const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map(
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
 function renderTile(tx,ty,t){const T0=performance.now();
   if(!t){t={};for(const k of ['c','e','g']){t[k]=mk(TILE,TILE).getContext('2d')}}
-  for(const k of ['c','e','g']){t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
-  BT=[VS,0,0,VS,-tx*TILE,-ty*TILE];setT(t.c,t.e,t.g);TGT={c:t.c,e:t.e,g:t.g};ox=BOX;oy=BOY;
+  // a tile's lit-window and glow layers shrink to nothing when nothing is painted on them (most of the day)
+  for(const k of ['c','e','g']){const cv_=t[k].canvas;if(cv_.width!==TILE){cv_.width=TILE;cv_.height=TILE}t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
+  BT=[VS,0,0,VS,-tx*TILE,-ty*TILE];setT(t.c,t.e,t.g);TGT={c:t.c,e:t.e,g:t.g,de:0,dg:0};ox=BOX;oy=BOY;
   const r=[tx*TILE/VS,ty*TILE/VS,(tx+1)*TILE/VS,(ty+1)*TILE/VS];
   const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]};const cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
   TG=[Math.min(...cs.map(c=>c[0])),Math.min(...cs.map(c=>c[1])),Math.max(...cs.map(c=>c[0])),Math.max(...cs.map(c=>c[1]))];
@@ -511,6 +513,7 @@ function renderTile(tx,ty,t){const T0=performance.now();
   for(const b of blds)if(hitBox(b.box,r))drawBuilding(t.c,b);
   for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}
   drawNet(t.c);
+  t.de=TGT.de;t.dg=TGT.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
   t.ver=stver;t.vs=VS;if(BM){BM.tiles++;BM.tileMs+=performance.now()-T0}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
   if(t){tiles.delete(key);tiles.set(key,t);if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
@@ -659,7 +662,7 @@ function signText(cx,wl,z0,txt){
 }
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 
-let last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
+let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){
   if(BM){bmT=performance.now();bmF={t:bmT}}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
@@ -670,7 +673,7 @@ function frame(ts){
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
   for(const c of [w,E,GL]){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H)}w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
   frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
-  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);E.drawImage(t.e.canvas,X,Y);GL.drawImage(t.g.canvas,X,Y)}
+  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
   trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
@@ -728,7 +731,7 @@ function frame(ts){
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
   for(const t of L.trucks){const[sx,sy]=P(t.gx,t.gy,13);for(let i=0;i<5;i++){const ph=(T*.5+i/5)%1;w.globalAlpha=(1-ph)*.55;w.fillStyle='#f2eee6';w.beginPath();w.arc(sx+ph*10+Math.sin(ph*6+i)*2,sy-ph*26,2+ph*4,0,7);w.fill()}w.globalAlpha=1}
   // leaves and petals blowing off the trees on screen, in the wind's real direction (model pixels)
-  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;const lk=look(o.sp,DOY,o.seed);if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
+  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;if(o.lkD!==DOY){o.lkD=DOY;o.lk=look(o.sp,DOY,o.seed)}const lk=o.lk;if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
   BM&&bm('blow');
   // weather in screen pixels
   w.setTransform(1,0,0,1,0,0);const ps=Math.max(1,Math.round(VS));
@@ -748,11 +751,13 @@ function frame(ts){
   ctx.drawImage(Ec,0,0);ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over';
   BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
-  if(HASFILTER){tc.clearRect(0,0,W,H);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';const gr=tc.createLinearGradient(0,0,0,H);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(.3,'rgba(0,0,0,0)');gr.addColorStop(.68,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,1)');tc.fillStyle=gr;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';ctx.drawImage(Tc,0,0)}
+  if(HASFILTER){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
+    // the mask is clear between 30% and 68% of the height, so only the two bands are laid on
+    const m1=Math.ceil(H*.3)+1,m2=Math.floor(H*.68)-1;ctx.drawImage(Tc,0,0,W,m1,0,0,W,m1);ctx.drawImage(Tc,0,m2,W,H-m2,0,m2,W,H-m2)}
   BM&&bm('tilt');
   // Lincoln Financial's bulb sign (time, then temperature) goes on last, outside the tilt-shift blur, so it stays sharp
   const tw=byId.tower;if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');ctx.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))lanternSign(ctx,wl,tw.lanternZ,tw.lanternTop,txt);ctx.setTransform(1,0,0,1,0,0)}
-  const vg=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);vg.addColorStop(0,'rgba(20,10,30,0)');vg.addColorStop(1,'rgba(20,10,30,.22)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  if(!VGR||VGR.W!==W||VGR.H!==H){VGR=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}ctx.fillStyle=VGR;ctx.fillRect(0,0,W,H);
   BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
   ctx.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
