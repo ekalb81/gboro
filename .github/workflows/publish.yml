@@ -48,6 +48,14 @@ jobs:
           key: crime-${{ github.run_id }}
           restore-keys: crime-
 
+      # Same for the last weather reading (public NWS data), so a weather.gov outage keeps the last sky.
+      - name: Restore last weather
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/weather.json
+          key: weather-${{ github.run_id }}
+          restore-keys: weather-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -62,6 +70,13 @@ jobs:
         with:
           path: public/data/crime.json
           key: crime-${{ github.run_id }}
+
+      - name: Save weather
+        if: hashFiles('public/data/weather.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/weather.json
+          key: weather-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |

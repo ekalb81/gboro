@@ -292,6 +292,101 @@ function drawBubble(f) {
   ctx.fillStyle = '#2b2418'; ctx.textBaseline = 'top'; ctx.fillText(f.say.text, x + 3, y + 2);
 }
 
+// ---------- weather (data/weather.json from scripts/fetch-weather.mjs) ----------
+// Preview any sky with ?weather=rain|snow|storm|fog|cloudy|partly|clear
+const PREVIEW = new URLSearchParams(location.search).get('weather');
+let wx = { sky: 'clear', precip: 'none', intensity: null, fog: false, windMph: 5 };
+let drops = [], clouds = [], flash = 0;
+
+function previewWeather(kind) {
+  const base = { text: `Preview: ${kind}`, tempF: null, windMph: 10, sky: 'cloudy', precip: 'none', intensity: 'moderate', fog: false, alerts: [] };
+  if (kind === 'rain' || kind === 'snow' || kind === 'storm') base.precip = kind;
+  if (kind === 'storm') { base.intensity = 'heavy'; base.windMph = 25; base.alerts = [{ event: 'Severe Thunderstorm Warning', headline: 'Preview alert', severity: 'Severe' }]; }
+  if (kind === 'fog') base.fog = true;
+  if (kind === 'partly' || kind === 'clear') base.sky = kind;
+  return base;
+}
+
+async function refreshWeather() {
+  try {
+    wx = PREVIEW ? previewWeather(PREVIEW) : await loadJSON('data/weather.json');
+  } catch {
+    document.getElementById('weather').textContent = '';
+    return; // no weather yet: keep a clear sky
+  }
+  const bits = [wx.tempF != null ? `${wx.tempF}°F` : null, wx.text, wx.windMph ? `wind ${wx.windMph} mph` : null].filter(Boolean);
+  document.getElementById('weather').textContent = bits.length ? `· ${bits.join(' · ')}` : '';
+  renderAlerts();
+  seedWeather();
+}
+
+// Alerts can end between fetches (or a fetch can fail), so check their end time every time we draw the banner.
+function renderAlerts() {
+  const live = (wx.alerts || []).filter((a) => !a.ends || new Date(a.ends).getTime() > Date.now());
+  const banner = document.getElementById('alert');
+  banner.hidden = !live.length;
+  banner.innerHTML = '';
+  for (const a of live) {
+    const line = document.createElement('div');
+    line.append(Object.assign(document.createElement('b'), { textContent: a.event }), a.headline ? ` · ${a.headline}` : '');
+    banner.append(line);
+  }
+}
+
+function seedWeather() {
+  const n = { light: 120, moderate: 260, heavy: 480 }[wx.intensity] ?? 0;
+  const count = wx.precip === 'none' ? 0 : wx.precip === 'snow' ? Math.round(n * 0.7) : n;
+  drops = Array.from({ length: count }, () => ({ x: rnd() * canvas.width, y: rnd() * canvas.height, v: 0.6 + rnd() * 0.8 }));
+  const nClouds = { clear: 0, partly: 5, cloudy: 11 }[wx.sky] ?? 0;
+  clouds = Array.from({ length: nClouds }, () => ({ x: rnd() * canvas.width, y: rnd() * canvas.height, r: 30 + rnd() * 50 }));
+}
+
+function drawWeather(t) {
+  const wind = Math.min(30, wx.windMph || 0);
+  const drift = 0.05 + wind * 0.02;
+  // Cloud shadows sliding over the town.
+  ctx.fillStyle = wx.sky === 'cloudy' ? 'rgba(20,30,40,.16)' : 'rgba(20,30,40,.12)';
+  for (const c of clouds) {
+    c.x += drift; if (c.x - c.r > canvas.width) { c.x = -c.r; c.y = rnd() * canvas.height; }
+    for (let i = -2; i <= 2; i++) { const rr = c.r * (1 - Math.abs(i) * 0.25); ctx.fillRect(Math.round(c.x + i * c.r * 0.45 - rr / 2), Math.round(c.y - rr * 0.3), Math.round(rr), Math.round(rr * 0.6)); }
+  }
+  if (wx.sky === 'cloudy') { ctx.fillStyle = 'rgba(40,50,60,.12)'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  if (wx.precip === 'snow') { ctx.fillStyle = 'rgba(235,240,250,.18)'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+
+  const slant = wind / 12;
+  if (wx.precip === 'rain' || wx.precip === 'storm') {
+    ctx.fillStyle = 'rgba(170,200,235,.75)';
+    for (const d of drops) {
+      d.y += 4 * d.v + 2; d.x += slant * d.v;
+      if (d.y > canvas.height) { d.y = -4; d.x = rnd() * canvas.width; }
+      if (d.x > canvas.width) d.x -= canvas.width;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 3);
+      if (d.v > 1.3 && d.y % 97 < 4) ctx.fillRect(Math.round(d.x) - 1, Math.round(d.y) + 4, 3, 1); // splash
+    }
+  } else if (wx.precip === 'snow') {
+    ctx.fillStyle = '#f8fbff';
+    for (const d of drops) {
+      d.y += 0.5 * d.v; d.x += Math.sin(t / 700 + d.v * 9) * 0.3 + slant * 0.3;
+      if (d.y > canvas.height) { d.y = -2; d.x = rnd() * canvas.width; }
+      if (d.x > canvas.width) d.x -= canvas.width; else if (d.x < 0) d.x += canvas.width;
+      const s = d.v > 1.1 ? 2 : 1;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y), s, s);
+    }
+  }
+  if (wx.precip === 'storm') {
+    if (flash <= 0 && rnd() < 0.003) flash = 10;
+    if (flash > 0) { ctx.fillStyle = `rgba(255,255,240,${flash > 7 ? 0.55 : flash / 30})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flash--; }
+  }
+  if (wx.fog) {
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = 'rgba(225,228,232,.16)';
+      const y = ((t / 60 + i * 160) % (canvas.height + 120)) - 60;
+      ctx.fillRect(0, Math.round(y), canvas.width, 60);
+    }
+    ctx.fillStyle = 'rgba(225,228,232,.28)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
 // ---------- markers, sky, frame ----------
 function markerRect(d) {
   return { x: d.x * T + (d.w * T >> 1) - 5, y: d.y * T - (d.id === 'downtown' ? 22 : 14), w: 11, h: 11 };
@@ -325,12 +420,13 @@ function frame(t) {
   ctx.drawImage(bg, 0, 0);
   for (const f of folks) if (f.kind === 'walk') stepWalker(f);
   for (const f of [...folks].sort((a, b) => a.py - b.py)) drawPerson(f, t);
-  const a = skyAlpha(etHour());
+  const a = Math.min(0.6, skyAlpha(etHour()) + (wx.precip !== 'none' ? 0.1 : 0));
   if (a) {
     ctx.fillStyle = `rgba(16,24,64,${a})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'rgba(255,214,110,.85)';
     for (const [x, y, s = 2] of windows) if ((x * 7 + y * 13) % 5) ctx.fillRect(x, y, s, s);
   }
+  drawWeather(t);
   drawMarkers(t);
   for (const f of folks) if (f.say && f.say.until > t) drawBubble(f); else if (f.say) f.say = null;
   requestAnimationFrame(frame);
@@ -405,7 +501,10 @@ map = await loadJSON('data/map.json');
 buildBackground();
 for (let i = 0; i < 40; i++) folks.push(newWalker());
 await refreshItems();
+await refreshWeather();
 tickClock();
+setInterval(refreshWeather, 5 * 60e3);
+setInterval(renderAlerts, 60e3);
 setInterval(tickClock, 15e3);
 setInterval(refreshItems, 60e3); // pick up new digests without a reload
 setInterval(chatter, 5e3);
