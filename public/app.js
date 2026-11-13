@@ -15,6 +15,14 @@ const TZ = 'America/New_York';
 const Q = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 function el(tag, props = {}, ...kids) { const n = Object.assign(document.createElement(tag), props); n.append(...kids.filter((k) => k != null && k !== false)); return n; }
+const SVG = 'http://www.w3.org/2000/svg';
+/** One of the icons from the sprite in index.html. */
+function icon(name) {
+  const svg = document.createElementNS(SVG, 'svg'); svg.setAttribute('class', 'ico'); svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG, 'use'); use.setAttribute('href', `#i-${name}`); svg.append(use); return svg;
+}
+/** A coloured square with an icon, at the left of each line in the paper. */
+const tile = (name, bg, pinned = false) => el('span', { className: 'tile', style: `background:${bg}` }, icon(name), pinned ? el('span', { className: 'pin', title: 'On the model' }, icon('pin')) : null);
 const ext = (href, text) => el('a', { href, target: '_blank', rel: 'noopener noreferrer', textContent: text, onclick: (e) => e.stopPropagation() });
 
 async function loadJSON(url, fallback = null) {
@@ -56,12 +64,22 @@ function previewWeather(kind) {
   if (kind === 'partly' || kind === 'clear') base.sky = kind;
   return base;
 }
+const ALERT_ICON = [[/freeze|frost|winter|ice|snow|cold|chill|sleet/i, 'snow'], [/thunder|tornado|storm/i, 'storm'], [/flood|rain/i, 'rain'], [/fog/i, 'fog'], [/wind/i, 'wind'], [/heat/i, 'therm']];
+const alertIcon = (ev) => (ALERT_ICON.find(([re]) => re.test(ev)) || [null, 'alert'])[1];
+// NWS headlines end "... until November 14 at 8:00AM EST by NWS Raleigh NC"; the chip only needs "until Sat 8 AM".
+const untilShort = (iso) => new Date(iso).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(':00', '');
 function renderAlerts() {
   const live = (weather?.alerts || []).filter((a) => !a.ends || new Date(a.ends).getTime() > Date.now());
-  const banner = $('alert');
-  banner.hidden = !live.length;
-  banner.innerHTML = '';
-  for (const a of live) banner.append(el('div', {}, el('b', { textContent: a.event }), a.headline ? ` · ${a.headline}` : ''));
+  const box = $('alert');
+  box.hidden = !live.length;
+  box.replaceChildren(...live.flatMap((a) => {
+    const level = /warning/i.test(a.event) ? (/severe|extreme/i.test(a.severity || '') || /tornado|severe/i.test(a.event) ? 'severe' : 'warn') : '';
+    const more = el('div', { className: 'chip-more', textContent: a.headline || a.event });
+    const chip = el('button', { className: `chip ${level}`.trim(), title: a.headline || a.event, ariaExpanded: 'false', onclick: () => chip.setAttribute('aria-expanded', chip.getAttribute('aria-expanded') === 'true' ? 'false' : 'true') },
+      el('span', { className: 'badge' }, icon(alertIcon(a.event))), a.event, a.ends ? el('span', { className: 'until', textContent: `until ${untilShort(a.ends)}` }) : null);
+    chip.setAttribute('aria-expanded', 'false');
+    return [chip, more];
+  }));
 }
 
 // ---------- roads ----------
@@ -167,49 +185,98 @@ function refreshScene() {
 }
 
 // ---------- almanac strip ----------
+function skyIcon(night) {
+  if (!weather) return night ? 'moon' : 'sun';
+  if (weather.precip === 'storm') return 'storm';
+  if (weather.precip === 'rain') return 'rain';
+  if (weather.precip === 'snow') return 'snow';
+  if (weather.fog) return 'fog';
+  if (weather.sky === 'cloudy') return 'cloud';
+  return night ? 'moon' : 'sun';
+}
 function renderAlmanac() {
   const now = new Date();
   const st = model.sunTimes();
-  const bits = [];
-  bits.push(el('span', {}, now.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' }), ' · ', el('b', { textContent: `${model.fmtTime(now)} ${model.ampm(now)}` })));
-  if (weather) bits.push(el('span', { textContent: [weather.tempF != null ? `${Math.round(weather.tempF)}°F` : null, (weather.text || '').toLowerCase() || null, weather.windMph ? `wind ${weather.windMph} mph` : null].filter(Boolean).join(', ') }));
-  bits.push(el('span', { textContent: `sunrise ${st.rise ? model.fmtTime(st.rise) : '?'} · sunset ${st.set ? model.fmtTime(st.set) : '?'}` }));
-  const closed = liveRoads().filter((e) => e.onModel && !e.upcoming).length;
-  if (closed) bits.push(el('span', { textContent: `${closed} road event${closed === 1 ? '' : 's'} downtown` }));
-  const c = councilLine(council);
-  const tonight = items.filter((it) => isDowntown(it) && isToday(it) && !isOver(it) && it.kind !== 'council').length;
-  bits.push(el('span', { textContent: [c, tonight ? `${tonight} thing${tonight === 1 ? '' : 's'} on downtown today` : 'downtown is quiet today'].filter(Boolean).join(' · ') }));
-  const lab = el('label', {}, el('input', { type: 'checkbox', checked: labelsOn, onchange: (e) => { labelsOn = e.target.checked; model.setLabels(labelsOn); } }), 'labels');
-  bits.push(lab, el('a', { className: 'open', href: '#paper', textContent: 'the paper' }));
-  $('almanac').replaceChildren(...bits);
-  $('paperDate').textContent = now.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
+  const night = st.rise && st.set ? now < st.rise || now > st.set : false;
+  const ic = skyIcon(night);
+  const wet = ['rain', 'storm', 'snow', 'fog', 'cloud'].includes(ic);
+  const temp = weather?.tempF != null ? `${Math.round(weather.tempF)}°` : null;
+  const cond = [(weather?.text || '').toLowerCase() || null, weather?.windMph ? `wind ${weather.windMph} mph` : null].filter(Boolean).join(', ');
+  $('almanac').replaceChildren(
+    el('span', { className: `sky${night && !wet ? ' night' : wet ? ' wet' : ''}` }, icon(ic)),
+    el('div', {},
+      el('div', { className: 'when' }, model.fmtTime(now), el('small', { textContent: model.ampm(now) })),
+      el('div', { className: 'day', textContent: now.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long', month: 'short', day: 'numeric' }) })),
+    temp || cond ? el('div', { className: 'wx' }, temp ? el('b', { textContent: temp }) : null, cond ? el('div', { className: 'cond', textContent: cond }) : null,
+      el('div', { className: 'sun' }, el('span', {}, icon('rise'), st.rise ? model.fmtTime(st.rise) : '?'), el('span', {}, icon('set'), st.set ? model.fmtTime(st.set) : '?'))) : null);
 }
-let labelsOn = false;
 
 // ---------- the paper ----------
-function itemLi(it, { pin = false } = {}) {
+const KINDS = [
+  [/jazz|blues|band|concert|live music|\blive\b|dj\b|bluegrass|karaoke|\bjam\b|symphony|orchestra|choir|hip.?hop|rap|singer|music|showcase/i, 'music', '#d9822b'],
+  [/comedy|open mic|poetry|slam|stand.?up|improv/i, 'mic', '#7a4fb0'],
+  [/book|reading|author|library|signing/i, 'book', '#3f7f8f'],
+  [/movie|film|screening|cinema/i, 'film', '#4a68b0'],
+  [/gallery|art\b|arts\b|craft|museum|exhibit|paint/i, 'art', '#c2477a'],
+  [/market|vendor|pop.?up shop|bazaar|fair\b/i, 'basket', '#5a9a3c'],
+  [/run\b|5k|walk\b|yoga|fitness|ride\b|cycle/i, 'run', '#2e8f6a'],
+  [/beer|brew|wine|cocktail|tasting|happy hour/i, 'beer', '#c99a00'],
+  [/taco|food|brunch|dinner|lunch|breakfast|truck|bbq|cook|eat/i, 'food', '#b8452f'],
+  [/trivia|game|bingo|party|dance|drag|salsa/i, 'star', '#d14a8b'],
+];
+function kindOf(it) {
+  if (it.kind === 'council') return ['hall', '#4a68b0'];
+  if (it.category === 'news') return ['news', '#5b4c3e'];
+  const k = KINDS.find(([re]) => re.test(it.title));
+  return k ? [k[1], k[2]] : ['cal', '#8a5a2b'];
+}
+const showOnModel = (bid) => model.highlight(bid != null ? model.building(bid) : picked);
+function itemLi(it) {
   const civic = it.platform === 'City of Greensboro';
   const when = fmtWhen(it);
   const s = spots.get(it.id);
-  const li = el('li', { className: [isOver(it) ? 'past' : '', s ? 'go' : ''].join(' ').trim() },
-    el('div', { className: 't' }, it.title, pin && s ? el('span', { className: 'pin', textContent: 'on the model', title: 'Tap to look at it on the model' }) : null),
-    el('div', { className: 'm', textContent: [isOver(it) ? 'Earlier' : isToday(it) ? 'Today' : null, when, it.venue].filter(Boolean).join(' · ') }),
-    el('div', { className: 'm' },
-      civic ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : it.recording ? 'Recording on the City’s YouTube' : it.account || 'City of Greensboro'} ` : `${it.platform} · ${it.account || 'a local post'} `,
-      /^https:\/\//.test(it.url) ? ext(it.url, civic ? (/youtube\.com/.test(it.url) ? 'Watch ↗' : 'Details ↗') : 'View post ↗') : null));
-  if (s && s.bid != null) li.onclick = () => showBuilding(model.building(s.bid), true);
+  const [ic, bg] = kindOf(it);
+  const li = el('li', { className: ['it', isOver(it) ? 'past' : '', s ? 'go' : ''].join(' ').trim() },
+    tile(ic, bg, !!s),
+    el('div', { className: 'body' },
+      el('div', { className: 't', textContent: it.title }),
+      el('div', { className: 'm', textContent: [isOver(it) ? 'Earlier' : null, when, it.venue].filter(Boolean).join(' · ') }),
+      el('div', { className: 'm' },
+        civic ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : it.recording ? 'Recording on the City’s YouTube' : it.account || 'City of Greensboro'} ` : `${it.platform} · ${it.account || 'a local post'} `,
+        /^https:\/\//.test(it.url) ? ext(it.url, civic ? (/youtube\.com/.test(it.url) ? 'Watch ↗' : 'Details ↗') : 'View post ↗') : null)));
+  if (s && s.bid != null) { li.onclick = () => showBuilding(model.building(s.bid), true); li.onmouseenter = () => showOnModel(s.bid); li.onmouseleave = () => showOnModel(null); }
   else if (s) li.onclick = () => model.lookAt({ cx: s.gx, cy: s.gy, hpx: 0 });
   return li;
 }
 const byTime = (a, b) => (isOver(a) - isOver(b)) || (a.start || '9999').localeCompare(b.start || '9999');
 
+// Downtown items under day headings; the far future folds away so the paper stays short.
+function dayGroup(it) {
+  const d = dayOf(it);
+  if (!d) return 'Any day';
+  const today = etDate(new Date());
+  const diff = Math.round((Date.parse(d) - Date.parse(today)) / 86400e3);
+  if (diff <= 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff < 7) return new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long' });
+  return 'Later on';
+}
 function renderDowntown() {
   const list = items.filter((it) => isDowntown(it) && it.kind !== 'council').sort(byTime);
   const live = list.filter((it) => !isOver(it)), past = list.filter(isOver);
-  const ul = $('downtown');
-  ul.replaceChildren(...live.map((it) => itemLi(it, { pin: true })));
-  if (!live.length) ul.append(el('li', { className: 'm', textContent: 'Nothing posted for downtown right now.' }));
-  if (past.length) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it))))));
+  const box = $('downtown');
+  box.replaceChildren();
+  if (!live.length) box.append(el('div', { className: 'sub', textContent: 'Nothing posted for downtown right now.' }));
+  const groups = new Map();
+  for (const it of live) { const g = dayGroup(it); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
+  let shown = 0;
+  for (const [g, its] of groups) {
+    const ul = el('ul', {}, ...its.map((it) => itemLi(it)));
+    if (g === 'Later on' || shown > 24) box.append(el('details', {}, el('summary', { textContent: `${g === 'Later on' ? 'Later on' : g} (${its.length})` }), ul));
+    else box.append(el('div', { className: 'day-h', textContent: g }), ul);
+    shown += its.length;
+  }
+  if (past.length) box.append(el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it)))));
 }
 
 function renderAround() {
@@ -217,18 +284,20 @@ function renderAround() {
   names.board = 'All over town'; names.away = 'Out of town';
   const order = ['college-hill', 'uncg', 'westside', 'north', 'coliseum', 'ncat', 'southeast', 'board', 'away'];
   const box = $('aroundList');
-  box.replaceChildren(el('div', { className: 'sub', textContent: 'The model covers downtown only. Everything else in the digest, by area:' }));
+  const open = new Set([...box.querySelectorAll('details.area[open]')].map((d) => d.id));
+  box.replaceChildren(el('div', { className: 'sub', textContent: 'The model covers downtown only. Everything else, by area; the signposts at the edge of the model point to each one.' }));
   const rest = items.filter((it) => !isDowntown(it));
   const groups = [...new Set([...order, ...rest.map((it) => it.district)])];
   for (const g of groups) {
     const list = rest.filter((it) => it.district === g).sort(byTime);
     const live = list.filter((it) => !isOver(it));
     if (!list.length) continue;
-    const ul = el('ul', {}, ...live.slice(0, 30).map((it) => itemLi(it)));
-    if (live.length > 30) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `${live.length - 30} more` }), el('ul', {}, ...live.slice(30).map((it) => itemLi(it))))));
+    const ul = el('ul', {}, ...live.map((it) => itemLi(it)));
     const past = list.filter(isOver);
     if (past.length) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it))))));
-    box.append(el('h3', { id: `area-${g}`, textContent: `${names[g] || g} (${live.length})` }), ul);
+    const d = el('details', { className: 'area', id: `area-${g}` }, el('summary', {}, `${names[g] || g} `, el('span', { className: 'n', textContent: `· ${live.length} coming up` })), ul);
+    d.open = open.has(d.id);
+    box.append(d);
   }
 }
 
@@ -239,6 +308,8 @@ function renderCityHall() {
   box.replaceChildren(
     el('div', { textContent: line ? `${line}. The Melvin Municipal Office Building is lit.` : 'No council meeting today. The Melvin Municipal Office Building lights up on meeting nights.' }),
     meetings.length ? el('ul', {}, ...meetings.slice(0, 3).map((it) => itemLi(it))) : null);
+  const city = model.building('city');
+  if (city) box.firstChild.append(' ', el('a', { href: '#', textContent: 'Show me', onclick: (e) => { e.preventDefault(); showBuilding(city, true); } }));
 }
 
 function renderRoads() {
@@ -246,10 +317,12 @@ function renderRoads() {
   const ul = $('roads');
   ul.replaceChildren(...list.map((e) => {
     const when = [e.start && e.upcoming ? `from ${fmtWhen({ start: e.start })}` : null, e.end ? `until ${fmtWhen({ start: e.end })}` : null].filter(Boolean).join(' ');
-    const li = el('li', { className: e.onModel ? 'go' : '' },
-      el('div', { className: 't' }, e.road || 'Road', e.upcoming ? ' (coming up)' : '', e.onModel && !e.upcoming ? el('span', { className: 'pin', textContent: 'on the model' }) : null),
-      el('div', { className: 'm', textContent: e.text }),
-      el('div', { className: 'm', textContent: [ROAD_KIND[e.kind], when].filter(Boolean).join(' · ') }));
+    const li = el('li', { className: `it${e.onModel ? ' go' : ''}` },
+      tile(e.kind === 'crash' ? 'alert' : 'cone', e.kind === 'crash' ? '#c0321f' : e.kind === 'work' ? '#e0662a' : '#b8452f', e.onModel && !e.upcoming),
+      el('div', { className: 'body' },
+        el('div', { className: 't' }, e.road || 'Road', e.upcoming ? ' (coming up)' : ''),
+        el('div', { className: 'm', textContent: e.text }),
+        el('div', { className: 'm', textContent: [ROAD_KIND[e.kind], when].filter(Boolean).join(' · ') })));
     if (e.upcoming) li.style.opacity = 0.7;
     if (e.onModel) li.onclick = () => model.lookAt({ cx: e.gx, cy: e.gy, hpx: 0 });
     return li;
@@ -260,11 +333,14 @@ function renderRoads() {
 }
 
 function placeLi(p, now) {
-  const li = el('li', { className: p.bid != null ? 'go' : '' },
-    el('div', { className: 't', textContent: p.name }),
-    el('div', { className: 'm', textContent: [KIND_LABEL[p.kind], p.address].filter(Boolean).join(' · ') }),
-    el('div', { className: 'm', textContent: p.guessed ? `${openLine(p, now)} (hours not listed, so a guess)` : openLine(p, now) }));
-  if (p.bid != null) li.onclick = () => showBuilding(model.building(p.bid), true);
+  const [ic, bg] = BARS.has(p.kind) ? ['beer', '#c99a00'] : p.kind === 'cafe' ? ['coffee', '#8a5a2b'] : ['food', '#b8452f'];
+  const li = el('li', { className: `it${p.bid != null ? ' go' : ''}` },
+    tile(ic, bg, p.bid != null),
+    el('div', { className: 'body' },
+      el('div', { className: 't', textContent: p.name }),
+      el('div', { className: 'm', textContent: [KIND_LABEL[p.kind], p.address].filter(Boolean).join(' · ') }),
+      el('div', { className: 'm', textContent: p.guessed ? `${openLine(p, now)} (hours not listed, so a guess)` : openLine(p, now) })));
+  if (p.bid != null) { li.onclick = () => showBuilding(model.building(p.bid), true); li.onmouseenter = () => showOnModel(p.bid); li.onmouseleave = () => showOnModel(null); }
   return li;
 }
 function renderEats() {
@@ -274,13 +350,14 @@ function renderEats() {
   const open = places.filter((p) => isOpen(p.week, now));
   const bars = open.filter((p) => BARS.has(p.kind));
   box.replaceChildren(
-    el('div', { className: 'sub', textContent: `${open.length} of ${places.length} local places downtown are open now, ${bars.length} of them bars. Open ones have their storefronts lit; open bars have a few people out front after dark.` }),
+    el('div', { className: 'stat' }, tile('beer', '#c99a00'), el('div', { textContent: `${open.length} of ${places.length} local places downtown are open now, ${bars.length} of them bars. Open ones have their storefronts lit; open bars have a few people out front after dark.` })),
     el('details', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, now)))));
 }
 
 /** The card at the top of the paper for a building on the model. */
 function showBuilding(b, look = false) {
   picked = b;
+  model.highlight(b);
   const box = $('card');
   if (!b) { box.replaceChildren(); return; }
   if (look) model.lookAt(b);
@@ -289,13 +366,13 @@ function showBuilding(b, look = false) {
   const now = etNow();
   const name = b.name || ps[0]?.name || 'A downtown building';
   const card = el('div', { className: 'card' },
-    el('button', { textContent: 'close', onclick: () => showBuilding(null) }),
+    el('button', { title: 'Close', ariaLabel: 'Close', onclick: () => showBuilding(null) }, icon('close')),
     el('div', { className: 't', textContent: name }),
     !here.length && !ps.length ? el('div', { className: 'sub', textContent: 'Nothing posted here right now.' }) : null,
     ps.length ? el('ul', {}, ...ps.map((p) => placeLi(p, now))) : null,
     here.length ? el('ul', {}, ...here.map((it) => itemLi(it))) : null);
   box.replaceChildren(card);
-  if (matchMedia('(max-width:980px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (matchMedia('(max-width:900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   else $('paper').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -333,11 +410,30 @@ model = startModel({
   canvas: $('village'),
   map,
   onPick: (b) => {
-    if (b && b.sign) { const h = $(`area-${b.sign}`) || $('around'); h.scrollIntoView({ behavior: 'smooth', block: 'start' }); h.animate?.([{ background: '#ffd77a' }, { background: 'transparent' }], 1600); return; }
+    if (b && b.sign) {
+      const d = $(`area-${b.sign}`);
+      if (d) { d.open = true; d.classList.remove('flash'); void d.offsetWidth; d.classList.add('flash'); }
+      (d || $('around')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     showBuilding(b);
   },
   onHover: (b) => { $('village').style.cursor = b ? 'pointer' : 'grab'; },
+  onView: () => syncTools(),
 });
+// ---------- controls on the model ----------
+function syncTools() { $('zin').disabled = !model.canZoom(1); $('zout').disabled = !model.canZoom(-1); }
+$('zin').onclick = () => { model.zoomIn(); syncTools(); };
+$('zout').onclick = () => { model.zoomOut(); syncTools(); };
+$('home').onclick = () => model.home();
+$('labels').onclick = (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); model.setLabels(on); };
+$('fold').onclick = (e) => { const on = $('app').classList.toggle('folded'); e.currentTarget.setAttribute('aria-pressed', on); e.currentTarget.title = on ? 'Bring the paper back' : 'Fold the paper away'; };
+new ResizeObserver(syncTools).observe($('village'));
+// the hint goes once someone has had a look around, or after a while
+if (matchMedia('(pointer:coarse)').matches) $('hint').textContent = 'Drag to look around · pinch to zoom · tap a building';
+const dropHint = () => $('hint').classList.add('gone');
+$('village').addEventListener('pointerdown', dropHint, { once: true });
+setTimeout(dropHint, 12e3);
 placeOnModel();
 await Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
 refreshScene();
