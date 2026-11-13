@@ -10,7 +10,9 @@
 // something; it never wanders off on its own.
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
-export function startModel({ canvas: cv0, map: MAP, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
+import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
+
+export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
@@ -34,6 +36,9 @@ const fmtTime=d=>{const p=nyParts(d);let h=+p.hour%12;if(!h)h=12;return h+':'+p.
 const ampm=d=>+nyParts(d).hour<12?'AM':'PM';
 function sunTimes(){const base=nyDate(0,0).getTime();let rise=null,set=null,prev=sunPos(new Date(base)).alt;for(let m=2;m<1440;m+=2){const a=sunPos(new Date(base+m*60000)).alt;if(prev<-0.833&&a>=-0.833)rise=new Date(base+m*60000);if(prev>=-0.833&&a<-0.833)set=new Date(base+m*60000);prev=a}return{rise,set}}
 const PREVIEW={dawn:[6,52],day:[12,30],dusk:[17,20],night:[22,45]};
+// ?date=2026-04-05 previews the trees on another day of the year
+const DATEQ=(()=>{const q=new URLSearchParams(location.search).get('date');const d=q&&new Date(q+'T12:00:00-05:00');return d&&!isNaN(d)?d:null})();
+const sceneDate0=()=>DATEQ||new Date();
 const sceneDate=()=>S.time==='now'?new Date():nyDate(...PREVIEW[S.time]);
 
 // ---------- geometry ----------
@@ -69,6 +74,7 @@ const S={time:'now',wx:'clear',labels:false};
 let L={version:0,wx:'clear',storm:false,fog:false,cloudy:false,windMph:0,tempF:null,council:{lit:false,inSession:false},
   lit:new Map(),strings:new Set(),crowds:[],trucks:[],closures:[],bubbles:[],focus:[],signs:[]};
 let signRects=[];
+let WIND=windOn(0,0,null),DOY=dayOfYear(sceneDate0());const blowing=makeBlowing();
 let SUN=sunPos(new Date());
 const evening=()=>SUN.alt<4,night=()=>SUN.alt<-8,lampsOn=()=>SUN.alt<2;
 function surf(col,top){if(S.wx==='snow'&&top)return mix(col,'#f5f7fb',.78);if(S.wx==='pollen'&&top)return mix(col,'#e8d860',.16);return col}
@@ -384,7 +390,7 @@ function buildShadows(){SHM=null;
   const R=4,mc=mk(Math.ceil(GX*R),Math.ceil(GY*R)),m=mc.getContext('2d');m.setTransform(R,0,0,R,0,0);m.fillStyle=m.strokeStyle='#2c2147';
   const k=1/Math.tan(Math.max(4,SUN.alt)*rad),vx=-Math.sin(SUN.az*rad),vy=Math.cos(SUN.az*rad);
   m.lineJoin='round';for(const b of blds){if(!b.canopy){m.lineWidth=.32;m.beginPath();b.pts.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.closePath();m.stroke()}const L=Math.min(b.hm*k,b.hm*8)/M;const sh=hull(b.pts.concat(b.pts.map(p=>[p[0]+vx*L,p[1]+vy*L])));m.beginPath();sh.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.closePath();m.fill()}
-  for(const o of pts0){if(o.kind==='tree'){const L=Math.min(7*k,40)/M*o.s;m.beginPath();m.ellipse(o.gx+vx*L,o.gy+vy*L,.22*o.s,.22*o.s,0,0,7);m.fill()}else if(o.kind==='car'){const L=Math.min(1.5*k,8)/M;m.beginPath();const r=o.r;const h=hull(r.concat(r.map(p=>[p[0]+vx*L,p[1]+vy*L])));h.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.fill()}}
+  for(const o of pts0){if(o.kind==='tree'){const lf=look(o.sp,DOY,o.seed).leaf,r=o.r*.8/M,L=Math.min(o.h*.6*k,o.h*5)/M;m.globalAlpha=['loblolly','magnolia','cedar','holly'].includes(o.sp)?1:.35+.65*lf;m.beginPath();m.ellipse(o.gx+vx*L,o.gy+vy*L,r,r,0,0,7);m.fill();m.globalAlpha=1}else if(o.kind==='car'){const L=Math.min(1.5*k,8)/M;m.beginPath();const r=o.r;const h=hull(r.concat(r.map(p=>[p[0]+vx*L,p[1]+vy*L])));h.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.fill()}}
   SHM={c:mc,R}}
 function drawShadows(c){if(!SHM)return;const R=SHM.R;
   c.save();c.setTransform(...BT);c.transform(TW/R,TH/R,-TW/R,TH/R,ox,oy);c.globalAlpha=S.wx==='snow'?.22:.34;c.drawImage(SHM.c,0,0);c.restore();
@@ -404,10 +410,13 @@ const pts0=[];
   const at=(d,x,y)=>{if(x<=.3||y<=.3||x>=GX-.3||y>=GY-.3)return false;const i=((Math.floor(y*R))*mw+Math.floor(x*R))*4;return d[i]>128};
   const parks=MAP.PK.map(p=>pairs(p.p));
   let s=3;const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647};
-  for(let y=0;y<GY;y+=.8)for(let x=0;x<GX;x+=.8){const gx=x+rnd()*.7,gy=y+rnd()*.7;if(!at(px,gx,gy))continue;const inPark=parks.some(p=>pip(gx,gy,p));if(rnd()<(inPark?.5:isVeg(gx,gy)?.32:0))pts0.push({kind:'tree',gx,gy,s:.8+rnd()*.5,pine:rnd()<.3})}
+  // the real trees (public/model/trees.json); without that file, fall back to the old guessed ones
+  const real=loadTrees(TREES);
+  if(real.length)pts0.push(...real);
+  else for(let y=0;y<GY;y+=.8)for(let x=0;x<GX;x+=.8){const gx=x+rnd()*.7,gy=y+rnd()*.7;if(!at(px,gx,gy))continue;const inPark=parks.some(p=>pip(gx,gy,p));if(rnd()<(inPark?.5:isVeg(gx,gy)?.32:0))pts0.push({kind:'tree',gx,gy,h:9+rnd()*6,r:3+rnd()*2,sp:rnd()<.3?'loblolly':'willowoak',seed:rnd()})}
   // street trees and lamps along main streets
   MAP.TR.forEach(t=>{const p=pairs(t.p);let acc=0,acc2=0;const offT=(RW[t.c]/2+2.6)/M,offL=(RW[t.c]/2+1.1)/M;for(let i=0;i<p.length-1;i++){const[a,b]=[p[i],p[i+1]];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(!L)continue;const ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L;for(let d=0;d<L;d+=.15){acc+=.15;acc2+=.15;const bx=a[0]+ux*d,by=a[1]+uy*d;
-    if(acc2>12/M&&t.c<=3){acc2=0;for(const sd of [-1,1]){const gx=bx-uy*offT*sd,gy=by+ux*offT*sd;if(at(bpx,gx,gy)&&rnd()<.75)pts0.push({kind:'tree',gx,gy,s:.65+rnd()*.2,pine:false,street:1})}}
+    if(acc2>12/M&&t.c<=3){acc2=0;for(const sd of [-1,1]){const gx=bx-uy*offT*sd,gy=by+ux*offT*sd;if(!real.length&&at(bpx,gx,gy)&&rnd()<.75)pts0.push({kind:'tree',gx,gy,h:7,r:2.5,sp:'willowoak',seed:rnd()})}}
     if(acc>30/M&&t.c<=3){acc=0;const sd=rnd()<.5?1:-1;const gx=bx-uy*offL*sd,gy=by+ux*offL*sd;if(at(bpx,gx,gy))pts0.push({kind:'lamp',gx,gy})}}}});
   // parked cars in surface lots
   const carCols=['#eeeef2','#eeeef2','#f6f4ee','#c4c8d0','#c4c8d0','#9aa0aa','#5c6270','#2c2c34','#2c2c34',C.Brick,C['Aggie blue'],'#6a7f96'];
@@ -422,12 +431,8 @@ const pts0=[];
   pts0.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
 })();
 const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);return{cx:q.reduce((a,p)=>a+p[0],0)/q.length,cy:q.reduce((a,p)=>a+p[1],0)/q.length,rx:16/M,ry:11/M}})();
-function drawTree(c,o){
-  const[x,y]=P(o.gx,o.gy);const s=o.s*1.15;
-  fr(c,Math.round(x-1),Math.round(y-9*s),2,Math.round(9*s),'#7a5236');
-  if(o.pine){const cols=[C.Loblolly,mix(C.Loblolly,C.Pine,.5),C.Pine];for(let k=0;k<3;k++){const by=y-7*s-k*6*s,wd=(8-k*2)*s;poly(c,[[x-wd,by],[x+wd,by],[x,by-10*s]],surf(cols[k],k===2))}}
-  else{const g=o.street?'#4caa55':C.Pine;circ(c,x,y-15*s,8*s,mix(g,SH,.2));circ(c,x-1,y-16*s,7*s,surf(g,false));circ(c,x-3,y-19*s,4*s,surf(mix(g,C.Fescue,.55),true));fr(c,Math.round(x-4*s),Math.round(y-21*s),1,1,mix(C.Fescue,HI,.4))}
-}
+function drawTree(c,o){drawTreeSp(c,o,{P,fr,circ,poly,line,mix,surf,SH,HI,doy:DOY,lean:WIND.lean})}
+const FLAGS=loadFlags(TREES);
 function drawLamp(c,o){const[x,y]=P(o.gx,o.gy);const on=lampsOn();if(on)eg(x+.5,y,15,.3,.5);fr(c,Math.round(x),Math.round(y-16),1,16,SH);fr(c,Math.round(x-1),Math.round(y-17),3,2,SH);if(on){ed([x+.5,y-15.5],'#fff2c4',2);eg(x+.5,y-15,6,.4)}}
 function drawString(c,o){[o.a,o.b].forEach(p=>line(c,P(p[0],p[1]),P(p[0],p[1],22),SH));if(!lampsOn())return;for(let k=0;k<=56;k++){const t=k/56;const gx=o.a[0]+(o.b[0]-o.a[0])*t,gy=o.a[1]+(o.b[1]-o.a[1])*t;ed(P(gx,gy,22-Math.sin(t*Math.PI*4)**2*5),k%2?'#ffe9a8':'#ffb98a')}}
 function drawCarS(c,o){drawPrism(c,o.r,0,4,o.col,o.col);const[ax,ay]=[(o.r[0][0]+o.r[2][0])/2,(o.r[0][1]+o.r[2][1])/2];const r2=o.r.map(p=>[ax+(p[0]-ax)*.6,ay+(p[1]-ay)*.8]);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2))}
@@ -468,10 +473,8 @@ function drawCut(box,fn,cuts,dst){
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
   for(const b of blds){b.box=boxOf(b.pts,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
-    if(o.kind==='tree'){const s=o.s*1.15;fp=[[o.gx,o.gy]];zmax=31*s;pad=10*s+1;smp=[[o.gx,o.gy,0]];
-      const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x-1),Math.round(y-9*s),2,Math.round(9*s));
-      if(o.pine){for(let k=0;k<3;k++){const by=y-7*s-k*6*s,wd=(8-k*2)*s;q.moveTo(x-wd,by);q.lineTo(x+wd,by);q.lineTo(x,by-10*s);q.closePath()}}
-      else{q.moveTo(x+8*s,y-15*s);q.arc(x,y-15*s,8*s,0,7);q.moveTo(x-1+7*s,y-16*s);q.arc(x-1,y-16*s,7*s,0,7);q.moveTo(x-3+4*s,y-19*s);q.arc(x-3,y-19*s,4*s,0,7)}o.occ=q}
+    if(o.kind==='tree'){const hp=Math.max(9,o.h*2),rp=Math.max(3,o.r*1.9)+4;fp=[[o.gx,o.gy]];zmax=hp+4;pad=rp+1;smp=[[o.gx,o.gy,0]];
+      const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.addPath(treeOutline(o,WIND.lean),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));o.occ=q}
     else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=20;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-16),1,16);q.rect(Math.round(x-1),Math.round(y-17),3,2);o.occ=q}
     else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h)}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
@@ -503,10 +506,10 @@ function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
   const t0=performance.now();t=renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
 function trimTiles(keep){while(tiles.size>keep){const k=tiles.keys().next().value;tiles.delete(k)}}
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());buildGroundTex();buildShadows();stver++;
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
-const stateKey=()=>[S.time,S.wx,L.version,Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
+const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
 
 // ---------- traffic ----------
 // Streets run past the edge of the model; cars, people and the train only use the parts on the model.
@@ -677,10 +680,12 @@ function frame(ts){
   for(const t of L.trucks){dyn.push({kind:'truck',gx:t.gx,gy:t.gy});for(let i=0;i<5;i++)dyn.push({kind:'pp',gx:t.gx-.35-i*.14,gy:t.gy+.5,skin:skins[(i+2)%6],shirt:shirts[(i+5)%9],f:blink(T+i,.4,.4)})}
   if(!reduce){if(trainD>trainCh.L+14){trainWait-=dt;if(trainWait<=0){trainD=-12;trainWait=12}}else trainD+=dt*2.2}
   for(let k=0;k<7;k++){const d=trainD-k*2.3;if(d<0||d>trainCh.L)continue;const[gx,gy,ux,uy]=along(trainCh,d);if(!vis(gx,gy))continue;dyn.push({kind:'train',gx,gy,ux,uy,eng:k===0})}
+  for(const f of FLAGS)if(vis(f.gx,f.gy))dyn.push(f);
   dyn.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
   const drawDyn=(o,c)=>{
     if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(c,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
       if(lamp){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,2.5),'#fff4c8',2)}if(o.stopped||lamp){ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,2.5),o.stopped?'#ff3a2a':'#c84a40',o.stopped?2:1)}if(o.haz&&blink(T,.4,.4)){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,3),'#ffb040',2);ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,3),'#ffb040',2)}}
+    else if(o.kind==='flag')drawFlag(c,o,{P,fr,line,SH,T,wind:WIND});
     else if(o.kind==='pp'){const[x,y]=P(o.gx,o.gy);person(c,x,y-(o.bob?1:0),o.skin,o.shirt,o.f)}
     else if(o.kind==='sig'){const[x,y]=P(o.gx,o.gy);const X=Math.round(x),Y=Math.round(y);fr(c,X,Y-15,1,15,'#3a3a40');fr(c,X-1,Y-21,3,7,'#2a2a30');const col={r:'#ff3b2a',y:'#ffc02a',g:'#3ee06a'}[o.lt],z={r:-20,y:-18,g:-16}[o.lt];fr(c,X,Y+z,1,1,col);ed([X+.5,Y+z+.5],col,1);if(lamp)eg(X+.5,Y+z+.5,4,.5,1,o.lt==='r'?'255,80,60':o.lt==='y'?'255,190,60':'80,240,120')}
     else if(o.kind==='stopsign'){const[x,y]=P(o.gx,o.gy);const X=Math.round(x),Y=Math.round(y);fr(c,X,Y-10,1,10,'#8a8a90');fr(c,X-1,Y-14,3,4,'#d22a20');fr(c,X-2,Y-13,5,2,'#d22a20');fr(c,X,Y-13,1,1,'#ffffff')}
@@ -690,7 +695,7 @@ function frame(ts){
     else if(o.kind==='train'){const r=rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);drawPrism(c,r,1,12,o.eng?C.Slate:'#c0603c',o.eng?'#33509a':'#8f4228');if(o.eng){const hp=P(o.gx+o.ux*9.6/M,o.gy+o.uy*9.6/M,7);ed(hp,'#fff3c0',2);if(lamp)eg(hp[0],hp[1]+3,24,.45,.6)}}
   };
   // Anything with a building, tree, lamp or parked car in front of it is cut out where those stand (see drawCut).
-  const DB={sig:[6,26,6,3],stopsign:[6,18,6,3],car:[14,16,14,6],pp:[5,13,6,3],cone:[4,7,4,2],barrel:[4,9,4,2],truck:[18,28,18,8],train:[34,40,34,16]};
+  const DB={sig:[6,26,6,3],stopsign:[6,18,6,3],car:[14,16,14,6],pp:[5,13,6,3],cone:[4,7,4,2],barrel:[4,9,4,2],truck:[18,28,18,8],train:[34,40,34,16],flag:[4,34,16,4]};
   for(const o of dyn){let smp;if(o.kind==='car'||o.kind==='train'){const r=o.kind==='car'?rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M):rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);smp=r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}else if(o.kind==='truck'){smp=rect(o.gx,o.gy,1,0,6.5/M,2.6/M).map(p=>[p[0],p[1],0])}else smp=[[o.gx,o.gy,0]];
     const cuts=blockersFor(smp).map(b=>silhouette(b).p);if(o.kind!=='train')cuts.push(...occludersAt(o.gx,o.gy));
     if(!cuts.length){drawDyn(o,w);continue}
@@ -698,6 +703,8 @@ function frame(ts){
   // live clocks: Lincoln Financial's bulb sign (time, then temperature) and the depot clock
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
   for(const t of L.trucks){const[sx,sy]=P(t.gx,t.gy,13);for(let i=0;i<5;i++){const ph=(T*.5+i/5)%1;w.globalAlpha=(1-ph)*.55;w.fillStyle='#f2eee6';w.beginPath();w.arc(sx+ph*10+Math.sin(ph*6+i)*2,sy-ph*26,2+ph*4,0,7);w.fill()}w.globalAlpha=1}
+  // leaves and petals blowing off the trees on screen, in the wind's real direction (model pixels)
+  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;const lk=look(o.sp,DOY,o.seed);if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
   // weather in screen pixels
   w.setTransform(1,0,0,1,0,0);const ps=Math.max(1,Math.round(VS));
   if(S.wx==='rain'){w.fillStyle='rgba(205,215,235,.55)';const slant=20+Math.min(30,L.windMph)*4,nr=Math.round(rain.length*(L.intensity==='light'?.4:L.intensity==='heavy'?1:.7));rain.forEach((r,i)=>{if(i>=nr)return;if(!reduce){r[0]-=dt*slant*ps;r[1]+=dt*300*ps;if(r[1]>H){r[1]=-4;r[0]=Math.random()*W+40}if(r[0]<0)r[0]+=W}w.fillRect(r[0]|0,r[1]|0,ps,4*ps)})}
@@ -753,6 +760,7 @@ function update(scene){
   const prevKey=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   L={...L,...scene};
   S.wx=L.wx==='storm'?'rain':L.wx;L.storm=L.wx==='storm';
+  const pw=windKey(WIND);WIND=windOn(L.windMph,L.windGustMph,L.windFromDeg);
   // closures snap to the nearest street the cars drive on
   L.closures=(scene.roads||[]).map(r=>{let best=null;for(const ch of chains){for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((r.gx-a0)*dx+(r.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-r.gx,a1+dy*t-r.gy);if(!best||d<best.dist)best={ch,dist:d,d:ch.cum[i-1]+Math.sqrt(L2)*t}}}return best&&best.dist<4?{...r,ch:best.ch,d:best.d}:null}).filter(Boolean);
   // and onto the traffic lanes: a full closure blocks both directions there, so cars queue before it and route round it
@@ -761,7 +769,7 @@ function update(scene){
     if(best&&best.d<4){k.lanes.push({lane:best.l,s:best.s});if(best.l.rev)k.lanes.push({lane:best.l.rev,s:best.l.L-best.s});if(k.full)for(const q of k.lanes)q.lane.blocked=true}}
   if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
-  if(key!==prevKey){L.version++;if(started)restatic()}
+  if(key!==prevKey||windKey(WIND)!==pw){L.version++;if(started)restatic()}
 }
 // Each area's signpost goes where a line from the middle of the model toward that area leaves the model,
 // a little inside the base, nudged off buildings and away from the other signs.
