@@ -26,6 +26,10 @@
   li .m { font-size:12px; color:var(--muted); }
   li a { color:var(--accent); font-size:12px; }
   .dot { display:inline-block; width:8px; height:8px; margin-right:6px; vertical-align:1px; }
+  .eat { padding:8px; border:2px solid var(--edge); border-radius:3px; background:#fff7e0; margin:6px 0; }
+  .eat .t { font-weight:bold; }
+  .eat .m { font-size:12px; color:var(--muted); }
+  .eat a { color:var(--accent); }
   button.clear { font:inherit; font-size:12px; background:none; border:none; color:var(--accent); cursor:pointer; padding:0; }
   @media (max-width: 860px) { .wrap { flex-direction:column; } aside { flex:none; max-height:none; } }
 </style>
@@ -46,8 +50,10 @@
     <h2>On the roads</h2>
     <div class="sub" id="roadsSource"></div>
     <ul id="roads"></ul>
+    <h2>Food &amp; drink</h2>
+    <div id="eats"></div>
     <h2>About</h2>
-    <p class="sub">A watch-only pixel village of Greensboro, NC. Items come from public posts gathered into a digest every 30 minutes. Posts by private individuals show no names. Each item links to its original post.</p>
+    <p class="sub">A watch-only pixel village of Greensboro, NC. Items come from public posts gathered into a digest every 30 minutes. Posts by private individuals show no names. Each item links to its original post. Restaurants, bars and their hours come from OpenStreetMap (© OpenStreetMap contributors, ODbL); chains are left out.</p>
   </aside>
 </div>
 <script type="module" src="village.js"></script>

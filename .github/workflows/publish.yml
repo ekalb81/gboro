@@ -65,6 +65,15 @@ jobs:
           key: civic-youtube-${{ github.run_id }}
           restore-keys: civic-youtube-
 
+      # Restaurants and bars from OpenStreetMap (public business listings) are refreshed about once a day,
+      # so the last copy is kept between runs and the collector skips the fetch while it is fresh.
+      - name: Restore last restaurants and bars
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/eats.json
+          key: eats-${{ github.run_id }}
+          restore-keys: eats-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -94,6 +103,13 @@ jobs:
         with:
           path: data/civic/youtube.xml
           key: civic-youtube-${{ github.run_id }}
+
+      - name: Save restaurants and bars
+        if: hashFiles('public/data/eats.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/eats.json
+          key: eats-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |

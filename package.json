@@ -12,6 +12,7 @@
     "weather": "node scripts/fetch-weather.mjs",
     "civic": "node scripts/civic.mjs",
     "fetch": "node scripts/fetch-digests.mjs",
+    "eats": "node scripts/fetch-eats.mjs",
     "feeds": "node scripts/fetch-feeds.mjs",
     "roads": "node scripts/fetch-roads.mjs",
     "dev": "node scripts/ingest.mjs && (node scripts/fetch-weather.mjs || true) && (node scripts/fetch-roads.mjs || true) && node scripts/serve.mjs",

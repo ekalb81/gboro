@@ -108,3 +108,16 @@ The feed URLs in `data/sources.json` haven't been checked against the live sites
 ## Council meetings and city events
 
 `npm run civic` builds `public/data/civic.json` from the City's published council schedule, corrected during the year by City posts, local news and the City's YouTube recordings; City Hall lights up on council nights. See [docs/civic.md](docs/civic.md).
+
+## Restaurants and bars
+
+```sh
+npm run eats     # fetch local restaurants, bars, cafes and breweries from OpenStreetMap
+```
+
+- **Collector** (`scripts/fetch-eats.mjs`, `scripts/eats-lib.mjs`): one Overpass API query for named restaurants, bars, pubs, nightclubs, cafes, takeout and breweries around Greensboro, written to `public/data/eats.json` (git-ignored). Chains (anything with an OSM `brand` tag) are left out; `--keep-chains` keeps them. Overpass servers are often busy or unreachable, so if it doesn't answer the collector falls back to reading map tiles from the main OSM API (about 40 small requests, a second apart). `--source=overpass` or `--source=osm-api` forces one. Places change slowly, so the publish workflow runs it with `--if-older-than=20` (it is in `scripts/collectors.json`) and keeps the last `eats.json` in an Actions cache; a failed fetch leaves the previous copy in place.
+- **Placement**: the map is functional, not to scale, so each place goes to its nearest "hub" (Elm & Market, UNCG, A&T, Coliseum, Friendly Center, Battleground, Benbow & Lee, College Hill) and keeps its real direction and rough distance from it. Hubs and their scales are in `HUBS` in `eats-lib.mjs`. Places outside every hub's radius are skipped.
+- **Hours**: OSM `opening_hours` is parsed for the common shapes (day ranges, several time ranges, past-midnight closing, `off`, `24/7`). Anything fancier counts as "not listed", and the village uses typical hours for that kind of place, labelled as a guess.
+- **Village** (`public/eats.js`): each place is a little shop. Open places show a green light, their windows glow after dark, and open bars get a neon sign and a few people out front in the evening. A bar or restaurant named as the venue of a digest event today gets a pennant and a crowd. Hover a shop for its name and whether it's open; click it for details in the side panel.
+
+Data © OpenStreetMap contributors, under the ODbL. Credit it wherever the site is published.

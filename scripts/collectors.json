@@ -6,7 +6,8 @@
     { "name": "Weather (NWS)", "script": "scripts/fetch-weather.mjs" },
     { "name": "Crime (City + FBI)", "script": "scripts/fetch-crime.mjs" },
     { "name": "Council meetings and city events", "script": "scripts/civic.mjs" },
-    { "name": "Road closures (DriveNC)", "script": "scripts/fetch-roads.mjs" }
+    { "name": "Road closures (DriveNC)", "script": "scripts/fetch-roads.mjs" },
+    { "name": "Restaurants and bars (OpenStreetMap)", "script": "scripts/fetch-eats.mjs", "args": ["--if-older-than=20"], "timeoutMinutes": 8 }
   ],
   "ingest": { "script": "scripts/ingest.mjs" }
 }

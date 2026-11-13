@@ -3,6 +3,7 @@
 
 import { loadCivic, councilState, drawCouncilNight, councilLine } from './civic.js';
 import { initRoads, drawRoads, isClosed } from './roads.js';
+import { loadEats, placeShops, drawShops, drawEatsOverlay, setEventItems } from './eats.js';
 
 const T = 8; // tile size in canvas pixels
 const TZ = 'America/New_York';
@@ -50,6 +51,7 @@ async function refreshItems() {
       `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}${civicCount ? ' and the city calendar' : ''}. Updated ${when}.`;
     renderList();
     spawnCrowds();
+    setEventItems(items);
   } catch (e) {
     document.getElementById('status').textContent = 'No data yet. Run `npm run ingest`.';
     console.error(e);
@@ -142,6 +144,9 @@ function buildBackground() {
   // Landmarks.
   windows = [];
   for (const d of map.districts) { block(d.x, d.y, d.w, d.h, 1); drawLandmark(g, d); }
+
+  // Restaurants and bars (eats.js) claim their tiles before houses fill in.
+  placeShops({ W, H, free, block });
 
   // Houses near roads, denser near districts.
   const near = (x, y, r) => { for (let j = y - r; j <= y + r; j++) for (let i = x - r; i <= x + r; i++) if (i >= 0 && j >= 0 && i < W && j < H && roadMask[j * W + i]) return true; return false; };
@@ -429,6 +434,7 @@ function skyAlpha(h) {
 
 function frame(t) {
   ctx.drawImage(bg, 0, 0);
+  drawShops(ctx, t);
   for (const f of folks) if (f.kind === 'walk') stepWalker(f);
   for (const f of [...folks].sort((a, b) => a.py - b.py)) drawPerson(f, t);
   const a = Math.min(0.6, skyAlpha(etHour()) + (wx.precip !== 'none' ? 0.1 : 0));
@@ -440,6 +446,7 @@ function frame(t) {
   drawCouncilNight(ctx, map.districts.find((d) => d.id === 'downtown'), T, hallWindows, council, t);
   drawWeather(t);
   drawRoads(t, a); // after the night tint, so barrel lamps and crash lights stand out
+  drawEatsOverlay(ctx, t, a);
   drawMarkers(t);
   for (const f of folks) if (f.say && f.say.until > t) drawBubble(f); else if (f.say) f.say = null;
   requestAnimationFrame(frame);
@@ -516,6 +523,7 @@ canvas.addEventListener('click', (e) => { const d = hit(e); select(d ? (selected
 
 // ---------- boot ----------
 map = await loadJSON('data/map.json');
+await loadEats();
 buildBackground();
 for (let i = 0; i < 40; i++) folks.push(newWalker());
 await refreshItems();
