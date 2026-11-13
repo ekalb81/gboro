@@ -74,3 +74,32 @@ test('a failed token refresh says why', async () => {
   const fakeFetch = async () => Response.json({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }, { status: 400 });
   await assert.rejects(getAccessToken({ clientId: 'i', clientSecret: 's', refreshToken: 'r' }, fakeFetch), /expired or revoked/);
 });
+
+test('waits and retries when Gmail says the per-minute quota is used up', async () => {
+  const limited = JSON.stringify({ error: { code: 403, errors: [{ reason: 'rateLimitExceeded' }] } });
+  const answers = [
+    { ok: false, status: 403, text: limited },
+    { ok: false, status: 429, text: 'Too Many Requests' },
+    { ok: true, status: 200, json: { id: 'm1' } },
+  ];
+  let calls = 0;
+  const fetchImpl = async () => {
+    const a = answers[calls++];
+    return { ok: a.ok, status: a.status, headers: new Map(), text: async () => a.text, json: async () => a.json };
+  };
+  const slept = [];
+  const gmail = gmailClient('tok', fetchImpl, { sleep: async (ms) => slept.push(ms), waits: [10, 20, 30], gapMs: 0 });
+  assert.deepEqual(await gmail.getMessage('m1'), { id: 'm1' });
+  assert.equal(calls, 3);
+  assert.deepEqual(slept, [10, 20]);
+});
+
+test('gives up after the last retry, and never retries other errors', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 429, headers: new Map(), text: async () => 'slow down' });
+  const gmail = gmailClient('tok', fetchImpl, { sleep: async () => {}, waits: [1, 1], gapMs: 0 });
+  await assert.rejects(gmail.getMessage('m1'), /failed \(429\)/);
+  let calls = 0;
+  const denied = gmailClient('tok', async () => { calls++; return { ok: false, status: 403, headers: new Map(), text: async () => 'insufficientPermissions' }; }, { sleep: async () => {}, gapMs: 0 });
+  await assert.rejects(denied.getMessage('m1'), /failed \(403\)/);
+  assert.equal(calls, 1);
+});
