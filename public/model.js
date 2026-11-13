@@ -586,7 +586,7 @@ function fit(){const r=cv.getBoundingClientRect();if(!r.width||!r.height)return;
   while(zoom<8&&!zoomOK(zoom,dw,dh)&&Math.ceil(dw/zoom)*Math.ceil(dh/zoom)>MAXPX)zoom++;while(zoom>1&&Math.ceil(dw/zoom)<220)zoom--;
   const nW=Math.ceil(dw/zoom),nH=Math.ceil(dh/zoom);if(nW===W&&nH===H)return;
   const mx=camX+W/2,my=camY+H/2;W=nW;H=nH;makeLayers();reseed();camX=clampX(mx-W/2);camY=clampY(my-H/2);tgtX=camX;tgtY=camY;glide=false;
-  if(started)requestAnimationFrame(frame)}
+  if(started&&reduce)requestAnimationFrame(frame)}
 function zoomBy(d){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const dw=Math.round(r.width*dpr),dh=Math.round(r.height*dpr);const z=zoom+d;if(z<1||z>8||!zoomOK(z,dw,dh))return false;zoom=z;fit();return true}
 const canZoom=d=>{const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const z=zoom+d;return z>=1&&z<=8&&zoomOK(z,Math.round(r.width*dpr),Math.round(r.height*dpr))};
 new ResizeObserver(()=>fit()).observe(cv);fit();
