@@ -257,13 +257,17 @@ export function drawTree(c, o, h) {
 }
 
 /** The tree's outline as a Path2D in model pixels relative to its base point, for cutting things out behind it. */
-export function treeOutline(o, lean = [0, 0]) {
+export function treeOutline(o, lean = [0, 0], doy = null) {
   const sp = SPECIES[o.sp] || SPECIES.redmaple;
   const { hp, rp } = dims(o);
   const p = new Path2D();
+  // a bare deciduous tree hides only its trunk; a thinning crown hides less of what is behind it
+  const leaf = sp.ever || doy == null ? 1 : look(o.sp, doy, o.seed).leaf;
+  if (leaf < 0.35) { p.rect(-1, -hp * 0.4, 2, hp * 0.4); return p; }
   if (sp.shape === 'pine') { const cr = Math.max(4, rp * 0.8); p.ellipse(lean[0] * 0.75, lean[1] * 0.75 - hp * 0.75, cr * 1.1, hp * 0.22, 0, 0, 7); p.rect(-1, -hp * 0.6, 2, hp * 0.6); return p; }
   if (sp.shape === 'cedar' || sp.shape === 'holly') { const w = Math.max(3, rp * 0.8); p.moveTo(-w, -2); p.lineTo(w, -2); p.lineTo(lean[0], lean[1] - hp); p.closePath(); return p; }
-  p.ellipse(lean[0] * 0.6, lean[1] * 0.6 - hp * 0.6, rp, Math.min(Math.max(rp * 0.9, hp * 0.3), hp * 0.48), 0, 0, 7);
+  const f = leaf < 0.7 ? 0.75 : 1;
+  p.ellipse(lean[0] * 0.6, lean[1] * 0.6 - hp * 0.6, rp * f, Math.min(Math.max(rp * 0.9, hp * 0.3), hp * 0.48) * f, 0, 0, 7);
   p.rect(-1, -hp * 0.4, 2, hp * 0.4);
   return p;
 }

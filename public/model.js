@@ -474,7 +474,7 @@ function drawCut(box,fn,cuts,dst){
   for(const b of blds){b.box=boxOf(b.pts,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
     if(o.kind==='tree'){const hp=Math.max(9,o.h*2),rp=Math.max(3,o.r*1.9)+4;fp=[[o.gx,o.gy]];zmax=hp+4;pad=rp+1;smp=[[o.gx,o.gy,0]];
-      const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.addPath(treeOutline(o,WIND.lean),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));o.occ=q}
+      const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.addPath(treeOutline(o,WIND.lean,DOY),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));o.occ=q}
     else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=20;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-16),1,16);q.rect(Math.round(x-1),Math.round(y-17),3,2);o.occ=q}
     else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h)}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
