@@ -56,6 +56,15 @@ jobs:
           key: weather-${{ github.run_id }}
           restore-keys: weather-
 
+      # The City's YouTube feed (public videos only) is kept between runs, because YouTube's feeds
+      # sometimes answer 404 for a while; civic.mjs falls back to the last good copy.
+      - name: Restore last City YouTube feed
+        uses: actions/cache/restore@v4
+        with:
+          path: data/civic/youtube.xml
+          key: civic-youtube-${{ github.run_id }}
+          restore-keys: civic-youtube-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -77,6 +86,13 @@ jobs:
         with:
           path: public/data/weather.json
           key: weather-${{ github.run_id }}
+
+      - name: Save City YouTube feed
+        if: hashFiles('data/civic/youtube.xml') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/civic/youtube.xml
+          key: civic-youtube-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |
