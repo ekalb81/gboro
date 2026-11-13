@@ -39,9 +39,37 @@ test('fetches both series with the key and the GPD agency code', async () => {
     const series = Object.fromEntries(monthKeys(new Date('2026-11-12T00:00:00Z'), 8).map((k, i) => [k, i < 7 ? v : null]));
     return { ok: true, json: async () => resp(series) };
   };
-  const m = await fetchFbiMonthly({ apiKey: 'k', now: new Date('2026-11-12T00:00:00Z'), fetchImpl: fakeFetch });
+  const m = await fetchFbiMonthly({ apiKey: 'k', now: new Date('2026-11-12T00:00:00Z'), fetchImpl: fakeFetch, wait: async () => {} });
   assert.equal(urls.length, 2);
   assert.ok(urls.every((u) => u.includes('/NC0410200/') && u.includes('API_KEY=k') && u.includes('from=04-2026') && u.includes('to=11-2026')));
   assert.equal(m.thisMonth.month, '2026-10');
   assert.equal(m.thisMonth.total, 860);
+});
+
+test('retries an FBI outage, then gives up with the last error', async () => {
+  const { getJsonWithRetry: getWithRetry } = await import('../scripts/crime-fbi.mjs');
+  const waits = [];
+  const wait = async (ms) => { waits.push(ms); };
+  let calls = 0;
+  const flaky = async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200, json: async () => ({ fine: 1 }) });
+  assert.deepEqual(await getWithRetry('u', { fetchImpl: flaky, wait }), { fine: 1 });
+  assert.deepEqual(waits, [5000, 10000]);
+
+  calls = 0;
+  const down = async () => { calls++; throw Object.assign(new Error('t'), { name: 'TimeoutError' }); };
+  await assert.rejects(getWithRetry('u', { fetchImpl: down, wait, timeoutMs: 1000 }), /timed out after 1s/);
+  assert.equal(calls, 3);
+
+  // Headers arrive, then the body stalls past the time limit: that's retried too.
+  calls = 0;
+  const stall = async () => (++calls < 2
+    ? { ok: true, status: 200, json: async () => { throw Object.assign(new Error('t'), { name: 'TimeoutError' }); } }
+    : { ok: true, status: 200, json: async () => ({ fine: 2 }) });
+  assert.deepEqual(await getWithRetry('u', { fetchImpl: stall, wait }), { fine: 2 });
+  assert.equal(calls, 2);
+
+  calls = 0;
+  const badKey = async () => { calls++; return { ok: false, status: 403 }; };
+  await assert.rejects(getWithRetry('u', { fetchImpl: badKey, wait }), /FBI CDE 403/);
+  assert.equal(calls, 1);
 });

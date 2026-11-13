@@ -83,4 +83,5 @@ The feed URLs in `data/sources.json` haven't been checked against the live sites
 
 - **Privacy by construction:** the City fetcher only ever requests `inci_id`, `district`, `ibr_code` and `date_rept`, never addresses, coordinates, premises or victim fields (a test checks this). The FBI data is citywide totals.
 - **Counting (City):** each incident counts once, under its most serious offense (violent, property, other). Sheriff and other agencies go in an "Other agencies" row. A half-filled newest week is skipped rather than shown as a fake drop.
+- **Outages:** each FBI request gets 25 seconds and up to three tries (502/503/504 and timeouts only). The publish workflow keeps the last good `crime.json` in an Actions cache (it holds only citywide and per-division totals), so if a source is down the site keeps showing its previous numbers.
 - **Scheduling:** registered in `scripts/collectors.json` with no `env` entry, so the City part runs even without the key. The publish workflow passes the `FBI_API_KEY` repo secret to it.
