@@ -1,5 +1,9 @@
 // Fetch Greensboro restaurants, bars, cafes and breweries from OpenStreetMap and write public/data/eats.json.
-// Usage: node scripts/fetch-eats.mjs [--source=auto|overpass|osm-api] [--keep-chains]
+// Usage: node scripts/fetch-eats.mjs [--source=auto|overpass|osm-api] [--keep-chains] [--if-older-than=HOURS]
+//
+// --if-older-than: do nothing if eats.json was made less than HOURS ago. The publish workflow runs every
+// 30 minutes but places change slowly, so it refreshes them about once a day. If a fetch fails, the
+// existing eats.json is left as it was.
 //
 // auto (default): Overpass first, and the main OSM API if Overpass doesn't answer. Overpass servers are often
 //                 busy or unreachable, so a scheduled job shouldn't depend on them alone.
@@ -7,7 +11,7 @@
 // osm-api: tiles of the main OSM API's /map call around each hub. Heavier (whole map tiles from OSM's
 //          editing API), so run it at most daily; places change slowly.
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HUBS, toPlace } from './eats-lib.mjs';
@@ -16,6 +20,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 const source = [...args].find((a) => a.startsWith('--source='))?.split('=')[1] || 'auto';
 const keepChains = args.has('--keep-chains');
+const out = join(root, 'public', 'data', 'eats.json');
+const maxAgeH = Number([...args].find((a) => a.startsWith('--if-older-than='))?.split('=')[1]);
+if (maxAgeH) {
+  const prev = await readFile(out, 'utf8').then(JSON.parse, () => null);
+  const ageH = prev ? (Date.now() - new Date(prev.generatedAt).getTime()) / 3600e3 : Infinity;
+  if (ageH < maxAgeH) {
+    console.log(`eats.json is ${ageH.toFixed(1)}h old (${prev.places.length} places); refreshing after ${maxAgeH}h.`);
+    process.exit(0);
+  }
+}
 const UA = { 'user-agent': 'gso-village/0.1 (community map of Greensboro; github.com/ekalb81/gboro)' };
 
 // A box around every hub's radius.
@@ -99,7 +113,7 @@ for (const el of elements) {
 places.sort((a, b) => a.hub.localeCompare(b.hub) || a.name.localeCompare(b.name));
 
 await mkdir(join(root, 'public', 'data'), { recursive: true });
-await writeFile(join(root, 'public', 'data', 'eats.json'), JSON.stringify({
+await writeFile(out, JSON.stringify({
   generatedAt: new Date().toISOString(),
   source: used,
   attribution: '© OpenStreetMap contributors, ODbL',
