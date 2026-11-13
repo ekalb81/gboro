@@ -454,7 +454,7 @@ function frame(ts){
   const vis=(gx,gy)=>{const[x,y]=P(gx,gy);return x>-30&&x<W+30&&y>-40&&y<H+60};
   for(const c of cars){
     let stopAt=null;for(const k of L.closures)if(k.full&&k.ch===c.ch&&(c.dir>0?k.d>c.d:k.d<c.d)&&(stopAt==null||Math.abs(k.d-c.d)<Math.abs(stopAt-c.d)))stopAt=k.d;let nd=c.d+c.dir*c.v*dt;
-    if(stopAt!=null){if(c.dir>0&&c.d<stopAt-.9&&nd>=stopAt-.9)nd=stopAt-.9;if(c.dir<0&&c.d>stopAt+.9&&nd<=stopAt+.9)nd=stopAt+.9}
+    if(stopAt!=null){if(c.dir>0&&c.d<=stopAt-.9+1e-6&&nd>=stopAt-.9)nd=stopAt-.9;if(c.dir<0&&c.d>=stopAt+.9-1e-6&&nd<=stopAt+.9)nd=stopAt+.9}
     if(!reduce)c.d=nd;if(c.d>c.ch.L)c.d=0;if(c.d<0)c.d=c.ch.L;
     const[gx,gy,ux,uy]=along(c.ch,c.d);const off=(RW[c.ch.c]/4)/M*(c.dir>0?1:-1);const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
     dyn.push({kind:'car',gx:px,gy:py,ux:ux*c.dir,uy:uy*c.dir,col:c.col,stopped:stopAt!=null&&Math.abs(c.d-stopAt)<1})}
@@ -529,7 +529,7 @@ const building=id=>byId[id]||null;
 /** Building whose footprint holds a grid point, or the nearest one within a tile or two. */
 function buildingAt(gx,gy,maxDist=2.2){let best=null,bd=maxDist;for(const b of blds){if(gx<b.minx-bd||gx>b.maxx+bd||gy<b.miny-bd||gy>b.maxy+bd)continue;if(pip(gx,gy,b.pts))return b;let d=Infinity;for(let k=0;k<b.pts.length;k++){const[a0,a1]=b.pts[k],[q0,q1]=b.pts[(k+1)%b.pts.length];const dx=q0-a0,dy=q1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((gx-a0)*dx+(gy-a1)*dy)/L2)):0;d=Math.min(d,Math.hypot(a0+dx*t-gx,a1+dy*t-gy))}if(d<bd){bd=d;best=b}}return best}
 /** Glide the camera to a building and hold it there for a while. */
-function lookAt(b){if(!b)return;[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);lastUser=performance.now()-25000+20000;glide=true}
+function lookAt(b){if(!b)return;[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);lastUser=performance.now()-25000+20000;if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
 let started=false,glide=false;
 // first paint: a loading card, then build the model
 ctx.fillStyle='#3a2c26';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff3d6';ctx.font='10px Silkscreen, monospace';ctx.textAlign='center';ctx.fillText('building the model of downtown…',W/2,H/2);ctx.textAlign='start';

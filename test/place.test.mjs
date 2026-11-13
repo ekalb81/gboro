@@ -46,6 +46,8 @@ test('items are placed by venue building, by known place, or by street address',
   assert.equal(P.place({ venue: '913 Whiskey Bar', address: null }), null);
   assert.equal(P.place({ venue: 'Hole 19', address: '3606 N Elm St, Greensboro, NC 27455' }), null);
   assert.equal(P.place({ venue: 'Somewhere', address: null }), null);
+  // A street with no direction prefix and no known addresses near the number: not guessed.
+  assert.equal(P.place({ venue: 'Somewhere else', address: '5000 Summit Ave' }), null);
 });
 
 test('block numbering puts a downtown address on its street, inside the model', () => {

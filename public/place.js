@@ -79,11 +79,8 @@ export function makePlacer(model, eatsPlaces = []) {
     if (!pts || !pts.length) return null;
     const dir = a.street.split(' ')[0];
     const ax = dir === 'east' ? [1, 0] : dir === 'west' ? [-1, 0] : dir === 'north' ? [0, -1] : dir === 'south' ? [0, 1] : null;
-    if (!ax) {
-      // No direction prefix: put it at the middle of what the model has of that street.
-      const m = pts[Math.floor(pts.length / 2)];
-      return [m[0], m[1]];
-    }
+    // No direction prefix: the number can't be placed from block numbering, so leave it to the paper.
+    if (!ax) return null;
     const divider = streets.get(dir === 'east' || dir === 'west' ? 'north elm street' : 'east market street');
     // Origin: the street point closest to the divider street.
     let origin = pts[0], best = Infinity;
