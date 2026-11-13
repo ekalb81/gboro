@@ -725,7 +725,7 @@ function fit(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;
   if(zi<0){const zq=+new URLSearchParams(location.search).get('z');const want=zq>0?zq:r.width<700?Math.max(1,dpr*.8):Math.max(1,Math.round(dw/1000));zi=ZL.reduce((bi,v,i)=>Math.abs(v-want)<Math.abs(ZL[bi]-want)?i:bi,0)}
   while(zi>0&&dw/ZL[zi]<160)zi--;
   const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k);if(!force&&nW===W&&nH===H&&vs===VS)return;
-  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*1.4))/k;makeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
+  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;makeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
   if(started&&reduce)requestAnimationFrame(frame)}
 function zoomBy(d){const{dw,dh}=dev();if(!zoomAllowed(zi+d,dw,dh))return false;zi+=d;fit(true);return true}
 const canZoom=d=>{const{dw,dh}=dev();return zoomAllowed(zi+d,dw,dh)};
