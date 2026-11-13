@@ -2,11 +2,15 @@
 // Plain canvas, no build step. Ported from the design mockup; the mockup's example toggles are replaced
 // by a live scene from app.js (weather, council, closures, events, open bars and restaurants).
 //
-//   const model = startModel({ canvas, map, onPick, onHover });
+//   const model = startModel({ canvas, map, onPick, onHover, onView });
 //   model.update(scene)   // see app.js buildScene() for the shape
+//   model.zoomIn() / zoomOut() / canZoom(±1) / pan(fx, fy) / home() / lookAt(b) / highlight(b)
+//
+// The canvas fills whatever box the page gives it. The camera only moves when someone drags, zooms or picks
+// something; it never wanders off on its own.
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
-export function startModel({ canvas: cv0, map: MAP, onPick = () => {}, onHover = () => {} }) {
+export function startModel({ canvas: cv0, map: MAP, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
@@ -33,7 +37,7 @@ const PREVIEW={dawn:[6,52],day:[12,30],dusk:[17,20],night:[22,45]};
 const sceneDate=()=>S.time==='now'?new Date():nyDate(...PREVIEW[S.time]);
 
 // ---------- geometry ----------
-const W=800,H=450,TW=16,TH=8,ZPM=2.0,M=MAP.M,GX=MAP.GX,GY=MAP.GY,MARG=60,MAXH=270;
+let W=800,H=450;const TW=16,TH=8,ZPM=2.0,M=MAP.M,GX=MAP.GX,GY=MAP.GY,MARG=60,MAXH=270;
 const BW=Math.ceil((GX+GY)*TW+2*MARG),BH=Math.ceil((GX+GY)*TH+MAXH+2*MARG+20);
 const BOX=GY*TW+MARG,BOY=MAXH+MARG;
 let ox=BOX,oy=BOY;
@@ -49,7 +53,9 @@ function hull(p){p=p.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=
 const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
 const cv=cv0,ctx=cv.getContext('2d');
 const SCc=mk(BW,BH),SEc=mk(BW,BH),SGc=mk(BW,BH);const SC=SCc.getContext('2d'),SE=SEc.getContext('2d'),SG=SGc.getContext('2d');
-const Wc=mk(W,H),Ec=mk(W,H),Gc=mk(W,H),Tc=mk(W,H);const w=Wc.getContext('2d',{willReadFrequently:true}),E=Ec.getContext('2d'),GL=Gc.getContext('2d'),tc=Tc.getContext('2d');
+let Wc,Ec,Gc,Tc,w,E,GL,tc;
+function makeLayers(){Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d',{willReadFrequently:true});E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
+makeLayers();
 let TGT={c:SC,e:SE,g:SG};
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const S={time:'now',wx:'clear',labels:false};
@@ -368,6 +374,17 @@ function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(
   [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v])=>line(c,pt(u,v),P(cx+u*rx*1.15,cy+v*ry*1.15,34),'#e8e4dc',.6));
   if(lit){for(let i=0;i<=10;i++)for(let j=0;j<=10;j++){if((i+j)%2)continue;const p=pt(-1+i/5,-1+j/5);ed(p,(i+j)%4?'#ff8ab4':'#8ad8ff')}}}
 
+// ---------- moving things behind buildings ----------
+// A car or person behind a building has that building's exact outline cut out of it before it is drawn. (Painting the
+// building again over it instead also painted over whatever stood in front of the building, so pieces of nearer
+// buildings and trees blinked in and out while traffic passed.)
+function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;const p=new Path2D();let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  const prism=(pts,h)=>{const n=pts.length;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
+    add(pts.map(q=>P(q[0],q[1])));add(pts.map(q=>P(q[0],q[1],h)));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1]),P(c[0],c[1]),P(c[0],c[1],h),P(a[0],a[1],h)])}};
+  prism(b.pts,b.hpx+(b.special?14:2));if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
+  ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1]};return b.sil}
+const SCR=mk(176,176),sc=SCR.getContext('2d'),NOGLOW=mk(1,1).getContext('2d');
+
 let T=0,renderedFor='';
 function renderStatic(){
   SUN=sunPos(sceneDate());
@@ -389,22 +406,22 @@ const skins=['#f5d0ad','#e2a87e','#c3825a','#9a6040','#76462e','#553220'];
 const shirts=[C.Tobacco,C['Aggie blue'],C.Brick,C.Pine,C.Paper,C['Haw River'],'#b04ec0',C.Slate,'#ff7a9a'];
 const cars=[],people=[];
 chains.forEach((ch,ci)=>{const n=Math.max(1,Math.round(ch.L/(ch.c<=2?9:16)));for(let k=0;k<n;k++)cars.push({ch,d:Math.random()*ch.L,dir:k%2?1:-1,v:(1.1+Math.random()*.5)*(ch.c<=2?1:.8),col:carCols[(ci*3+k)%8]});
-  const np=Math.round(ch.L/4);for(let k=0;k<np;k++)people.push({ch,d:Math.random()*ch.L,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1,v:.13+Math.random()*.06,skin:skins[(ci+k)%6],shirt:shirts[(ci*2+k)%9]})});
+  const np=Math.round(ch.L/4);for(let k=0;k<np;k++)people.push({ch,d:Math.random()*ch.L,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1,v:.13+Math.random()*.06,night:k%3!==0,skin:skins[(ci+k)%6],shirt:shirts[(ci*2+k)%9]})});
 const trainP=pairs(MAP.TRAIN);const trainCh=(()=>{const cum=[0];for(let i=1;i<trainP.length;i++)cum.push(cum[i-1]+Math.hypot(trainP[i][0]-trainP[i-1][0],trainP[i][1]-trainP[i-1][1]));return{p:trainP,cum,L:cum[cum.length-1]}})();
 let trainD=-12,trainWait=4;
 
 // ---------- camera ----------
-const LANDMARKS=['tower','icrc','theatre','city','depot','tanger'].map(k=>byId[k]).filter(Boolean);let focus=LANDMARKS.slice();
-let fi=0,camX,camY,tgtX,tgtY,lastUser=-1e9,drag=null,strollT=0;
+let camX,camY,tgtX,tgtY,drag=null;
 function camFor(b){ox=BOX;oy=BOY;const[x,y]=P(b.cx,b.cy,(b.hpx||0)*.45);return[x-W/2,y-H*.5]}
-const clampX=v=>Math.max(0,Math.min(BW-W,v)),clampY=v=>Math.max(0,Math.min(BH-H,v));
+const clampX=v=>BW<=W?(BW-W)/2:Math.max(0,Math.min(BW-W,v)),clampY=v=>BH<=H?(BH-H)/2:Math.max(0,Math.min(BH-H,v));
 [camX,camY]=camFor(byId.tower||blds[0]);camY-=40;camX=clampX(camX);camY=clampY(camY);tgtX=camX;tgtY=camY;
 cv.style.cursor='grab';cv.style.touchAction='none';
-cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,cx:camX,cy:camY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'});
-cv.addEventListener('pointermove',e=>{if(!drag)return;const s=W/cv.clientWidth;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;lastUser=performance.now();if(reduce)requestAnimationFrame(frame)});
+const touches=new Map();let pinch0=0;
+cv.addEventListener('pointerdown',e=>{touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2){const[a,b]=[...touches.values()];pinch0=Math.hypot(a[0]-b[0],a[1]-b[1]);drag=null;return}if(touches.size>2)return;drag={x:e.clientX,y:e.clientY,cx:camX,cy:camY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'});
+cv.addEventListener('pointermove',e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;if(reduce)requestAnimationFrame(frame)});
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*W/r.width+Math.round(camX),(e.clientY-r.top)*H/r.height+Math.round(camY)]};
 function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width,qy=(e.clientY-r.top)*H/r.height;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
-const endDrag=e=>{if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b);if(b){lastUser=performance.now()}}drag=null;cv.style.cursor='grab'};cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+const endDrag=e=>{if(e)touches.delete(e.pointerId);if(touches.size<2)pinch0=0;if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}drag=null;cv.style.cursor='grab'};cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 cv.addEventListener('mousemove',e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}});cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
 
 // ---------- light grading from the sun ----------
@@ -413,9 +430,9 @@ const lerpG=(A,B,t)=>({m:A.m.map((v,i)=>v+(B.m[i]-v)*t),a:A.a.map((v,i)=>v+(B.a[
 function gradeFor(sun){const tw=sun.az<180?GD.dawn:GD.dusk;if(sun.alt>=10)return GD.day;if(sun.alt>=-1)return lerpG(tw,GD.day,(sun.alt+1)/11);if(sun.alt>=-10)return lerpG(GD.night,tw,(sun.alt+10)/9);return GD.night}
 const WXG={clear:{m:[1,1,1],a:[0,0,0],d:0},rain:{m:[.84,.88,.96],a:[0,0,6],d:.15},snow:{m:[1.04,1.04,1.08],a:[4,4,8],d:.08},pollen:{m:[1.04,1.03,.88],a:[6,6,0],d:0},cloudy:{m:[.94,.96,1],a:[0,0,4],d:.1}};
 const blink=(t,on,off)=>(t%(on+off))<on;
-const rain=[...Array(260)].map(()=>[Math.random()*W,Math.random()*H]);
-const snow=[...Array(240)].map(()=>[Math.random()*W,Math.random()*H,Math.random()]);
-const motes=[...Array(80)].map(()=>[Math.random()*W,Math.random()*H,Math.random()*6]);
+let rain,snow,motes;
+function reseed(){rain=[...Array(Math.round(260*W*H/360000))].map(()=>[Math.random()*W,Math.random()*H]);snow=[...Array(Math.round(240*W*H/360000))].map(()=>[Math.random()*W,Math.random()*H,Math.random()]);motes=[...Array(Math.round(80*W*H/360000))].map(()=>[Math.random()*W,Math.random()*H,Math.random()*6])}
+reseed();
 function person(c,x,y,skin,shirt,f){x=Math.round(x);y=Math.round(y)-6;if(S.wx==='rain'){fr(c,x-2,y-2,6,1,shirt);fr(c,x,y-1,1,1,SH)}c.fillStyle='rgba(44,33,71,.25)';c.fillRect(x-1,y+6,4,1);fr(c,x,y,2,2,skin);fr(c,x,y+2,2,2,shirt);const lg=mix(SH,'#5a5070',.3);fr(c,x+(f?0:1),y+4,1,2,lg);fr(c,x+(f?1:0),y+4,1,2,lg)}
 
 // 3x5 bulb font for the time-and-temperature sign
@@ -440,13 +457,12 @@ function signText(cx,wl,z0,txt){
 }
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 
-let last=0,lastCheck=0,flash=0,hoverB=null;
+let last=0,lastCheck=0,flash=0,hoverB=null,hiB=null;
 function frame(ts){
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
   if(S.time==='now'&&ts-lastCheck>30000){lastCheck=ts;SUN=sunPos(new Date());if(stateKey()!==renderedFor)renderStatic()}
   const D=sceneDate();
   if(glide&&!drag){camX+=(tgtX-camX)*Math.min(1,dt*2);camY+=(tgtY-camY)*Math.min(1,dt*2);if(Math.hypot(tgtX-camX,tgtY-camY)<1)glide=false}
-  if(!reduce&&!drag&&!glide&&performance.now()-lastUser>25000){strollT+=dt;if(strollT>16){strollT=0;fi=(fi+1)%focus.length;[tgtX,tgtY]=camFor(focus[fi]);tgtX=clampX(tgtX);tgtY=clampY(tgtY)}camX+=(tgtX-camX)*Math.min(1,dt*.35);camY+=(tgtY-camY)*Math.min(1,dt*.35)}
   const cx=Math.round(camX),cy=Math.round(camY);
   w.clearRect(0,0,W,H);w.drawImage(SCc,cx,cy,W,H,0,0,W,H);
   E.clearRect(0,0,W,H);E.drawImage(SEc,cx,cy,W,H,0,0,W,H);GL.clearRect(0,0,W,H);GL.drawImage(SGc,cx,cy,W,H,0,0,W,H);
@@ -459,7 +475,7 @@ function frame(ts){
     if(!reduce)c.d=nd;if(c.d>c.ch.L)c.d=0;if(c.d<0)c.d=c.ch.L;
     const[gx,gy,ux,uy]=along(c.ch,c.d);const off=(RW[c.ch.c]/4)/M*(c.dir>0?1:-1);const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
     dyn.push({kind:'car',gx:px,gy:py,ux:ux*c.dir,uy:uy*c.dir,col:c.col,stopped:stopAt!=null&&Math.abs(c.d-stopAt)<1})}
-  for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.ch.L||p.d<0){p.dir*=-1;p.d=Math.max(0,Math.min(p.ch.L,p.d))}}if(nt&&(p.d*10|0)%3)continue;
+  for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.ch.L||p.d<0){p.dir*=-1;p.d=Math.max(0,Math.min(p.ch.L,p.d))}}if(nt&&p.night)continue;
     const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5)})}
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
   // crowds only where something is actually on: events at a venue, council in session, open bars after dark
@@ -472,18 +488,22 @@ function frame(ts){
   if(!reduce){if(trainD>trainCh.L+14){trainWait-=dt;if(trainWait<=0){trainD=-12;trainWait=12}}else trainD+=dt*2.2}
   for(let k=0;k<7;k++){const d=trainD-k*2.3;if(d<0||d>trainCh.L)continue;const[gx,gy,ux,uy]=along(trainCh,d);if(!vis(gx,gy))continue;dyn.push({kind:'train',gx,gy,ux,uy,eng:k===0})}
   dyn.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
-  const redo=new Set();
-  for(const o of dyn){
-    if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(w,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(w,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
+  const drawDyn=(o,c)=>{
+    if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(c,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
       if(lamp){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,2.5),'#fff4c8',2)}if(o.stopped||lamp){ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,2.5),o.stopped?'#ff3a2a':'#c84a40',o.stopped?2:1)}if(o.haz&&blink(T,.4,.4)){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,3),'#ffb040',2);ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,3),'#ffb040',2)}}
-    else if(o.kind==='pp'){const[x,y]=P(o.gx,o.gy);person(w,x,y-(o.bob?1:0),o.skin,o.shirt,o.f)}
-    else if(o.kind==='cone'){const[x,y]=P(o.gx,o.gy);fr(w,Math.round(x),Math.round(y-4),1,1,C['Barrel orange']);fr(w,Math.round(x-1),Math.round(y-3),3,2,C['Barrel orange']);fr(w,Math.round(x-1),Math.round(y-2),3,1,C.Paper);fr(w,Math.round(x-2),Math.round(y-1),5,1,C['Barrel orange'])}
-    else if(o.kind==='barrel'){const[x,y]=P(o.gx,o.gy);fr(w,Math.round(x-1),Math.round(y-5),3,5,C['Barrel orange']);fr(w,Math.round(x-1),Math.round(y-3),3,1,C.Paper);if(lamp&&blink(T,.5,.5))ed([x,y-6],'#ffb040')}
-    else if(o.kind==='truck'){const r=rect(o.gx,o.gy,1,0,6.5/M,2.6/M);drawPrism(w,r,0,10,C.Paper,C.Tobacco);const wq=[P(o.gx-.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,8),P(o.gx-.15,o.gy+1.3/M,8)];poly(w,wq,mix(C['Haw River'],SH,.3));if(ev)eq(wq,GLOW)}
-    else if(o.kind==='train'){const r=rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);drawPrism(w,r,1,12,o.eng?C.Slate:'#c0603c',o.eng?'#33509a':'#8f4228');if(o.eng){const hp=P(o.gx+o.ux*9.6/M,o.gy+o.uy*9.6/M,7);ed(hp,'#fff3c0',2);if(lamp)eg(hp[0],hp[1]+3,24,.45,.6)}}
-    for(const b of blockers(o.gx,o.gy,o.kind==='train'?12:5))redo.add(b);
-  }
-  [...redo].sort((a,b)=>a.key-b.key).forEach(b=>drawBuilding(w,b));
+    else if(o.kind==='pp'){const[x,y]=P(o.gx,o.gy);person(c,x,y-(o.bob?1:0),o.skin,o.shirt,o.f)}
+    else if(o.kind==='cone'){const[x,y]=P(o.gx,o.gy);fr(c,Math.round(x),Math.round(y-4),1,1,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-3),3,2,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-2),3,1,C.Paper);fr(c,Math.round(x-2),Math.round(y-1),5,1,C['Barrel orange'])}
+    else if(o.kind==='barrel'){const[x,y]=P(o.gx,o.gy);fr(c,Math.round(x-1),Math.round(y-5),3,5,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-3),3,1,C.Paper);if(lamp&&blink(T,.5,.5))ed([x,y-6],'#ffb040')}
+    else if(o.kind==='truck'){const r=rect(o.gx,o.gy,1,0,6.5/M,2.6/M);drawPrism(c,r,0,10,C.Paper,C.Tobacco);const wq=[P(o.gx-.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,8),P(o.gx-.15,o.gy+1.3/M,8)];poly(c,wq,mix(C['Haw River'],SH,.3));if(ev)eq(wq,GLOW)}
+    else if(o.kind==='train'){const r=rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);drawPrism(c,r,1,12,o.eng?C.Slate:'#c0603c',o.eng?'#33509a':'#8f4228');if(o.eng){const hp=P(o.gx+o.ux*9.6/M,o.gy+o.uy*9.6/M,7);ed(hp,'#fff3c0',2);if(lamp)eg(hp[0],hp[1]+3,24,.45,.6)}}
+  };
+  // Something behind a building is drawn on a small scratch card, the building's outline is cut out of the card, and
+  // the rest goes onto the picture; nothing standing in front gets painted over.
+  for(const o of dyn){const bl=blockers(o.gx,o.gy,o.kind==='train'?12:5);if(!bl.length){drawDyn(o,w);continue}
+    const[x,y]=P(o.gx,o.gy);const S=o.kind==='train'?176:96,X=Math.round(x)-S/2,Y=Math.round(y)-Math.round(S*.7);
+    const t0=TGT,a=ox,b=oy;sc.clearRect(0,0,S,S);TGT={c:sc,e:NOGLOW,g:NOGLOW};ox-=X;oy-=Y;drawDyn(o,sc);ox=a;oy=b;TGT=t0;
+    sc.save();sc.globalCompositeOperation='destination-out';const m=new DOMMatrix([1,0,0,1,-cx-X,-cy-Y]);for(const k of bl){const q=new Path2D();q.addPath(silhouette(k).p,m);sc.fill(q)}sc.restore();
+    w.drawImage(SCR,0,0,S,S,X,Y,S,S)}
   // live clocks: Lincoln Financial's bulb sign (time, then temperature) and the depot clock
   const tw=byId.tower;if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');for(const wl of visWalls(tw.lantern))lanternSign(w,wl,tw.lanternZ,txt)}
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
@@ -518,6 +538,12 @@ function frame(ts){
     ctx.fillStyle=SH;ctx.fillRect(bx-1,by-1,tw_+2,13);ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(bx,by,tw_,11);
     for(let k=0;k<6;k++){const ax=right?bx+tw_+1+k:bx-2-k;ctx.fillStyle=SH;ctx.fillRect(ax,by+k,1,11-2*k);if(k<5){ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(ax+(right?-1:1)*0,by+k+1,1,Math.max(0,9-2*k))}}
     ctx.fillStyle=g.n?'#8a3b2b':SH;ctx.fillText(t,bx+4,by+2);signRects.push({id:g.id,name:g.name,x:Math.min(bx,bx-7),y:by,w:tw_+8,h:22+12})}
+  // the building picked in the paper: a gold outline and a bobbing marker above it
+  if(hiB){if(!hiB.hull){const o0=ox,o1=oy;ox=BOX;oy=BOY;const z=hiB.htop||hiB.hpx;hiB.hull=hull(hiB.pts.map(p=>P(p[0],p[1])).concat(hiB.pts.map(p=>P(p[0],p[1],z))));ox=o0;oy=o1}
+    const hp=new Path2D();hiB.hull.forEach(([x,y],i)=>i?hp.lineTo(x-cx+.5,y-cy+.5):hp.moveTo(x-cx+.5,y-cy+.5));hp.closePath();
+    ctx.lineJoin='round';ctx.strokeStyle=SH;ctx.lineWidth=4;ctx.stroke(hp);ctx.strokeStyle='#ffd23f';ctx.lineWidth=2;ctx.stroke(hp);
+    const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
+    ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   if(!reduce||!frame.once){frame.once=true;requestAnimationFrame(frame)}
 }
 
@@ -529,7 +555,6 @@ function update(scene){
   S.wx=L.wx==='storm'?'rain':L.wx;L.storm=L.wx==='storm';
   // closures snap to the nearest street the cars drive on
   L.closures=(scene.roads||[]).map(r=>{let best=null;for(const ch of chains){for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((r.gx-a0)*dx+(r.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-r.gx,a1+dy*t-r.gy);if(!best||d<best.dist)best={ch,dist:d,d:ch.cum[i-1]+Math.sqrt(L2)*t}}}return best&&best.dist<4?{...r,ch:best.ch,d:best.d}:null}).filter(Boolean);
-  focus=[...(scene.focus||[]).map(id=>byId[id]).filter(Boolean),...LANDMARKS];
   if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   if(key!==prevKey){L.version++;if(started)restatic()}
@@ -548,10 +573,31 @@ const building=id=>byId[id]||null;
 /** Building whose footprint holds a grid point, or the nearest one within a tile or two. */
 function buildingAt(gx,gy,maxDist=2.2){let best=null,bd=maxDist;for(const b of blds){if(gx<b.minx-bd||gx>b.maxx+bd||gy<b.miny-bd||gy>b.maxy+bd)continue;if(pip(gx,gy,b.pts))return b;let d=Infinity;for(let k=0;k<b.pts.length;k++){const[a0,a1]=b.pts[k],[q0,q1]=b.pts[(k+1)%b.pts.length];const dx=q0-a0,dy=q1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((gx-a0)*dx+(gy-a1)*dy)/L2)):0;d=Math.min(d,Math.hypot(a0+dx*t-gx,a1+dy*t-gy))}if(d<bd){bd=d;best=b}}return best}
 /** Glide the camera to a building and hold it there for a while. */
-function lookAt(b){if(!b)return;[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);lastUser=performance.now()-25000+20000;if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
+function lookAt(b){if(!b)return;[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
 let started=false,glide=false;
+
+// ---------- view size and zoom ----------
+// The canvas fills whatever box the page gives it. Each model pixel is drawn as `zoom` device pixels (whole numbers
+// only, so the pixels stay crisp); zooming changes how much of downtown fits in the box.
+let zoom=0;const MAXPX=1.5e6;
+const zoomOK=(z,dw,dh)=>Math.ceil(dw/z)*Math.ceil(dh/z)<=MAXPX&&(z===1||Math.ceil(dw/z)>=220);
+function fit(){const r=cv.getBoundingClientRect();if(!r.width||!r.height)return;const dpr=window.devicePixelRatio||1;const dw=Math.round(r.width*dpr),dh=Math.round(r.height*dpr);
+  if(!zoom)zoom=r.width<700?Math.max(1,Math.round(dpr*.8)):Math.max(1,Math.round(dw/1000));
+  while(zoom<8&&!zoomOK(zoom,dw,dh)&&Math.ceil(dw/zoom)*Math.ceil(dh/zoom)>MAXPX)zoom++;while(zoom>1&&Math.ceil(dw/zoom)<220)zoom--;
+  const nW=Math.ceil(dw/zoom),nH=Math.ceil(dh/zoom);if(nW===W&&nH===H)return;
+  const mx=camX+W/2,my=camY+H/2;W=nW;H=nH;makeLayers();reseed();camX=clampX(mx-W/2);camY=clampY(my-H/2);tgtX=camX;tgtY=camY;glide=false;
+  if(started&&reduce)requestAnimationFrame(frame)}
+function zoomBy(d){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const dw=Math.round(r.width*dpr),dh=Math.round(r.height*dpr);const z=zoom+d;if(z<1||z>8||!zoomOK(z,dw,dh))return false;zoom=z;fit();return true}
+const canZoom=d=>{const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const z=zoom+d;return z>=1&&z<=8&&zoomOK(z,Math.round(r.width*dpr),Math.round(r.height*dpr))};
+new ResizeObserver(()=>fit()).observe(cv);fit();
+cv.addEventListener('wheel',e=>{e.preventDefault();wheelAcc+=e.deltaY;if(Math.abs(wheelAcc)>=60){zoomBy(wheelAcc<0?1:-1);wheelAcc=0;onView()}},{passive:false});let wheelAcc=0;
+cv.addEventListener('keydown',e=>{const k=e.key,st=40;let dx=0,dy=0;if(k==='ArrowLeft')dx=-st;else if(k==='ArrowRight')dx=st;else if(k==='ArrowUp')dy=-st;else if(k==='ArrowDown')dy=st;else if(k==='+'||k==='=')zoomBy(1),onView();else if(k==='-'||k==='_')zoomBy(-1),onView();else return;e.preventDefault();if(dx||dy){camX=clampX(camX+dx);camY=clampY(camY+dy);tgtX=camX;tgtY=camY;glide=false;if(reduce)requestAnimationFrame(frame)}});
+/** Pan by a fraction of the view (for on-screen buttons). */
+function pan(fx,fy){tgtX=clampX(camX+fx*W);tgtY=clampY(camY+fy*H);if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
+function home(){lookAt(byId.tower||blds[0])}
 // first paint: a loading card, then build the model
 ctx.fillStyle='#3a2c26';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff3d6';ctx.font='10px Silkscreen, monospace';ctx.textAlign='center';ctx.fillText('building the model of downtown…',W/2,H/2);ctx.textAlign='start';
 setTimeout(()=>{renderStatic();started=true;(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(frame))},30);
-return{update,building,buildingAt,lookAt,sunTimes,fmtTime,ampm,setLabels:v=>{S.labels=!!v;if(reduce)requestAnimationFrame(frame)}};
+return{update,building,buildingAt,lookAt,sunTimes,fmtTime,ampm,setLabels:v=>{S.labels=!!v;if(reduce)requestAnimationFrame(frame)},
+  zoomIn:()=>zoomBy(1),zoomOut:()=>zoomBy(-1),canZoom,pan,home,highlight:b=>{hiB=b||null;if(reduce)requestAnimationFrame(frame)}};
 }

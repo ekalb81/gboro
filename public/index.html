@@ -2,102 +2,212 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GSO Village</title>
 <meta name="description" content="A watch-only scale model of downtown Greensboro, NC, lit and peopled by live local data.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Pixelify+Sans:wght@500;700&family=Silkscreen&display=swap">
+<!-- Fraunces (soft, old-almanac serif) for headings; Nunito Sans (rounded, very readable) for everything else.
+     Silkscreen is only used inside the model, for the little in-world signs. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,600..800,100&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,800&family=Silkscreen&display=swap">
 <style>
-  /* "Brick and Clay": pine-dark table, the model on its base, an almanac strip, and the paper beside it. */
+  /* "Brick and Clay": the model fills the window like a table-top display; the paper sits beside it. */
   :root {
-    --bg:#1b231e; --line:#3b4b40; --fg:#efe6d2; --muted:#b5ad99; --gold:#d9a43a;
-    --paper:#f2e6c9; --paper-2:#fff7e0; --ink:#2a2320; --ink-muted:#6f5f4c; --red:#8a3b2b; --edge:#3a2a20;
-    --display:"Pixelify Sans","Courier New",monospace; --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif; --pixel:"Silkscreen","Courier New",monospace;
+    --bg:#1b231e; --fg:#efe6d2; --muted:#b5ad99; --gold:#ffd23f;
+    --paper:#f4ead2; --paper-2:#fffaf0; --ink:#2a2320; --ink-muted:#6c5d4b; --red:#a63d2a; --edge:#3a2a20; --plum:#2c2147;
+    --display:"Fraunces",Georgia,serif; --body:"Nunito Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --paper-w:400px;
     color-scheme:dark;
   }
   * { box-sizing:border-box; }
+  html, body { height:100%; }
   body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 var(--body); }
   a { color:var(--red); }
-  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:16px; padding:16px; max-width:1500px; margin:0 auto; align-items:start; }
-  .stage { display:grid; gap:0; background:#11160f; border:4px solid var(--edge); box-shadow:0 0 0 2px #5a3f2c; position:sticky; top:16px; }
-  canvas { display:block; width:100%; aspect-ratio:16/9; image-rendering:pixelated; image-rendering:crisp-edges; background:#3a2c26; touch-action:none; }
-  .alert { background:#8a2a1e; color:#fff3d0; padding:6px 12px; font-size:14px; border-bottom:3px solid var(--edge); }
-  .alert b { color:#ffd77a; }
-  .almanac { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center; background:var(--paper); color:var(--ink); font:12px/1.5 var(--pixel); padding:8px 12px; border-top:3px solid var(--edge); }
-  .almanac b { font-weight:400; color:var(--red); }
-  .almanac label { display:flex; gap:6px; align-items:center; cursor:pointer; }
-  .almanac input { accent-color:var(--red); }
-  .almanac .open { margin-left:auto; background:var(--ink); color:var(--paper); padding:2px 8px; text-decoration:none; }
-  .hint { color:var(--muted); font-size:13px; padding:8px 2px 0; }
-  .hint a { color:var(--gold); }
+  button { font:inherit; color:inherit; }
+  .ico { width:1em; height:1em; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; }
 
-  aside { --muted:var(--ink-muted); --accent:var(--red); background:var(--paper); color:var(--ink); padding:16px 18px 20px; box-shadow:6px 6px 0 var(--edge); max-height:calc(100vh - 32px); overflow:auto; position:sticky; top:16px; }
-  .mast { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; border-bottom:2px solid var(--ink); padding-bottom:6px; }
-  h1 { font:700 22px/1.1 var(--display); margin:0; }
-  .mast small { font:11px var(--pixel); color:var(--ink-muted); }
-  h2 { font:11px/1.4 var(--pixel); letter-spacing:.08em; text-transform:uppercase; color:var(--red); margin:18px 0 6px; }
-  h3 { font:700 13px/1.3 var(--body); margin:10px 0 4px; color:var(--ink-muted); }
+  /* ---------- layout ---------- */
+  .app { display:grid; grid-template-columns:minmax(0,1fr) var(--paper-w); height:100vh; height:100dvh; }
+  .app.folded { grid-template-columns:minmax(0,1fr) 0; }
+  .app.folded aside { visibility:hidden; }
+  .stage { position:relative; min-width:0; overflow:hidden; background:#3a2c26; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; outline:none; }
+  canvas:focus-visible { box-shadow:inset 0 0 0 3px var(--gold); }
+
+  /* ---------- things floating on the model ---------- */
+  .float { position:absolute; z-index:2; }
+  .placard { top:14px; left:14px; display:flex; align-items:center; gap:12px; background:var(--paper); color:var(--ink); padding:8px 14px 8px 10px; border-radius:12px; box-shadow:0 3px 0 var(--edge), 0 8px 24px rgba(0,0,0,.25); max-width:calc(100% - 28px); }
+  .placard .sky { width:44px; height:44px; flex:none; display:grid; place-items:center; border-radius:10px; background:#ffe7a3; color:#c26b12; font-size:30px; }
+  .placard .sky.night { background:#2f3a66; color:#ffe9a8; }
+  .placard .sky.wet { background:#cfe0f2; color:#2f5f9a; }
+  .placard .when { font:800 22px/1 var(--body); font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+  .placard .when small { font-size:13px; font-weight:800; color:var(--ink-muted); margin-left:3px; }
+  .placard .day { font-size:13px; color:var(--ink-muted); line-height:1.3; }
+  .placard .wx { border-left:2px solid #e3d5b2; padding-left:12px; font-size:13px; line-height:1.35; }
+  .placard .wx b { font:800 20px/1 var(--body); display:block; color:var(--ink); }
+  .placard .sun { display:flex; gap:10px; color:var(--ink-muted); font-size:12px; margin-top:2px; }
+  .placard .sun span { display:inline-flex; gap:3px; align-items:center; }
+
+  .alerts { top:88px; left:14px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; max-width:min(420px, calc(100% - 28px)); }
+  .chip { display:inline-flex; align-items:center; gap:8px; border:0; cursor:pointer; text-align:left; padding:5px 12px 5px 6px; border-radius:999px; background:#e8f3ff; color:#1f3f6e; font-size:13px; font-weight:800; box-shadow:0 2px 0 rgba(31,63,110,.45), 0 6px 16px rgba(0,0,0,.2); }
+  .chip .badge { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; background:#3b7bd1; color:#fff; font-size:16px; }
+  .chip.warn { background:#fff0d6; color:#7a3412; box-shadow:0 2px 0 rgba(122,52,18,.45), 0 6px 16px rgba(0,0,0,.2); }
+  .chip.warn .badge { background:#d4602a; }
+  .chip.severe { background:#ffe1dc; color:#7d1d12; }
+  .chip.severe .badge { background:#c0321f; animation:pulse 1.6s ease-in-out infinite; }
+  .chip .until { font-weight:600; opacity:.8; }
+  .chip-more { display:none; background:var(--paper-2); color:var(--ink); font-size:13px; line-height:1.4; padding:8px 12px; border-radius:10px; box-shadow:0 6px 16px rgba(0,0,0,.25); }
+  .chip[aria-expanded="true"] + .chip-more { display:block; }
+  @keyframes pulse { 50% { transform:scale(1.12); } }
+
+  .tools { right:14px; bottom:14px; display:flex; flex-direction:column; gap:6px; }
+  .tools .grp { display:flex; flex-direction:column; background:var(--paper); border-radius:12px; box-shadow:0 3px 0 var(--edge), 0 8px 20px rgba(0,0,0,.25); overflow:hidden; }
+  .tools button { width:42px; height:42px; display:grid; place-items:center; border:0; background:none; color:var(--ink); cursor:pointer; font-size:20px; }
+  .tools button + button { border-top:1px solid #e3d5b2; }
+  .tools button:hover { background:var(--paper-2); }
+  .tools button:disabled { opacity:.35; cursor:default; }
+  .tools button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
+  .hint { left:14px; bottom:14px; background:rgba(28,22,36,.78); color:#f5ecd8; font-size:13px; padding:6px 12px; border-radius:999px; transition:opacity .6s; pointer-events:none; max-width:calc(100% - 90px); }
+  .hint.gone { opacity:0; }
+
+  /* ---------- the paper ---------- */
+  aside { --muted:var(--ink-muted); --accent:var(--red); background:var(--paper); color:var(--ink); overflow:auto; overscroll-behavior:contain; border-left:4px solid var(--edge); scrollbar-color:#cdb98d transparent; }
+  .paper-in { padding:18px 20px 28px; }
+  .mast { border-bottom:3px double var(--ink); padding-bottom:8px; }
+  h1 { font:800 28px/1.05 var(--display); font-variation-settings:"SOFT" 100; margin:0; letter-spacing:-.01em; }
+  .mast .sub { margin-top:4px; }
+  h2 { display:flex; align-items:center; gap:10px; font:700 20px/1.2 var(--display); font-variation-settings:"SOFT" 100; color:var(--ink); margin:26px 0 8px; }
+  h2 .ico, .tile .ico { font-size:18px; }
+  .h2i { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; color:#fff; flex:none; }
+  h3, .day-h { font:800 12px/1.3 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--red); margin:14px 0 4px; }
   .sub { color:var(--ink-muted); font-size:13px; }
   ul { list-style:none; padding:0; margin:0; }
-  li { padding:6px 8px; margin:0 -8px; border-left:3px solid transparent; }
+  li.it { display:flex; gap:10px; padding:8px; margin:0 -8px; border-radius:10px; }
   li.go { cursor:pointer; }
-  li.go:hover, li.on { background:var(--paper-2); border-left-color:var(--red); }
-  li .t { font-weight:700; }
-  li .m { font-size:13px; color:var(--ink-muted); }
-  li a { font-size:13px; }
+  li.go:hover, li.on { background:var(--paper-2); box-shadow:inset 3px 0 0 var(--gold); }
   li.past { opacity:.6; }
-  .pin { white-space:nowrap; font:10px var(--pixel); color:var(--paper); background:var(--red); padding:0 4px; margin-left:4px; vertical-align:1px; }
-  details summary { cursor:pointer; font-size:13px; color:var(--ink-muted); margin:4px 0; }
-  .card { background:var(--paper-2); border:2px solid var(--ink); padding:10px 12px; margin:12px 0 4px; }
-  .card .t { font:700 16px/1.2 var(--display); }
-  .card button { float:right; font:11px var(--pixel); background:none; border:none; color:var(--red); cursor:pointer; padding:0; }
-  #crime table { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
-  #crime th, #crime td { padding:3px 4px; text-align:right; border-bottom:1px dotted #c9b88f; }
-  #crime th:first-child, #crime td:first-child { text-align:left; }
-  #crime th { color:var(--ink-muted); font-weight:normal; white-space:nowrap; }
-  #crime tr.total td { font-weight:bold; border-bottom:none; }
-  #crime .area { color:var(--ink-muted); }
-  #crime .stale { background:#efe0b8; border:2px solid #c9a46a; padding:6px; margin:6px 0; font-size:12px; }
+  .tile { position:relative; width:34px; height:34px; flex:none; border-radius:10px; display:grid; place-items:center; color:#fff; }
+  .tile .pin { position:absolute; right:-5px; bottom:-5px; width:18px; height:18px; border-radius:50%; background:var(--gold); color:var(--plum); display:grid; place-items:center; box-shadow:0 0 0 2px var(--paper); }
+  .tile .pin .ico { font-size:11px; stroke-width:3; }
+  .it .body { min-width:0; }
+  .it .t { font-weight:800; line-height:1.3; }
+  .it .m { font-size:13px; color:var(--ink-muted); }
+  .it a { font-size:13px; }
+  details > summary { cursor:pointer; font-size:13px; font-weight:800; color:var(--ink-muted); margin:6px 0; list-style-position:inside; }
+  details.area > summary { font:700 15px/1.3 var(--body); color:var(--ink); padding:6px 0; border-bottom:1px dashed #d8c69c; }
+  details.area > summary .n { color:var(--ink-muted); font-weight:600; }
+  details.area.flash > summary { animation:flash 1.6s; }
+  @keyframes flash { 0%,40% { background:#ffe39a; } 100% { background:transparent; } }
+  .card { background:var(--paper-2); border:2px solid var(--ink); border-radius:12px; padding:12px 14px; margin:14px 0 4px; box-shadow:0 3px 0 var(--edge); }
+  .card .t { font:700 19px/1.2 var(--display); font-variation-settings:"SOFT" 100; }
+  .card button { float:right; border:0; background:none; cursor:pointer; color:var(--red); font-size:18px; padding:0 0 4px 8px; }
+  .stat { display:flex; gap:10px; align-items:center; background:var(--paper-2); border-radius:10px; padding:8px 10px; font-size:14px; }
+  #crime h2 { margin-top:26px; }
   .credits { font-size:12px; color:var(--ink-muted); }
-  @media (max-width:980px) {
-    .wrap { grid-template-columns:minmax(0,1fr); padding:12px 12px 24px; }
-    .stage, aside { position:static; max-height:none; }
+
+  /* ---------- phones and narrow windows: model on top, the paper below ---------- */
+  @media (max-width:900px) {
+    .app, .app.folded { display:block; height:auto; }
+    .app.folded aside { visibility:visible; }
+    .stage { height:66vh; height:66svh; min-height:340px; border-bottom:4px solid var(--edge); }
+    aside { overflow:visible; border-left:0; }
+    .tools .fold { display:none; }
+    .placard { top:10px; left:10px; padding:6px 10px 6px 6px; gap:8px; border-radius:10px; }
+    .placard .sky { width:34px; height:34px; font-size:22px; border-radius:8px; }
+    .placard .when { font-size:18px; }
+    .placard .wx { padding-left:8px; }
+    .placard .wx b { font-size:16px; }
+    .placard .sun, .placard .wx .cond { display:none; }
+    .alerts { top:62px; left:10px; }
+    .chip { font-size:12px; padding:3px 10px 3px 4px; }
+    .chip .badge { width:22px; height:22px; font-size:14px; }
+    .tools { right:10px; bottom:10px; }
+    .tools button { width:38px; height:38px; }
+    .hint { left:10px; bottom:10px; font-size:12px; }
   }
-  @media (max-width:520px) { .wrap { padding:8px 8px 20px; } .almanac { font-size:11px; } }
+  @media (prefers-reduced-motion:reduce) { .chip.severe .badge { animation:none; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div>
-    <div class="stage">
-      <div id="alert" class="alert" role="status" hidden></div>
-      <canvas id="village" width="800" height="450" aria-label="Isometric scale model of downtown Greensboro, lit and peopled by what is going on right now"></canvas>
-      <div class="almanac" id="almanac" aria-live="polite">Loading…</div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- one small icon set, drawn as rounded strokes to match the soft model -->
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.6A3.3 3.3 0 0 0 7 18z"/></symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.6A3.3 3.3 0 0 0 7 14zM8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9.5 3.5 12 6l2.5-2.5M9.5 20.5 12 18l2.5 2.5"/></symbol>
+  <symbol id="i-storm" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.6A3.3 3.3 0 0 0 7 14zM12.5 14l-2.5 4h4l-2.5 4"/></symbol>
+  <symbol id="i-fog" viewBox="0 0 24 24"><path d="M4 9h16M2 13h14M6 17h16M8 5h9"/></symbol>
+  <symbol id="i-therm" viewBox="0 0 24 24"><path d="M10 4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0z"/><path d="M12 9v8"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 15h15a3 3 0 1 1-3 3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5M12 17.5v.01"/></symbol>
+  <symbol id="i-rise" viewBox="0 0 24 24"><path d="M5 18a7 7 0 0 1 14 0M2 21h20M12 2v6M9 5l3-3 3 3"/></symbol>
+  <symbol id="i-set" viewBox="0 0 24 24"><path d="M5 18a7 7 0 0 1 14 0M2 21h20M12 2v6M9 5l3 3 3-3"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-food" viewBox="0 0 24 24"><path d="M6 2v8a2 2 0 0 0 4 0V2M8 10v12M17 22V2c-2.5 1.5-3.5 4-3.5 8h3.5"/></symbol>
+  <symbol id="i-beer" viewBox="0 0 24 24"><path d="M5 8h10v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2M5 8a3 3 0 0 1 3-4 3 3 0 0 1 5 0 2.5 2.5 0 0 1 2 4"/></symbol>
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 9h12v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM16 11h1.5a2.5 2.5 0 0 1 0 5H16M8 2v3M12 2v3"/></symbol>
+  <symbol id="i-hall" viewBox="0 0 24 24"><path d="M3 21h18M5 21V10M19 21V10M9.5 21V10M14.5 21V10M2 10l10-7 10 7z"/></symbol>
+  <symbol id="i-cone" viewBox="0 0 24 24"><path d="M10 3h4l5 16H5zM7.5 11h9M6 15.5h12M3 21h18"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-news" viewBox="0 0 24 24"><path d="M4 4h13v15a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2zM17 8h3v11a2 2 0 0 1-2 2M8 8h5M8 12h5M8 16h5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 5c3-1.5 6.5-1.5 10 1 3.5-2.5 7-2.5 10-1v14c-3-1.5-6.5-1.5-10 1-3.5-2.5-7-2.5-10-1zM12 6v14"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-art" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0 0 20c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2.5A4.5 4.5 0 0 0 22 11.5C22 6.3 17.5 2 12 2z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="6.5" r="1"/><circle cx="15" cy="6.5" r="1"/></symbol>
+  <symbol id="i-basket" viewBox="0 0 24 24"><path d="M3 10h18l-2 10H5zM7 10l4-7M17 10l-4-7M9 14v3M15 14v3"/></symbol>
+  <symbol id="i-run" viewBox="0 0 24 24"><circle cx="15" cy="4" r="2"/><path d="M8 21l3-6 3 2 1 5M6 12l3-4h5l2 4 3 1M11 15l1-5"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
+  <symbol id="i-sign" viewBox="0 0 24 24"><path d="M12 2v20M5 5h11l3 2.5L16 10H5zM19 12H8l-3 2.5L8 17h11"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 11v6M12 7.5v.01"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2l2 6.5L20.5 10 14 12l-2 7-2-7-6.5-2L10 8.5zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
+  <symbol id="i-paper" viewBox="0 0 24 24"><path d="M15 4h5v16h-5M4 4h8v16H4zM7 8h2M7 12h2M7 16h2"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+</svg>
+<main class="app" id="app">
+  <section class="stage" aria-label="The model">
+    <canvas id="village" tabindex="0" aria-label="Isometric scale model of downtown Greensboro, lit and peopled by what is going on right now. Drag or use the arrow keys to look around, plus and minus to zoom."></canvas>
+    <div class="float placard" id="almanac" aria-live="polite">Loading…</div>
+    <div class="float alerts" id="alert" hidden></div>
+    <div class="float tools">
+      <div class="grp">
+        <button id="zin" title="Zoom in" aria-label="Zoom in"><svg class="ico"><use href="#i-plus"/></svg></button>
+        <button id="zout" title="Zoom out" aria-label="Zoom out"><svg class="ico"><use href="#i-minus"/></svg></button>
+      </div>
+      <div class="grp">
+        <button id="home" title="Back to the Lincoln Financial tower" aria-label="Back to the middle of downtown"><svg class="ico"><use href="#i-home"/></svg></button>
+        <button id="labels" title="Name the landmarks" aria-label="Name the landmarks" aria-pressed="false"><svg class="ico"><use href="#i-tag"/></svg></button>
+        <button id="fold" class="fold" title="Fold the paper away" aria-label="Fold the paper away" aria-pressed="false"><svg class="ico"><use href="#i-paper"/></svg></button>
+      </div>
     </div>
-    <p class="hint">Drag to look around; left alone, the camera strolls to wherever something is on. Tap a building to read about it in the paper. Downtown only for now, from Bellemeade St to Gate City Blvd; everything elsewhere in town is in the paper under <a href="#around">Around town</a>.</p>
-  </div>
-  <aside id="paper" aria-label="The paper">
-    <div class="mast"><h1>The Gate City Almanac</h1><small id="paperDate"></small></div>
-    <div class="sub" id="status">Loading…</div>
+    <div class="float hint" id="hint">Drag to look around · scroll to zoom · tap a building</div>
+  </section>
+  <aside id="paper" aria-label="The paper"><div class="paper-in">
+    <div class="mast"><h1>The Gate City Almanac</h1><div class="sub" id="status">Loading…</div></div>
     <div id="card"></div>
-    <h2>Downtown</h2>
-    <ul id="downtown"></ul>
-    <h2>City Hall</h2>
+    <h2><span class="h2i" style="background:#a63d2a"><svg class="ico"><use href="#i-spark"/></svg></span>Downtown</h2>
+    <div class="sub">Things with a <svg class="ico" style="color:#c99a00"><use href="#i-pin"/></svg> are on the model: point at one to see where, tap it to go there.</div>
+    <div id="downtown"></div>
+    <h2><span class="h2i" style="background:#4a68b0"><svg class="ico"><use href="#i-hall"/></svg></span>City Hall</h2>
     <div id="cityhall" class="sub"></div>
-    <h2>On the roads</h2>
+    <h2><span class="h2i" style="background:#e0662a"><svg class="ico"><use href="#i-cone"/></svg></span>On the roads</h2>
     <div class="sub" id="roadsSource"></div>
     <ul id="roads"></ul>
-    <h2>Food &amp; drink</h2>
+    <h2><span class="h2i" style="background:#2b7448"><svg class="ico"><use href="#i-food"/></svg></span>Food &amp; drink</h2>
     <div id="eats"></div>
-    <h2 id="around">Around town</h2>
+    <h2 id="around"><span class="h2i" style="background:#8a5a2b"><svg class="ico"><use href="#i-sign"/></svg></span>Around town</h2>
     <div id="aroundList"></div>
-    <h2>About</h2>
-    <p class="sub">A watch-only model of downtown Greensboro, NC. Nothing here is faked: windows light up where something is open or on, crowds gather only at real events, and the sign on the Lincoln Financial tower shows the real time and temperature. Items come from public posts gathered into a digest every 30 minutes; posts by private individuals show no names, and each item links to its original post. Crime is reported in the paper only, never on the map.</p>
+    <h2><span class="h2i" style="background:#6c5d4b"><svg class="ico"><use href="#i-info"/></svg></span>About</h2>
+    <p class="sub">A watch-only model of downtown Greensboro, NC, from Bellemeade St to Gate City Blvd. Nothing here is faked: windows light up where something is open or on, crowds gather only at real events, and the sign on the Lincoln Financial tower shows the real time and temperature. Items come from public posts gathered into a digest every 30 minutes; posts by private individuals show no names, and each item links to its original post. Crime is reported in the paper only, never on the map.</p>
     <p class="sub"><a href="classic.html">The first citywide sketch map</a> is still up.</p>
     <p class="credits">Map data © OpenStreetMap contributors (ODbL). Building heights: NC Phase III lidar (2015). Roof colours and ground cover: NC OneMap aerial imagery (2024), NC CGIA / NC 911 Board. Facades: Mapillary street photos, © Mapillary contributors, CC BY-SA 4.0. Weather: National Weather Service. Roads: NCDOT DriveNC. Restaurants and bars: OpenStreetMap; chains left out.</p>
-  </aside>
-</div>
+  </div></aside>
+</main>
 <script type="module" src="app.js"></script>
 <script type="module" src="crime.js"></script>
 </body>
