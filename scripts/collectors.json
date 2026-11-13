@@ -5,7 +5,8 @@
     { "name": "News RSS and Bluesky", "script": "scripts/fetch-feeds.mjs", "args": ["--no-ingest"] },
     { "name": "Weather (NWS)", "script": "scripts/fetch-weather.mjs" },
     { "name": "Crime (City + FBI)", "script": "scripts/fetch-crime.mjs" },
-    { "name": "Council meetings and city events", "script": "scripts/civic.mjs" }
+    { "name": "Council meetings and city events", "script": "scripts/civic.mjs" },
+    { "name": "Road closures (DriveNC)", "script": "scripts/fetch-roads.mjs" }
   ],
   "ingest": { "script": "scripts/ingest.mjs" }
 }

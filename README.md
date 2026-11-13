@@ -13,8 +13,9 @@ Muse digest email  ->  data/raw/*.txt  ->  npm run ingest  ->  public/data/items
 Needs Node 20 or newer. No packages to install.
 
 ```sh
-npm run dev      # ingest the digests, fetch the weather, then serve on http://localhost:8080
+npm run dev      # ingest the digests, fetch the weather and road closures, then serve on http://localhost:8080
 npm run weather  # refresh just the weather
+npm run roads    # refresh just the road closures
 npm test         # parser, date, placement and privacy-rule tests
 ```
 
@@ -29,6 +30,17 @@ npm test         # parser, date, placement and privacy-rule tests
 `npm run weather` reads the latest observation from the Greensboro airport station (KGSO) and any active alerts for downtown from the National Weather Service API (free, no key), and writes `public/data/weather.json`. The village shows rain, snow, storms with lightning, fog and drifting cloud shadows, darkens under bad weather, and shows active alerts in a red banner. It re-reads the file every 5 minutes. If a fetch fails, the last file is kept.
 
 To preview a sky without waiting for it, add `?weather=rain`, `snow`, `storm`, `fog`, `cloudy`, `partly` or `clear` to the URL.
+## Road closures and traffic
+
+`npm run roads` reads every NCDOT traffic event from DriveNC (free), keeps the ones in Greensboro, places each on the village map and writes `public/data/roads.json` (git-ignored). The village shows each one as a thing in town: barrels and a sawhorse across a closed street, cones and a digging worker for roadwork, two bumped cars under flashing lights for a crash, and bunting for a street closed for a parade or race. Walkers turn around at barrels. Hover an event to read it; the side list ("On the roads") has the details and anything coming up. The page re-reads the file every 5 minutes. If a fetch fails, the last file is kept.
+
+- **Source.** With `DRIVENC_KEY` set, it uses DriveNC's documented [Events API](https://www.drivenc.gov/help/endpoint/event) (free developer key from DriveNC). Without a key it reads the same events from the public DriveNC site's own list and map feeds, which works today but is not a published API and could change.
+- **Placement** (`scripts/roads.mjs`). The village map is a schematic, so real coordinates go through an affine fit to a handful of anchor points (Elm and Market, Benbow and Lee, the Coliseum, Friendly Center and so on) with a smooth correction that lands each anchor on its tile. Events on a road the village draws (Elm, Market, Friendly, Spring Garden, Gate City/Lee, Benbow, Battleground, Aycock) snap onto that road; others get a short side street where they are. Add anchors or road names there.
+- **Greensboro only.** Guilford County events inside a box around the city; High Point and the rural county are left out. Upcoming events with no location yet only show in the list, and only if they are on a village road.
+
+To see every kind without waiting for a crash, add `?roads=demo` to the URL.
+
+Scheduling: registered in `scripts/collectors.json`, and the publish workflow passes the `DRIVENC_KEY` repo secret to it. Without the secret it uses the keyless public feed.
 
 ## Getting digests into `data/raw/`
 

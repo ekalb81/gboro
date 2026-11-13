@@ -71,6 +71,7 @@ jobs:
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           FBI_API_KEY: ${{ secrets.FBI_API_KEY }}
+          DRIVENC_KEY: ${{ secrets.DRIVENC_KEY }}
         run: node scripts/refresh.mjs
 
       - name: Save crime counts
