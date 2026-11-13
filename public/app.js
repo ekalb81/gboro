@@ -143,7 +143,7 @@ function buildScene() {
   const now = etNow();
   const wxKind = weather ? (weather.precip === 'storm' ? 'storm' : weather.precip === 'rain' ? 'rain' : weather.precip === 'snow' ? 'snow' : 'clear') : 'clear';
   const scene = {
-    wx: wxKind, intensity: weather?.intensity, cloudy: weather?.sky === 'cloudy', fog: !!weather?.fog, windMph: weather?.windMph || 0, tempF: weather?.tempF ?? null,
+    wx: wxKind, intensity: weather?.intensity, cloudy: weather?.sky === 'cloudy', fog: !!weather?.fog, windMph: weather?.windMph || 0, windGustMph: weather?.windGustMph || 0, windFromDeg: weather?.windFromDeg ?? null, tempF: weather?.tempF ?? null,
     council: { lit: council.lit, inSession: council.inSession },
     lit: new Map(), strings: new Set(), crowds: [], trucks: [], bubbles: [], focus: [],
     roads: liveRoads().filter((e) => e.onModel && !e.upcoming).map((e) => ({ gx: e.gx, gy: e.gy, kind: e.kind, full: !!e.full })),
@@ -395,6 +395,9 @@ async function refreshItems() {
 }
 async function refreshWeather() {
   weather = Q.get('weather') ? previewWeather(Q.get('weather')) : await loadJSON('data/weather.json', null);
+  // ?wind=18-30@230 previews a wind: 18 mph gusting 30, from 230 degrees (south-west)
+  const wq = /^(\d+)(?:-(\d+))?@(\d+)$/.exec(Q.get('wind') || '');
+  if (wq) weather = { ...(weather || previewWeather('clear')), windMph: +wq[1], windGustMph: +(wq[2] || wq[1]), windFromDeg: +wq[3] };
   renderAlerts();
 }
 async function refreshRoads() {
@@ -402,13 +405,14 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null)]);
+const [map, info, eatsData, trees] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null)]);
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
 model = startModel({
   canvas: $('village'),
   map,
+  trees,
   onPick: (b) => {
     if (b && b.sign) {
       const d = $(`area-${b.sign}`);
