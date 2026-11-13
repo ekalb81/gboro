@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">
+ <title>CityofGreensboroNC</title>
+ <entry>
+  <id>yt:video:AAA</id>
+  <title>Greensboro City Council Meeting 11/10/2026</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=AAA"/>
+  <published>2026-11-11T14:03:00+00:00</published>
+ </entry>
+ <entry>
+  <id>yt:video:BBB</id>
+  <title>On the Town - Week of November 9, 2026</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=BBB"/>
+  <published>2026-11-09T06:00:00+00:00</published>
+ </entry>
+ <entry>
+  <id>yt:video:CCC</id>
+  <title>GTN&#39;s &quot;This is Greensboro&quot; with a guest</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=CCC"/>
+  <published>2026-11-05T14:06:00+00:00</published>
+ </entry>
+ <entry>
+  <id>yt:video:DDD</id>
+  <title>On the Town - Week of November 2, 2026</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=DDD"/>
+  <published>2026-11-02T06:00:00+00:00</published>
+ </entry>
+</feed>

@@ -48,12 +48,39 @@ jobs:
           key: crime-${{ github.run_id }}
           restore-keys: crime-
 
+      # Same for the last weather reading (public NWS data), so a weather.gov outage keeps the last sky.
+      - name: Restore last weather
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/weather.json
+          key: weather-${{ github.run_id }}
+          restore-keys: weather-
+
+      # The City's YouTube feed (public videos only) is kept between runs, because YouTube's feeds
+      # sometimes answer 404 for a while; civic.mjs falls back to the last good copy.
+      - name: Restore last City YouTube feed
+        uses: actions/cache/restore@v4
+        with:
+          path: data/civic/youtube.xml
+          key: civic-youtube-${{ github.run_id }}
+          restore-keys: civic-youtube-
+
+      # Restaurants and bars from OpenStreetMap (public business listings) are refreshed about once a day,
+      # so the last copy is kept between runs and the collector skips the fetch while it is fresh.
+      - name: Restore last restaurants and bars
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/eats.json
+          key: eats-${{ github.run_id }}
+          restore-keys: eats-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           FBI_API_KEY: ${{ secrets.FBI_API_KEY }}
+          DRIVENC_KEY: ${{ secrets.DRIVENC_KEY }}
         run: node scripts/refresh.mjs
 
       - name: Save crime counts
@@ -62,6 +89,27 @@ jobs:
         with:
           path: public/data/crime.json
           key: crime-${{ github.run_id }}
+
+      - name: Save weather
+        if: hashFiles('public/data/weather.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/weather.json
+          key: weather-${{ github.run_id }}
+
+      - name: Save City YouTube feed
+        if: hashFiles('data/civic/youtube.xml') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/civic/youtube.xml
+          key: civic-youtube-${{ github.run_id }}
+
+      - name: Save restaurants and bars
+        if: hashFiles('public/data/eats.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/eats.json
+          key: eats-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |

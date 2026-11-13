@@ -1,6 +1,10 @@
 // GSO Village renderer: a procedural pixel map of Greensboro with live items pinned to districts.
 // Plain canvas, no build step. Data: data/map.json (layout) and data/items.json (from scripts/ingest.mjs).
 
+import { loadCivic, councilState, drawCouncilNight, councilLine } from './civic.js';
+import { initRoads, drawRoads, isClosed } from './roads.js';
+import { loadEats, placeShops, drawShops, drawEatsOverlay, setEventItems } from './eats.js';
+
 const T = 8; // tile size in canvas pixels
 const TZ = 'America/New_York';
 const CAT_COLORS = { event: '#e0a020', news: '#c8553d', business: '#3d8ac8', government: '#7a5ad0', community: '#4a9a5a' };
@@ -17,6 +21,7 @@ const pick = (a) => a[Math.floor(rnd() * a.length)];
 
 let map, items = [], byDistrict = new Map(), selected = null, windows = [];
 let roadMask, W, H;
+let civicCount = 0, hallWindows = [], council = { lit: false };
 const bg = document.createElement('canvas');
 
 // ---------- data ----------
@@ -28,18 +33,25 @@ async function loadJSON(url) {
 
 async function refreshItems() {
   try {
-    const data = await loadJSON('data/items.json');
-    items = data.items;
+    const [data, civic] = await Promise.all([
+      loadJSON('data/items.json').catch(() => ({ items: [], digests: 0, generatedAt: null })),
+      loadCivic(),
+    ]);
+    if (!data.generatedAt && !civic.generatedAt) throw new Error('no data');
+    items = [...data.items, ...civic.items].sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
+    civicCount = civic.items.length;
+    council = councilState(civic.items);
     byDistrict = new Map();
     for (const it of items) {
       if (!byDistrict.has(it.district)) byDistrict.set(it.district, []);
       byDistrict.get(it.district).push(it);
     }
-    const when = new Date(data.generatedAt).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+    const when = new Date(data.generatedAt || civic.generatedAt).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
     document.getElementById('status').textContent =
-      `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}. Updated ${when}.`;
+      `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}${civicCount ? ' and the city calendar' : ''}. Updated ${when}.`;
     renderList();
     spawnCrowds();
+    setEventItems(items);
   } catch (e) {
     document.getElementById('status').textContent = 'No data yet. Run `npm run ingest`.';
     console.error(e);
@@ -133,6 +145,9 @@ function buildBackground() {
   windows = [];
   for (const d of map.districts) { block(d.x, d.y, d.w, d.h, 1); drawLandmark(g, d); }
 
+  // Restaurants and bars (eats.js) claim their tiles before houses fill in.
+  placeShops({ W, H, free, block });
+
   // Houses near roads, denser near districts.
   const near = (x, y, r) => { for (let j = y - r; j <= y + r; j++) for (let i = x - r; i <= x + r; i++) if (i >= 0 && j >= 0 && i < W && j < H && roadMask[j * W + i]) return true; return false; };
   const walls = ['#e6d3b0', '#d9c29a', '#c9b8a0', '#e8e0d0', '#cfae8f'];
@@ -210,6 +225,7 @@ function drawLandmark(g, d) {
   for (let wy = y + roofH + 3; wy < y + h - 6; wy += 6) for (let wx = x + 3; wx < x + w - 4; wx += 5) {
     g.fillStyle = '#9cc4d8'; g.fillRect(wx, wy, 3, 3);
     windows.push([wx, wy, 3]);
+    if (d.id === 'downtown') hallWindows.push([wx, wy, 3]);
   }
   g.fillStyle = '#3a2618'; g.fillRect(x + (w >> 1) - 2, y + h - 6, 5, 6);
 }
@@ -229,7 +245,7 @@ function stepWalker(f) {
   const gx = f.tx * T + 2, gy = f.ty * T;
   if (Math.abs(f.px - gx) < 0.5 && Math.abs(f.py - gy) < 0.5) {
     f.px = gx; f.py = gy;
-    const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => isRoad(f.tx + dx, f.ty + dy));
+    const opts = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => isRoad(f.tx + dx, f.ty + dy) && !isClosed(f.tx + dx, f.ty + dy));
     const ahead = opts.filter(([dx, dy]) => !(dx === -f.dir[0] && dy === -f.dir[1]));
     const keep = ahead.find(([dx, dy]) => dx === f.dir[0] && dy === f.dir[1]);
     f.dir = keep && rnd() < 0.85 ? keep : pick(ahead.length ? ahead : opts) || [0, 0];
@@ -292,6 +308,101 @@ function drawBubble(f) {
   ctx.fillStyle = '#2b2418'; ctx.textBaseline = 'top'; ctx.fillText(f.say.text, x + 3, y + 2);
 }
 
+// ---------- weather (data/weather.json from scripts/fetch-weather.mjs) ----------
+// Preview any sky with ?weather=rain|snow|storm|fog|cloudy|partly|clear
+const PREVIEW = new URLSearchParams(location.search).get('weather');
+let wx = { sky: 'clear', precip: 'none', intensity: null, fog: false, windMph: 5 };
+let drops = [], clouds = [], flash = 0;
+
+function previewWeather(kind) {
+  const base = { text: `Preview: ${kind}`, tempF: null, windMph: 10, sky: 'cloudy', precip: 'none', intensity: 'moderate', fog: false, alerts: [] };
+  if (kind === 'rain' || kind === 'snow' || kind === 'storm') base.precip = kind;
+  if (kind === 'storm') { base.intensity = 'heavy'; base.windMph = 25; base.alerts = [{ event: 'Severe Thunderstorm Warning', headline: 'Preview alert', severity: 'Severe' }]; }
+  if (kind === 'fog') base.fog = true;
+  if (kind === 'partly' || kind === 'clear') base.sky = kind;
+  return base;
+}
+
+async function refreshWeather() {
+  try {
+    wx = PREVIEW ? previewWeather(PREVIEW) : await loadJSON('data/weather.json');
+  } catch {
+    document.getElementById('weather').textContent = '';
+    return; // no weather yet: keep a clear sky
+  }
+  const bits = [wx.tempF != null ? `${wx.tempF}°F` : null, wx.text, wx.windMph ? `wind ${wx.windMph} mph` : null].filter(Boolean);
+  document.getElementById('weather').textContent = bits.length ? `· ${bits.join(' · ')}` : '';
+  renderAlerts();
+  seedWeather();
+}
+
+// Alerts can end between fetches (or a fetch can fail), so check their end time every time we draw the banner.
+function renderAlerts() {
+  const live = (wx.alerts || []).filter((a) => !a.ends || new Date(a.ends).getTime() > Date.now());
+  const banner = document.getElementById('alert');
+  banner.hidden = !live.length;
+  banner.innerHTML = '';
+  for (const a of live) {
+    const line = document.createElement('div');
+    line.append(Object.assign(document.createElement('b'), { textContent: a.event }), a.headline ? ` · ${a.headline}` : '');
+    banner.append(line);
+  }
+}
+
+function seedWeather() {
+  const n = { light: 120, moderate: 260, heavy: 480 }[wx.intensity] ?? 0;
+  const count = wx.precip === 'none' ? 0 : wx.precip === 'snow' ? Math.round(n * 0.7) : n;
+  drops = Array.from({ length: count }, () => ({ x: rnd() * canvas.width, y: rnd() * canvas.height, v: 0.6 + rnd() * 0.8 }));
+  const nClouds = { clear: 0, partly: 5, cloudy: 11 }[wx.sky] ?? 0;
+  clouds = Array.from({ length: nClouds }, () => ({ x: rnd() * canvas.width, y: rnd() * canvas.height, r: 30 + rnd() * 50 }));
+}
+
+function drawWeather(t) {
+  const wind = Math.min(30, wx.windMph || 0);
+  const drift = 0.05 + wind * 0.02;
+  // Cloud shadows sliding over the town.
+  ctx.fillStyle = wx.sky === 'cloudy' ? 'rgba(20,30,40,.16)' : 'rgba(20,30,40,.12)';
+  for (const c of clouds) {
+    c.x += drift; if (c.x - c.r > canvas.width) { c.x = -c.r; c.y = rnd() * canvas.height; }
+    for (let i = -2; i <= 2; i++) { const rr = c.r * (1 - Math.abs(i) * 0.25); ctx.fillRect(Math.round(c.x + i * c.r * 0.45 - rr / 2), Math.round(c.y - rr * 0.3), Math.round(rr), Math.round(rr * 0.6)); }
+  }
+  if (wx.sky === 'cloudy') { ctx.fillStyle = 'rgba(40,50,60,.12)'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  if (wx.precip === 'snow') { ctx.fillStyle = 'rgba(235,240,250,.18)'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+
+  const slant = wind / 12;
+  if (wx.precip === 'rain' || wx.precip === 'storm') {
+    ctx.fillStyle = 'rgba(170,200,235,.75)';
+    for (const d of drops) {
+      d.y += 4 * d.v + 2; d.x += slant * d.v;
+      if (d.y > canvas.height) { d.y = -4; d.x = rnd() * canvas.width; }
+      if (d.x > canvas.width) d.x -= canvas.width;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 3);
+      if (d.v > 1.3 && d.y % 97 < 4) ctx.fillRect(Math.round(d.x) - 1, Math.round(d.y) + 4, 3, 1); // splash
+    }
+  } else if (wx.precip === 'snow') {
+    ctx.fillStyle = '#f8fbff';
+    for (const d of drops) {
+      d.y += 0.5 * d.v; d.x += Math.sin(t / 700 + d.v * 9) * 0.3 + slant * 0.3;
+      if (d.y > canvas.height) { d.y = -2; d.x = rnd() * canvas.width; }
+      if (d.x > canvas.width) d.x -= canvas.width; else if (d.x < 0) d.x += canvas.width;
+      const s = d.v > 1.1 ? 2 : 1;
+      ctx.fillRect(Math.round(d.x), Math.round(d.y), s, s);
+    }
+  }
+  if (wx.precip === 'storm') {
+    if (flash <= 0 && rnd() < 0.003) flash = 10;
+    if (flash > 0) { ctx.fillStyle = `rgba(255,255,240,${flash > 7 ? 0.55 : flash / 30})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flash--; }
+  }
+  if (wx.fog) {
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = 'rgba(225,228,232,.16)';
+      const y = ((t / 60 + i * 160) % (canvas.height + 120)) - 60;
+      ctx.fillRect(0, Math.round(y), canvas.width, 60);
+    }
+    ctx.fillStyle = 'rgba(225,228,232,.28)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
 // ---------- markers, sky, frame ----------
 function markerRect(d) {
   return { x: d.x * T + (d.w * T >> 1) - 5, y: d.y * T - (d.id === 'downtown' ? 22 : 14), w: 11, h: 11 };
@@ -323,14 +434,19 @@ function skyAlpha(h) {
 
 function frame(t) {
   ctx.drawImage(bg, 0, 0);
+  drawShops(ctx, t);
   for (const f of folks) if (f.kind === 'walk') stepWalker(f);
   for (const f of [...folks].sort((a, b) => a.py - b.py)) drawPerson(f, t);
-  const a = skyAlpha(etHour());
+  const a = Math.min(0.6, skyAlpha(etHour()) + (wx.precip !== 'none' ? 0.1 : 0));
   if (a) {
     ctx.fillStyle = `rgba(16,24,64,${a})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'rgba(255,214,110,.85)';
     for (const [x, y, s = 2] of windows) if ((x * 7 + y * 13) % 5) ctx.fillRect(x, y, s, s);
   }
+  drawCouncilNight(ctx, map.districts.find((d) => d.id === 'downtown'), T, hallWindows, council, t);
+  drawWeather(t);
+  drawRoads(t, a); // after the night tint, so barrel lamps and crash lights stand out
+  drawEatsOverlay(ctx, t, a);
   drawMarkers(t);
   for (const f of folks) if (f.say && f.say.until > t) drawBubble(f); else if (f.say) f.say = null;
   requestAnimationFrame(frame);
@@ -340,7 +456,9 @@ function tickClock() {
   const now = new Date().toLocaleString('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const h = etHour();
   const part = h >= 20 || h < 6 ? 'Night' : h < 7 || h >= 18 ? 'Dusk' : 'Daytime';
-  document.getElementById('clock').innerHTML = `Greensboro · <b>${now}</b> · ${part}`;
+  council = councilState(items);
+  const c = councilLine(council);
+  document.getElementById('clock').innerHTML = `Greensboro · <b>${now}</b> · ${part}${c ? ` · <b>${c}</b>` : ''}`;
 }
 
 // ---------- side list & interaction ----------
@@ -371,9 +489,12 @@ function renderList() {
     const m1 = document.createElement('div'); m1.className = 'm';
     m1.textContent = [isOver(it) ? 'Earlier' : isToday(it) ? 'Today' : null, when, it.venue || d?.name].filter(Boolean).join(' · ');
     const m2 = document.createElement('div'); m2.className = 'm';
-    m2.textContent = `${it.platform} · ${it.account || 'a local post'} `;
+    const civic = it.platform === 'City of Greensboro';
+    m2.textContent = civic
+      ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : it.recording ? 'Recording on the City’s YouTube' : it.account || 'City of Greensboro'} `
+      : `${it.platform} · ${it.account || 'a local post'} `;
     if (/^https:\/\//.test(it.url)) {
-      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: 'View post ↗' });
+      const a = Object.assign(document.createElement('a'), { href: it.url, target: '_blank', rel: 'noopener noreferrer', textContent: civic ? (/youtube\.com/.test(it.url) ? 'Watch ↗' : 'Details ↗') : 'View post ↗' });
       a.onclick = (e) => e.stopPropagation();
       m2.append(a);
     }
@@ -402,10 +523,15 @@ canvas.addEventListener('click', (e) => { const d = hit(e); select(d ? (selected
 
 // ---------- boot ----------
 map = await loadJSON('data/map.json');
+await loadEats();
 buildBackground();
 for (let i = 0; i < 40; i++) folks.push(newWalker());
 await refreshItems();
+await refreshWeather();
+initRoads({ T, ctx, canvas, map });
 tickClock();
+setInterval(refreshWeather, 5 * 60e3);
+setInterval(renderAlerts, 60e3);
 setInterval(tickClock, 15e3);
 setInterval(refreshItems, 60e3); // pick up new digests without a reload
 setInterval(chatter, 5e3);

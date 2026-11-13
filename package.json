@@ -4,12 +4,18 @@
   "private": true,
   "description": "A watch-only pixel village of Greensboro, NC, driven by live local data.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "ingest": "node scripts/ingest.mjs",
+    "weather": "node scripts/fetch-weather.mjs",
+    "civic": "node scripts/civic.mjs",
     "fetch": "node scripts/fetch-digests.mjs",
+    "eats": "node scripts/fetch-eats.mjs",
     "feeds": "node scripts/fetch-feeds.mjs",
-    "dev": "node scripts/ingest.mjs && node scripts/serve.mjs",
+    "roads": "node scripts/fetch-roads.mjs",
+    "dev": "node scripts/ingest.mjs && (node scripts/fetch-weather.mjs || true) && (node scripts/fetch-roads.mjs || true) && node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "crime": "node scripts/fetch-crime.mjs",
     "test": "node --test test/*.test.mjs"
