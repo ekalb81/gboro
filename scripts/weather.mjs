@@ -43,6 +43,8 @@ export function normalizeWeather(observation, alerts) {
     text: p.textDescription || null,
     tempF: cToF(p.temperature?.value),
     windMph: kmhToMph(p.windSpeed?.value),
+    windGustMph: kmhToMph(p.windGust?.value),
+    windFromDeg: p.windDirection?.value ?? null, // where the wind blows from, degrees clockwise from north
     ...classify(p.textDescription || '', p.cloudLayers || []),
     alerts: (alerts?.features ?? [])
       .map((f) => f.properties)

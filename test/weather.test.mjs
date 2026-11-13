@@ -60,3 +60,15 @@ test('fetchWeather calls the station and alert endpoints with a User-Agent', asy
   assert.ok(calls.some(([u]) => u.includes('/alerts/active?point=')));
   assert.ok(calls.every(([, ua]) => ua));
 });
+
+test('keeps wind direction and gusts for the trees and flags', () => {
+  const o = obs('Clear', ['CLR']);
+  o.properties.windDirection = { unitCode: 'wmoUnit:degree_(angle)', value: 230 };
+  o.properties.windGust = { unitCode: 'wmoUnit:km_h-1', value: 40.7 };
+  const w = normalizeWeather(o, { features: [] });
+  assert.equal(w.windFromDeg, 230);
+  assert.equal(w.windGustMph, 25);
+  const calm = normalizeWeather(obs('Clear', ['CLR']), { features: [] });
+  assert.equal(calm.windFromDeg, null);
+  assert.equal(calm.windGustMph, null);
+});
