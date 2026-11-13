@@ -4,6 +4,7 @@
     { "name": "Muse digests (Gmail)", "script": "scripts/fetch-digests.mjs", "args": ["--no-ingest"], "env": ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"] },
     { "name": "News RSS and Bluesky", "script": "scripts/fetch-feeds.mjs", "args": ["--no-ingest"] },
     { "name": "Weather (NWS)", "script": "scripts/fetch-weather.mjs" },
+    { "name": "Crime (City + FBI)", "script": "scripts/fetch-crime.mjs" },
     { "name": "Council meetings and city events", "script": "scripts/civic.mjs" }
   ],
   "ingest": { "script": "scripts/ingest.mjs" }

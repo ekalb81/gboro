@@ -39,12 +39,29 @@ jobs:
       # Every run starts from a clean checkout and refetches recent data, so raw posts (which name
       # private people) are never stored in git or in an Actions cache. Add new sources'
       # secrets here and list the collector in scripts/collectors.json.
+      # The last good crime counts (citywide and per-division totals only, nothing personal) are kept
+      # between runs, so an FBI or City outage shows the previous numbers instead of none.
+      - name: Restore last crime counts
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/crime.json
+          key: crime-${{ github.run_id }}
+          restore-keys: crime-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          FBI_API_KEY: ${{ secrets.FBI_API_KEY }}
         run: node scripts/refresh.mjs
+
+      - name: Save crime counts
+        if: hashFiles('public/data/crime.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/crime.json
+          key: crime-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |
