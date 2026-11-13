@@ -523,8 +523,70 @@ const carCols=[C.Brick,C['Haw River'],C.Paper,C.Tobacco,C.Slate,C['Aggie blue'],
 const skins=['#f5d0ad','#e2a87e','#c3825a','#9a6040','#76462e','#553220'];
 const shirts=[C.Tobacco,C['Aggie blue'],C.Brick,C.Pine,C.Paper,C['Haw River'],'#b04ec0',C.Slate,'#ff7a9a'];
 const cars=[],people=[];
-chains.forEach((ch,ci)=>{const n=Math.max(1,Math.round(ch.L/(ch.c<=2?9:16)));for(let k=0;k<n;k++)cars.push({ch,d:Math.random()*ch.L,dir:k%2?1:-1,v:(1.1+Math.random()*.5)*(ch.c<=2?1:.8),col:carCols[(ci*3+k)%8]});
+chains.forEach((ch,ci)=>{
   const np=Math.round(ch.L/4);for(let k=0;k<np;k++)people.push({ch,d:Math.random()*ch.L,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1,v:.13+Math.random()*.06,night:k%3!==0,skin:skins[(ci+k)%6],shirt:shirts[(ci*2+k)%9]})});
+// ---------- street traffic ----------
+// The streets as a graph (OSM ways split where they meet), one lane each way (one way where OSM says so), driving on
+// the right. Cars follow the car ahead (a simple intelligent-driver model), stop at red and yellow lights at the real
+// signals (OSM traffic_signals; two phases, the cross street gets green in turn), come to a full stop at mapped stop
+// signs before going when the junction is clear, and yield on side streets at other junctions. At each junction a car
+// picks a legal way on (no wrong way down one-way streets, no U-turns unless it is a dead end); at the model's edge it
+// leaves and another car comes in somewhere else.
+const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
+  for(const r of MAP.R){if(r.ar||r.c>4)continue;for(const p of clipLine(pairs(r.p),.3))pieces.push({p,c:r.c,ow:r.ow,n:r.n})}
+  const seen=new Map();for(const pc of pieces)pc.p.forEach((q,i)=>{const k=key(q[0],q[1]);seen.set(k,(seen.get(k)||0)+(i===0||i===pc.p.length-1?1:2))});
+  const nodes=new Map();const node=q=>{const k=key(q[0],q[1]);let n=nodes.get(k);if(!n){n={k,x:q[0],y:q[1],out:[],inn:[],cls:9};nodes.set(k,n)}return n};
+  const lanes=[];
+  for(const pc of pieces){let cur=[pc.p[0]];for(let i=1;i<pc.p.length;i++){cur.push(pc.p[i]);const k=key(pc.p[i][0],pc.p[i][1]);if(i===pc.p.length-1||seen.get(k)!==2){
+      if(cur.length>1){const a=node(cur[0]),b=node(cur[cur.length-1]);if(a!==b){const mk_=(pts,from,to)=>{const ch=mkChain(pts,{c:pc.c,n:pc.n});const ln={ch,from,to,L:ch.L,c:pc.c,ow:pc.ow,cars:[],id:lanes.length};lanes.push(ln);from.out.push(ln);to.inn.push(ln);return ln};
+        const f=mk_(cur,a,b);if(!pc.ow){const r_=mk_(cur.slice().reverse(),b,a);f.rev=r_;r_.rev=f}a.cls=Math.min(a.cls,pc.c);b.cls=Math.min(b.cls,pc.c)}}cur=[pc.p[i]]}}}
+  const N=[...nodes.values()];
+  // the junction's controls: real signals and stop signs from OSM, matched to the nearest junction
+  for(const n of N)n.deg=new Set([...n.out,...n.inn].map(l=>l.rev?Math.min(l.id,l.rev.id):l.id)).size;
+  const near=(x,y,r)=>{let best=null,bd=r;for(const n of N){if(n.deg<3)continue;const d=Math.hypot(n.x-x,n.y-y);if(d<bd){bd=d;best=n}}return best};
+  for(const[x,y,k] of (MAP.SIG||[])){if(k==='s'){const n=near(x,y,3.2);if(n)n.signal=true}}
+  for(const[x,y,k] of (MAP.SIG||[])){if(k==='p'||k==='y'){// a stop or yield sign belongs to the approach it stands on
+      let best=null,bd=2.2;for(const n of N){if(n.signal||n.deg<3)continue;for(const l of n.inn){const q=l.ch.p[l.ch.p.length-2]||l.ch.p[0];const d=Math.hypot(x-n.x,y-n.y);if(d<bd&&((x-n.x)*(q[0]-n.x)+(y-n.y)*(q[1]-n.y))>0){bd=d;best=l}}}if(best){best.sign=k==='p'?'stop':'yield';best.signAt=[x,y]}}}
+  for(const n of N){const hd=l=>{const p=l.ch.p,a=p[p.length-2],b=p[p.length-1];return Math.atan2(b[1]-a[1],b[0]-a[0])};
+    if(n.signal&&n.inn.length){const h0=hd(n.inn[0]);for(const l of n.inn){let d=Math.abs(((hd(l)-h0)%Math.PI+Math.PI)%Math.PI);d=Math.min(d,Math.PI-d);l.phase=d<Math.PI/4?0:1}n.offset=hash(n.x,n.y)*40}
+    // side streets give way at junctions without lights
+    else if(n.deg>=3)for(const l of n.inn)if(!l.sign&&l.c>n.cls)l.sign='yield'}
+  const entries=lanes.filter(l=>l.from.out.length===1&&l.from.inn.length<=1&&(l.from.x<1||l.from.y<1||l.from.x>GX-1||l.from.y>GY-1));
+  return{lanes,nodes:N,entries:entries.length?entries:lanes}})();
+const CYC=[22,3,1.5];const CYCLE=2*(CYC[0]+CYC[1]+CYC[2]);
+/** 'g', 'y' or 'r' for an approach at a signal */
+function light(l){if(!l.to.signal)return null;let t=((T+l.to.offset)%CYCLE+CYCLE)%CYCLE;const half=CYCLE/2;const mine=l.phase===0?t<half:t>=half;if(!mine)return'r';t%=half;return t<CYC[0]?'g':t<CYC[0]+CYC[1]?'y':'r'}
+const CARL=4.6/9,stopBack=l=>(RW[l.to.cls]/2+3.2)/M;
+const tcars=[];if(new URLSearchParams(location.search).has('debug'))window.__tf={TF,tcars,light};
+(function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s)}}})();
+function addCar(l,s){const c={lane:l,s,v:.6,col:carCols[Math.floor(Math.random()*carCols.length)],v0:(l.c<=2?1.5:1.15)*(.88+Math.random()*.24),wait:0,go:false,off:null};l.cars.push(c);l.cars.sort((a,b)=>b.s-a.s);tcars.push(c);return c}
+function nextLane(c){const l=c.lane;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
+  // mostly straight on, sometimes a turn
+  const h=(q,a)=>{const p=q.ch.p;return a?Math.atan2(p[1][1]-p[0][1],p[1][0]-p[0][0]):Math.atan2(p[p.length-1][1]-p[p.length-2][1],p[p.length-1][0]-p[p.length-2][0])};const h0=h(l,false);
+  const w=opts.map(o=>{let d=Math.abs(h(o,true)-h0);d=Math.min(d,2*Math.PI-d);return d<.5?4:1});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<opts.length;i++){r-=w[i];if(r<=0)return opts[i]}return opts[0]}
+function boxBusy(n,me){for(const l of n.out)for(const c of l.cars)if(c!==me&&c.s<.55&&c.v>.05)return true;for(const l of n.inn)for(const c of l.cars)if(c!==me&&c.go&&l.L-c.s<.6)return true;return false}
+function stepTraffic(dt){
+  for(const l of TF.lanes){
+    for(let i=0;i<l.cars.length;i++){const c=l.cars[i];if(!c.next)c.next=nextLane(c);
+      // the gap to whatever is ahead: the car in front, or the last car on the lane we turn into
+      let gap=1e9,vl=0;if(i>0){gap=l.cars[i-1].s-c.s-CARL;vl=l.cars[i-1].v}else if(c.next&&c.next.cars.length){const t=c.next.cars[c.next.cars.length-1];gap=l.L-c.s+t.s-CARL;vl=t.v}
+      // must we stop at the end of this lane?
+      const sb=stopBack(l),toLine=l.L-sb-c.s;let hold=false;
+      if(!c.go&&toLine>-.15){const lt=light(l);
+        if(lt==='r')hold=true;else if(lt==='y')hold=c.v*c.v/(2*2.2)<toLine+.05;
+        else if(l.sign==='stop'){if(c.v<.04&&toLine<.35){c.wait+=dt;if(c.wait>1.3&&!boxBusy(l.to,c))c.go=true;else hold=true}else hold=true}
+        else if(l.sign==='yield'){hold=toLine<1.6&&boxBusy(l.to,c)}
+        if(!c.next)hold=hold||false;if(!hold&&toLine<.4)c.go=true}
+      for(const k of L.closures)if(k.full)for(const q of (k.lanes||[]))if(q.lane===l&&q.s>c.s){const d=q.s-.5-c.s;if(d<gap){gap=d;vl=0}}
+      if(hold&&toLine<gap){gap=Math.max(.001,toLine);vl=0}
+      const A=1.1,Bd=2.2,s0=.32,Th=.9;const ds=s0+c.v*Th+c.v*(c.v-vl)/(2*Math.sqrt(A*Bd));let a=A*(1-Math.pow(c.v/c.v0,4)-Math.pow(Math.max(0,ds)/Math.max(.02,gap),2));a=Math.max(-6,a);
+      c.v=Math.max(0,c.v+a*dt);c.s+=Math.min(c.v*dt,Math.max(0,gap+CARL*.1));c.stopped=c.v<.05}
+    // cars that reached the end move on (or leave the model)
+    while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift();const nx=c.next;const[ox_,oy_]=lanePos(l,l.L);c.s-=l.L;c.wait=0;c.go=false;c.next=null;
+      if(nx){c.lane=nx;nx.cars.push(c);const[px,py]=lanePos(nx,0);c.off=[ox_-px,oy_-py,.6]}
+      else{const e=TF.entries[Math.floor(Math.random()*TF.entries.length)];const tail=e.cars[e.cars.length-1];if(tail&&tail.s<CARL*2){c.lane=l;c.s=l.L-.01;c.v=0;l.cars.unshift(c);break}c.lane=e;c.s=0;c.v=.8;c.off=null;e.cars.push(c)}}}
+}
+function lanePos(l,s){const[gx,gy,ux,uy]=along(l.ch,s);const off=l.ow&&!l.rev?0:(RW[l.c]/4)/M;return[gx-uy*off,gy+ux*off,ux,uy]}
 const trainCh=clipLine(pairs(MAP.TRAIN),1.5).map(p=>mkChain(p,{})).sort((a,b)=>b.L-a.L)[0]||mkChain([[0,0],[0,0]],{});
 let trainD=-12,trainWait=4;
 
@@ -597,12 +659,12 @@ function frame(ts){
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
-  for(const c of cars){
-    let stopAt=null;for(const k of L.closures)if(k.full&&k.ch===c.ch&&(c.dir>0?k.d>c.d:k.d<c.d)&&(stopAt==null||Math.abs(k.d-c.d)<Math.abs(stopAt-c.d)))stopAt=k.d;let nd=c.d+c.dir*c.v*dt;
-    if(stopAt!=null){if(c.dir>0&&c.d<=stopAt-.9+1e-6&&nd>=stopAt-.9)nd=stopAt-.9;if(c.dir<0&&c.d>=stopAt+.9-1e-6&&nd<=stopAt+.9)nd=stopAt+.9}
-    if(!reduce)c.d=nd;if(c.d>c.ch.L)c.d=0;if(c.d<0)c.d=c.ch.L;
-    const[gx,gy,ux,uy]=along(c.ch,c.d);const off=(RW[c.ch.c]/4)/M*(c.dir>0?1:-1);const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
-    dyn.push({kind:'car',gx:px,gy:py,ux:ux*c.dir,uy:uy*c.dir,col:c.col,stopped:stopAt!=null&&Math.abs(c.d-stopAt)<1})}
+  if(!reduce)stepTraffic(Math.min(dt,.05));
+  for(const c of tcars){let[px,py,ux,uy]=lanePos(c.lane,Math.min(c.s,c.lane.L));if(c.off){const k=Math.max(0,1-c.s/c.off[2]);px+=c.off[0]*k;py+=c.off[1]*k;if(k<=0)c.off=null}if(!vis(px,py))continue;
+    dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,stopped:c.stopped})}
+  // the lights themselves, and stop signs, at the stop line on the right of each approach
+  for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;const s_=Math.max(0,l.L-stopBack(l)+.2);const[gx,gy,ux,uy]=along(l.ch,s_);const off=(RW[l.c]/2+1.2)/M;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
+    dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
   for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.ch.L||p.d<0){p.dir*=-1;p.d=Math.max(0,Math.min(p.ch.L,p.d))}}if(nt&&p.night)continue;
     const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5)})}
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
@@ -620,13 +682,15 @@ function frame(ts){
     if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(c,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
       if(lamp){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,2.5),'#fff4c8',2)}if(o.stopped||lamp){ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,2.5),o.stopped?'#ff3a2a':'#c84a40',o.stopped?2:1)}if(o.haz&&blink(T,.4,.4)){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,3),'#ffb040',2);ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,3),'#ffb040',2)}}
     else if(o.kind==='pp'){const[x,y]=P(o.gx,o.gy);person(c,x,y-(o.bob?1:0),o.skin,o.shirt,o.f)}
+    else if(o.kind==='sig'){const[x,y]=P(o.gx,o.gy);const X=Math.round(x),Y=Math.round(y);fr(c,X,Y-15,1,15,'#3a3a40');fr(c,X-1,Y-21,3,7,'#2a2a30');const col={r:'#ff3b2a',y:'#ffc02a',g:'#3ee06a'}[o.lt],z={r:-20,y:-18,g:-16}[o.lt];fr(c,X,Y+z,1,1,col);ed([X+.5,Y+z+.5],col,1);if(lamp)eg(X+.5,Y+z+.5,4,.5,1,o.lt==='r'?'255,80,60':o.lt==='y'?'255,190,60':'80,240,120')}
+    else if(o.kind==='stopsign'){const[x,y]=P(o.gx,o.gy);const X=Math.round(x),Y=Math.round(y);fr(c,X,Y-10,1,10,'#8a8a90');fr(c,X-1,Y-14,3,4,'#d22a20');fr(c,X-2,Y-13,5,2,'#d22a20');fr(c,X,Y-13,1,1,'#ffffff')}
     else if(o.kind==='cone'){const[x,y]=P(o.gx,o.gy);fr(c,Math.round(x),Math.round(y-4),1,1,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-3),3,2,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-2),3,1,C.Paper);fr(c,Math.round(x-2),Math.round(y-1),5,1,C['Barrel orange'])}
     else if(o.kind==='barrel'){const[x,y]=P(o.gx,o.gy);fr(c,Math.round(x-1),Math.round(y-5),3,5,C['Barrel orange']);fr(c,Math.round(x-1),Math.round(y-3),3,1,C.Paper);if(lamp&&blink(T,.5,.5))ed([x,y-6],'#ffb040')}
     else if(o.kind==='truck'){const r=rect(o.gx,o.gy,1,0,6.5/M,2.6/M);drawPrism(c,r,0,10,C.Paper,C.Tobacco);const wq=[P(o.gx-.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,4),P(o.gx+.15,o.gy+1.3/M,8),P(o.gx-.15,o.gy+1.3/M,8)];poly(c,wq,mix(C['Haw River'],SH,.3));if(ev)eq(wq,GLOW)}
     else if(o.kind==='train'){const r=rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);drawPrism(c,r,1,12,o.eng?C.Slate:'#c0603c',o.eng?'#33509a':'#8f4228');if(o.eng){const hp=P(o.gx+o.ux*9.6/M,o.gy+o.uy*9.6/M,7);ed(hp,'#fff3c0',2);if(lamp)eg(hp[0],hp[1]+3,24,.45,.6)}}
   };
   // Anything with a building, tree, lamp or parked car in front of it is cut out where those stand (see drawCut).
-  const DB={car:[14,16,14,6],pp:[5,13,6,3],cone:[4,7,4,2],barrel:[4,9,4,2],truck:[18,28,18,8],train:[34,40,34,16]};
+  const DB={sig:[6,26,6,3],stopsign:[6,18,6,3],car:[14,16,14,6],pp:[5,13,6,3],cone:[4,7,4,2],barrel:[4,9,4,2],truck:[18,28,18,8],train:[34,40,34,16]};
   for(const o of dyn){let smp;if(o.kind==='car'||o.kind==='train'){const r=o.kind==='car'?rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M):rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);smp=r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}else if(o.kind==='truck'){smp=rect(o.gx,o.gy,1,0,6.5/M,2.6/M).map(p=>[p[0],p[1],0])}else smp=[[o.gx,o.gy,0]];
     const cuts=blockersFor(smp).map(b=>silhouette(b).p);if(o.kind!=='train')cuts.push(...occludersAt(o.gx,o.gy));
     if(!cuts.length){drawDyn(o,w);continue}
@@ -691,6 +755,10 @@ function update(scene){
   S.wx=L.wx==='storm'?'rain':L.wx;L.storm=L.wx==='storm';
   // closures snap to the nearest street the cars drive on
   L.closures=(scene.roads||[]).map(r=>{let best=null;for(const ch of chains){for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((r.gx-a0)*dx+(r.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-r.gx,a1+dy*t-r.gy);if(!best||d<best.dist)best={ch,dist:d,d:ch.cum[i-1]+Math.sqrt(L2)*t}}}return best&&best.dist<4?{...r,ch:best.ch,d:best.d}:null}).filter(Boolean);
+  // and onto the traffic lanes: a full closure blocks both directions there, so cars queue before it and route round it
+  for(const l of TF.lanes)l.blocked=false;
+  for(const k of L.closures){k.lanes=[];let best=null;for(const l of TF.lanes){const ch=l.ch;for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((k.gx-a0)*dx+(k.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-k.gx,a1+dy*t-k.gy);if(!best||d<best.d)best={l,d,s:ch.cum[i-1]+Math.sqrt(L2)*t}}}
+    if(best&&best.d<4){k.lanes.push({lane:best.l,s:best.s});if(best.l.rev)k.lanes.push({lane:best.l.rev,s:best.l.L-best.s});if(k.full)for(const q of k.lanes)q.lane.blocked=true}}
   if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   if(key!==prevKey){L.version++;if(started)restatic()}
