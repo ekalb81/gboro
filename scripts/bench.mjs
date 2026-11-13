@@ -12,6 +12,8 @@
 //   --profile dir      also save a CPU profile (.cpuprofile, open in Chrome DevTools > Performance) per scenario
 //   --query a=b&c=d  extra URL parameters for every scenario (e.g. weather=rain, time=night)
 //   --headed           show the browser window (real GPU, so raster costs look like a real machine's)
+//   --swgpu            headless, but canvases go through the GPU path (SwiftShader): separates main-thread
+//                      script time from drawing time; the frame rate itself is meaningless
 //
 // Needs Playwright with Chromium: npm install --no-save playwright && npx playwright install chromium
 import { spawn, execSync } from 'node:child_process';
