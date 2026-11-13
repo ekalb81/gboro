@@ -95,7 +95,7 @@ What the live data does on the model, all from real data and nothing faked:
 | Road closures (DriveNC) | Barrels, cones or a stopped car on the real street; traffic stops at full closures. |
 | Crime | In the paper only, never on the model. |
 
-Items outside downtown are listed in the paper under "Around town", by area.
+Items outside downtown are listed in the paper under "Around town", by area. Signposts at the edge of the model point toward each area (UNCG, NC A&T, the Coliseum and so on) with how many things are on there; tap one to open that area in the paper.
 
 Previews: `?weather=rain|snow|storm|fog|cloudy|clear`, `?time=dawn|day|dusk|night`, `?council=tonight|session`, `?roads=demo`.
 

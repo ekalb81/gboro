@@ -56,7 +56,8 @@ const S={time:'now',wx:'clear',labels:false};
 {const t=new URLSearchParams(location.search).get('time');if(PREVIEW[t])S.time=t}
 // The live scene. app.js replaces it through update(); everything defaults to a quiet town.
 let L={version:0,wx:'clear',storm:false,fog:false,cloudy:false,windMph:0,tempF:null,council:{lit:false,inSession:false},
-  lit:new Map(),strings:new Set(),crowds:[],trucks:[],closures:[],bubbles:[],focus:[]};
+  lit:new Map(),strings:new Set(),crowds:[],trucks:[],closures:[],bubbles:[],focus:[],signs:[]};
+let signRects=[];
 let SUN=sunPos(new Date());
 const evening=()=>SUN.alt<4,night=()=>SUN.alt<-8,lampsOn=()=>SUN.alt<2;
 function surf(col,top){if(S.wx==='snow'&&top)return mix(col,'#f5f7fb',.78);if(S.wx==='pollen'&&top)return mix(col,'#e8d860',.16);return col}
@@ -402,7 +403,7 @@ cv.style.cursor='grab';cv.style.touchAction='none';
 cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,cx:camX,cy:camY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'});
 cv.addEventListener('pointermove',e=>{if(!drag)return;const s=W/cv.clientWidth;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;lastUser=performance.now();if(reduce)requestAnimationFrame(frame)});
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*W/r.width+Math.round(camX),(e.clientY-r.top)*H/r.height+Math.round(camY)]};
-function pickAt(e){const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
+function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width,qy=(e.clientY-r.top)*H/r.height;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
 const endDrag=e=>{if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b);if(b){lastUser=performance.now()}}drag=null;cv.style.cursor='grab'};cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 cv.addEventListener('mousemove',e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}});cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
 
@@ -508,7 +509,15 @@ function frame(ts){
   if(nb){const slot=Math.floor(T/7);for(let k=0;k<Math.min(2,nb);k++){const o=L.bubbles[(slot*2+k)%nb];if(!blink(T+k*3.5,6,1))continue;const b=o.id!=null?byId[o.id]:null;bub.push([b?top(b):P(o.gx,o.gy,24),o.text])}}
   if(S.labels){for(const[k,t]of LABELS){const b=byId[k];if(!b)continue;const[x,y]=top(b);tag(x,y-10,t)}}
   else bub.forEach(([[x,y],t])=>tag(x,y-10,t));
-  if(hoverB&&hoverB.name){const[x,y]=top(hoverB);tag(x,y-10,hoverB.name)}
+  if(hoverB&&hoverB.name&&!hoverB.sign){const[x,y]=top(hoverB);tag(x,y-10,hoverB.name)}
+  // signposts at the edge of the model, pointing to the rest of town
+  signRects=[];
+  for(const g of L.signs){const[px,py]=P(g.gx,g.gy);if(px<-80||px>W+80||py<-10||py>H+40)continue;const x=Math.round(px),y=Math.round(py);
+    ctx.fillStyle='rgba(44,33,71,.35)';ctx.fillRect(x-2,y,6,2);ctx.fillStyle='#6a4a30';ctx.fillRect(x,y-22,2,22);
+    const t=g.n?`${g.name} ${g.n}`:g.name,tw_=Math.ceil(ctx.measureText(t).width)+8,right=g.sx>=0,bx=right?x-2:x+4-tw_,by=y-34,hot=hoverB&&hoverB.sign===g.id;
+    ctx.fillStyle=SH;ctx.fillRect(bx-1,by-1,tw_+2,13);ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(bx,by,tw_,11);
+    for(let k=0;k<6;k++){const ax=right?bx+tw_+1+k:bx-2-k;ctx.fillStyle=SH;ctx.fillRect(ax,by+k,1,11-2*k);if(k<5){ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(ax+(right?-1:1)*0,by+k+1,1,Math.max(0,9-2*k))}}
+    ctx.fillStyle=g.n?'#8a3b2b':SH;ctx.fillText(t,bx+4,by+2);signRects.push({id:g.id,name:g.name,x:Math.min(bx,bx-7),y:by,w:tw_+8,h:22+12})}
   if(!reduce||!frame.once){frame.once=true;requestAnimationFrame(frame)}
 }
 
@@ -521,9 +530,19 @@ function update(scene){
   // closures snap to the nearest street the cars drive on
   L.closures=(scene.roads||[]).map(r=>{let best=null;for(const ch of chains){for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((r.gx-a0)*dx+(r.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-r.gx,a1+dy*t-r.gy);if(!best||d<best.dist)best={ch,dist:d,d:ch.cum[i-1]+Math.sqrt(L2)*t}}}return best&&best.dist<4?{...r,ch:best.ch,d:best.d}:null}).filter(Boolean);
   focus=[...(scene.focus||[]).map(id=>byId[id]).filter(Boolean),...LANDMARKS];
+  if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   if(key!==prevKey){L.version++;if(started)restatic()}
 }
+// Each area's signpost goes where a line from the middle of the model toward that area leaves the model,
+// a little inside the base, nudged off buildings and away from the other signs.
+function placeSigns(list){const G=MAP.GEO;const cx=GX/2,cy=GY/2,out=[];
+  const inB=(x,y)=>blds.some(b=>x>=b.minx-.4&&x<=b.maxx+.4&&y>=b.miny-.4&&y<=b.maxy+.4&&pip(x,y,b.pts));
+  for(const s of list){const tx=(s.lon-G.west)*G.mPerDegLon/M,ty=(G.north-s.lat)*G.mPerDegLat/M;let dx=tx-cx,dy=ty-cy;const Ln=Math.hypot(dx,dy)||1;dx/=Ln;dy/=Ln;
+    const pad=2.5;let t=Infinity;if(dx)t=Math.min(t,((dx>0?GX-pad:pad)-cx)/dx);if(dy)t=Math.min(t,((dy>0?GY-pad:pad)-cy)/dy);
+    let gx=cx+dx*t,gy=cy+dy*t;for(let k=0;k<20&&inB(gx,gy);k++){gx-=dx*.6;gy-=dy*.6}
+    for(let k=0;k<12&&out.some(o=>Math.hypot(o.gx-gx,o.gy-gy)<5);k++){gx+=-dy*1.5;gy+=dx*1.5;gx=Math.max(pad,Math.min(GX-pad,gx));gy=Math.max(pad,Math.min(GY-pad,gy))}
+    out.push({...s,gx,gy,sx:dx-dy})}return out}
 /** Building by OSM id (or landmark key), with its name and centre, for the paper. */
 const building=id=>byId[id]||null;
 /** Building whose footprint holds a grid point, or the nearest one within a tile or two. */

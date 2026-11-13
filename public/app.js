@@ -112,6 +112,12 @@ function placeItems() {
   }
 }
 const isDowntown = (it) => spots.has(it.id) || it.district === 'downtown' || it.district === 'south-elm';
+// Where each area of town lies, for the signposts at the model's edge (hub points from scripts/eats-lib.mjs).
+const AREAS = [
+  ['college-hill', 36.07100, -79.80041], ['uncg', 36.06750, -79.80900], ['westside', 36.08600, -79.83360], ['north', 36.09539, -79.81632],
+  ['coliseum', 36.05930, -79.82500], ['ncat', 36.07710, -79.77260], ['southeast', 36.06300, -79.76500],
+];
+const SIGN_NAME = { 'college-hill': 'College Hill', uncg: 'UNCG', westside: 'Friendly', north: 'Battleground', coliseum: 'Coliseum', ncat: 'NC A&T', southeast: 'Southeast' };
 const FOOD_POPUP = /food truck|pop-?up|popup|tasting|cookout|food fest/i;
 const shortTitle = (t) => (t.length > 38 ? t.slice(0, 37).trimEnd() + '…' : t);
 
@@ -149,6 +155,7 @@ function buildScene() {
     else scene.crowds.push({ gx: s.gx, gy: s.gy, n: 6 });
   }
   scene.focus = [...new Set(scene.focus)].slice(0, 6);
+  scene.signs = AREAS.map(([id, lat, lon]) => ({ id, lat, lon, name: SIGN_NAME[id], n: items.filter((it) => it.district === id && !isDowntown(it) && !isOver(it)).length }));
   scene.bubbles = scene.bubbles.slice(0, 12);
   return scene;
 }
@@ -221,7 +228,7 @@ function renderAround() {
     if (live.length > 30) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `${live.length - 30} more` }), el('ul', {}, ...live.slice(30).map((it) => itemLi(it))))));
     const past = list.filter(isOver);
     if (past.length) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it))))));
-    box.append(el('h3', { textContent: `${names[g] || g} (${live.length})` }), ul);
+    box.append(el('h3', { id: `area-${g}`, textContent: `${names[g] || g} (${live.length})` }), ul);
   }
 }
 
@@ -325,7 +332,10 @@ placer = makePlacer(map, eats?.places || []);
 model = startModel({
   canvas: $('village'),
   map,
-  onPick: (b) => showBuilding(b),
+  onPick: (b) => {
+    if (b && b.sign) { const h = $(`area-${b.sign}`) || $('around'); h.scrollIntoView({ behavior: 'smooth', block: 'start' }); h.animate?.([{ background: '#ffd77a' }, { background: 'transparent' }], 1600); return; }
+    showBuilding(b);
+  },
   onHover: (b) => { $('village').style.cursor = b ? 'pointer' : 'grab'; },
 });
 placeOnModel();
