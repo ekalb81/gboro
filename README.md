@@ -34,6 +34,8 @@ npm test         # parser, date, placement and privacy-rule tests
 
 To see every kind without waiting for a crash, add `?roads=demo` to the URL.
 
+Scheduling: registered in `scripts/collectors.json`, and the publish workflow passes the `DRIVENC_KEY` repo secret to it. Without the secret it uses the keyless public feed.
+
 ## Getting digests into `data/raw/`
 
 For now, save each "Greensboro update" email body as a `.txt` file in `data/raw/` (the file name is used as the digest id; a timestamp like `2026-11-11T1902Z.txt` works well). Raw digests name private individuals, so `data/raw/` is git-ignored.
