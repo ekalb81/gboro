@@ -214,3 +214,35 @@ test('flags meetings with no recording, and recordings with no meeting', async (
   assert.equal(warn.length, 1);
   assert.match(warn[0], /2026-11-03/);
 });
+
+test('a moved meeting leaves its old date and lands on the new one', () => {
+  const ref = new Date('2026-11-13T15:00:00Z');
+  const { signals, undated } = councilSignals([
+    news('City Council meeting moved from Nov. 17 to Nov. 20 at 4 p.m.'),
+    news('Greensboro City Council rescheduled to Dec. 3 from Dec. 1'),
+    news('City Council meeting rescheduled to Dec. 15'), // only one date: warn, don't guess
+  ], ref);
+  assert.deepEqual(signals.map((x) => [x.type, x.from, x.date, x.time]), [
+    ['move', '2026-11-17', '2026-11-20', '16:00'], ['move', '2026-12-01', '2026-12-03', null],
+  ]);
+  assert.equal(undated.length, 1);
+  const base = usualMeetings(published, ref, 40);
+  const notices = [];
+  const out = applySignals(base, signals, published, notices);
+  const council = (d) => out.filter((i) => i.kind === 'council' && i.start.startsWith(d));
+  assert.equal(council('2026-11-17').length, 0);
+  assert.equal(council('2026-11-20')[0].start, '2026-11-20T16:00:00-05:00');
+  assert.equal(council('2026-12-01').length, 0);
+  const dec3 = council('2026-12-03')[0];
+  const dec1 = base.find((i) => i.kind === 'council' && i.start.startsWith('2026-12-01'));
+  assert.equal(dec3.start.slice(11), dec1.start.slice(11)); // keeps the old meeting's time
+  assert.equal(Date.parse(dec3.end) - Date.parse(dec3.start), Date.parse(dec1.end) - Date.parse(dec1.start));
+  assert.equal(notices.length, 2);
+});
+
+test('an unmatched recording stays for the recent-recording window', () => {
+  const rec = { kind: 'council', start: '2026-11-10', end: '2026-11-11', allDay: true, recording: 'https://youtu.be/x' };
+  assert.equal(upcoming([rec], new Date('2026-11-12T17:00:00Z'), 45, 7).length, 1);
+  assert.equal(upcoming([rec], new Date('2026-11-20T17:00:00Z'), 45, 7).length, 0);
+  assert.equal(upcoming([{ ...rec, recording: null }], new Date('2026-11-12T17:00:00Z'), 45, 7).length, 0);
+});

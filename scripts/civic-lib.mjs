@@ -333,7 +333,11 @@ export function upcoming(items, now = new Date(), days = 45, recentDays = 0) {
   return items.filter((it) => {
     const startMs = it.allDay ? Date.parse(it.start + 'T00:00:00Z') : Date.parse(it.start);
     if (startMs > horizon) return false;
-    if (it.allDay) return it.end ? it.end > todayET : it.start >= todayET; // all-day DTEND is exclusive
+    if (it.allDay) {
+      const endDay = it.end || addDays(it.start, 1); // all-day DTEND is exclusive
+      if (endDay > todayET) return true;
+      return Boolean(it.recording) && Date.parse(endDay + 'T00:00:00Z') >= nowMs - recentDays * 864e5;
+    }
     const endMs = it.end ? Date.parse(it.end) : startMs + 3 * 3600e3;
     return endMs >= nowMs || (it.recording && endMs >= nowMs - recentDays * 864e5);
   });
@@ -344,7 +348,17 @@ export function upcoming(items, now = new Date(), days = 45, recentDays = 0) {
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const COUNCIL = /\b(city council|council (meeting|work session|retreat|special meeting))\b/i;
 const CANCEL = /\b(cancel(?:led|ed|s)?|postpone[sd]?|called off|will not meet|won't meet|no meeting)\b/i;
-const RESCHEDULE = /\b(reschedul\w*|moved to|new date|date change)\b/i;
+const RESCHEDULE = /\b(reschedul\w*|moved|moves|new date|date change|pushed back)\b/i;
+const DATE_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/gi;
+
+/** Every date in a headline, in order: [{ date: YYYY-MM-DD, index, afterFrom }]. */
+export function datesInText(text, ref = new Date()) {
+  return [...text.matchAll(DATE_RE)].map((m) => ({
+    date: dateInText(m[0], ref),
+    index: m.index,
+    afterFrom: /\bfrom\s+(?:\w+day,?\s+)?$/i.test(text.slice(0, m.index)),
+  }));
+}
 
 /** "Nov. 17", "November 17th", "Tuesday, Dec 1" -> YYYY-MM-DD, picking the year nearest `ref`. */
 export function dateInText(text, ref = new Date()) {
@@ -381,9 +395,21 @@ export function councilSignals(items, ref = new Date()) {
     const textDate = dateInText(it.title, posted);
     const date = it.start ? it.start.slice(0, 10) : textDate;
     const time = it.start && !it.allDay ? it.start.slice(11, 16) : timeInText(it.title);
-    const type = CANCEL.test(it.title) && !RESCHEDULE.test(it.title) ? 'cancel' : 'meeting';
+    if (RESCHEDULE.test(it.title)) {
+      // A move needs both dates: drop the old one, add the new one. Anything less is a warning, not a guess.
+      const found = [...new Set(datesInText(it.title, posted).map((d) => d.date))];
+      const fromHit = datesInText(it.title, posted).find((d) => d.afterFrom);
+      let from = null; let to = null;
+      if (it.start) { to = it.start.slice(0, 10); from = found.find((d) => d !== to) || null; }
+      else if (found.length === 2) { from = fromHit ? fromHit.date : found[0]; to = found.find((d) => d !== from); }
+      const s = { date: to, from, time, type: 'move', title: it.title, url: it.url, account: it.account };
+      if (from && to && from !== to) signals.push(s);
+      else undated.push({ ...s, why: 'a schedule change whose old and new dates could not both be read' });
+      continue;
+    }
+    const type = CANCEL.test(it.title) ? 'cancel' : 'meeting';
     const s = { date, time, type, title: it.title, url: it.url, account: it.account };
-    if (!date) { if (CANCEL.test(it.title) || RESCHEDULE.test(it.title)) undated.push(s); continue; }
+    if (!date) { if (CANCEL.test(it.title)) undated.push({ ...s, why: 'no date in the headline' }); continue; }
     signals.push(s);
   }
   return { signals, undated };
@@ -410,7 +436,16 @@ export function applySignals(items, signals, config = {}, notices = []) {
     notices.push(`Cancellation reported for ${sig.date}: "${sig.title}" (${sig.url}).`);
   }
   const cancelled = new Set(signals.filter((x) => x.type === 'cancel').map((x) => x.date));
-  for (const sig of signals.filter((x) => x.type === 'meeting' && !cancelled.has(x.date))) {
+  const meetings = signals.filter((x) => x.type === 'meeting');
+  for (const sig of signals.filter((x) => x.type === 'move')) {
+    // Moved: take the old meeting off its date and carry its time to the new date unless the report gives one.
+    const old = out.find((it) => it.kind === 'council' && it.start.slice(0, 10) === sig.from);
+    out = out.filter((it) => !(it.kind === 'council' && it.start.slice(0, 10) === sig.from));
+    const time = sig.time || (old && !old.allDay ? old.start.slice(11, 16) : null);
+    meetings.push({ ...sig, time, type: 'meeting', moved: old || { title: 'City Council meeting' } });
+    notices.push(`Council meeting moved from ${sig.from} to ${sig.date} per "${sig.title}" (${sig.url}).`);
+  }
+  for (const sig of meetings.filter((x) => !cancelled.has(x.date))) {
     const same = out.find((it) => it.kind === 'council' && it.start.slice(0, 10) === sig.date);
     if (same) {
       same.confirmedBy = sig.url;
@@ -425,15 +460,16 @@ export function applySignals(items, signals, config = {}, notices = []) {
     const work = /work session/i.test(sig.title);
     const [y, mo, d] = ymd(sig.date);
     const start = sig.time ? easternISO(y, mo, d, ...sig.time.split(':').map(Number)) : sig.date;
+    const oldDur = sig.moved?.end && !sig.moved.allDay ? Date.parse(sig.moved.end) - Date.parse(sig.moved.start) : 0;
     out.push({
       id: id(`reported|${sig.date}|${work}`), category: 'government', kind: 'council',
-      title: work ? 'City Council work session' : /special/i.test(sig.title) ? 'City Council special meeting' : 'City Council meeting',
+      title: sig.moved ? sig.moved.title : work ? 'City Council work session' : /special/i.test(sig.title) ? 'City Council special meeting' : 'City Council meeting',
       venue: config.venue || null, address: config.address || null,
-      start, end: sig.time ? shiftISO(start, (work ? 2 : 3) * 3600e3) : addDays(sig.date, 1), allDay: !sig.time,
+      start, end: sig.time ? shiftISO(start, oldDur || (work ? 2 : 3) * 3600e3) : addDays(sig.date, 1), allDay: !sig.time,
       url: sig.url, platform: 'City of Greensboro', account: sig.account || 'News report', accountType: 'government',
       verified: true, scheduled: 'reported', district: 'downtown',
     });
-    notices.push(`Council meeting reported for ${sig.date} that isn't on the published schedule: "${sig.title}" (${sig.url}).`);
+    if (!sig.moved) notices.push(`Council meeting reported for ${sig.date} that isn't on the published schedule: "${sig.title}" (${sig.url}).`);
   }
   return out;
 }

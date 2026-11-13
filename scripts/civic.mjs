@@ -84,7 +84,7 @@ const notices = [];
 const scheduled = usualMeetings(config, new Date(), 45, RECENT);
 const all = applyVideos(applySignals(mergeCivic(feedItems, scheduled), signals, config, notices), videos, notices);
 if (videosFresh) notices.push(...checkRecordings(all, new Date())); // only trust "no recording" when the feed answered
-for (const u of undated) notices.push(`Possible council schedule change with no date in the headline: "${u.title}" (${u.url}).`);
+for (const u of undated) notices.push(`Possible council schedule change (${u.why}), not applied: "${u.title}" (${u.url}).`);
 const items = upcoming(all, new Date(), 45, RECENT);
 const count = (k) => items.filter((it) => it.scheduled === k).length;
 const year = new Date().getFullYear();
