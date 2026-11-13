@@ -653,8 +653,8 @@ function frame(ts){
   const cx=Math.round(camX*VS),cy=Math.round(camY*VS);
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
   for(const c of [w,E,GL]){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H)}w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
-  const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
-  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);E.drawImage(t.e.canvas,X,Y);GL.drawImage(t.g.canvas,X,Y)}
+  frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
+  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);E.drawImage(t.e.canvas,X,Y);GL.drawImage(t.g.canvas,X,Y)}
   trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
@@ -744,7 +744,7 @@ function frame(ts){
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   ctx.setTransform(1,0,0,1,0,0);
-  if(!reduce||!frame.once){frame.once=true;requestAnimationFrame(frame)}
+  if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 
 let pending=0;const restatic=()=>{clearTimeout(pending);pending=setTimeout(()=>{renderStatic();if(reduce)requestAnimationFrame(frame)},10)};
