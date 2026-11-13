@@ -17,7 +17,15 @@ export async function getAccessToken({ clientId, clientSecret, refreshToken }, f
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.access_token) {
-    throw new Error(`Gmail token refresh failed (${res.status}): ${body.error_description || body.error || 'no access token'}`);
+    const why = [body.error, body.error_description].filter(Boolean).join(': ') || 'no access token';
+    const hint = body.error === 'invalid_client'
+      ? ' (check GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET: both from the same Web application client, no spaces or quotes)'
+      : body.error === 'unauthorized_client'
+        ? ' (the refresh token was made with a different client: in the OAuth Playground settings tick "Use your own OAuth credentials", enter this client ID and secret, then get a new refresh token)'
+        : body.error === 'invalid_grant'
+          ? ' (the refresh token was revoked or expired: get a new one)'
+          : '';
+    throw new Error(`Gmail token refresh failed (${res.status}): ${why}${hint}`);
   }
   return body.access_token;
 }
