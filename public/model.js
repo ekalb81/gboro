@@ -490,6 +490,9 @@ function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx
 // ---------- static tiles ----------
 // The still parts of the model are rendered in TILE-pixel squares at the current scale, only where the camera looks,
 // and kept until the light or the scene changes (then they are redrawn a few at a time, old ones showing meanwhile).
+// ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
+const BM=new URLSearchParams(location.search).has('bench')?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0}):null;let bmT=0,bmF=null;
+const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
 function renderTile(tx,ty,t){const T0=performance.now();
@@ -503,14 +506,15 @@ function renderTile(tx,ty,t){const T0=performance.now();
   for(const b of blds)if(hitBox(b.box,r))drawBuilding(t.c,b);
   for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(b=>silhouette(b).p),TGT)}
   drawNet(t.c);
-  t.ver=stver;t.vs=VS;if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
+  t.ver=stver;t.vs=VS;if(BM){BM.tiles++;BM.tileMs+=performance.now()-T0}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
   if(t){tiles.delete(key);tiles.set(key,t);if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
   const t0=performance.now();t=renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
 function trimTiles(keep){while(tiles.size>keep){const k=tiles.keys().next().value;tiles.delete(k)}}
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=5*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS}};
 function renderStatic(){const T0=performance.now();
   SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree')o.occ=treeOcc(o)}}buildGroundTex();buildShadows();stver++;
-  renderedFor=stateKey();if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
+  renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
 const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
 
@@ -652,6 +656,7 @@ const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc'
 
 let last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){
+  if(BM){bmT=performance.now();bmF={t:bmT}}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
   if(S.time==='now'&&ts-lastCheck>30000){lastCheck=ts;SUN=sunPos(new Date());if(stateKey()!==renderedFor)renderStatic()}
   const D=sceneDate();
@@ -663,6 +668,7 @@ function frame(ts){
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);E.drawImage(t.e.canvas,X,Y);GL.drawImage(t.g.canvas,X,Y)}
   trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
+  BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
   if(!reduce)stepTraffic(Math.min(dt,.05));
@@ -685,6 +691,7 @@ function frame(ts){
   for(let k=0;k<7;k++){const d=trainD-k*2.3;if(d<0||d>trainCh.L)continue;const[gx,gy,ux,uy]=along(trainCh,d);if(!vis(gx,gy))continue;dyn.push({kind:'train',gx,gy,ux,uy,eng:k===0})}
   for(const f of FLAGS)if(vis(f.gx,f.gy))dyn.push(f);
   dyn.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
+  BM&&bm('sim');
   const drawDyn=(o,c)=>{
     if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(c,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
       if(lamp){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,2.5),'#fff4c8',2)}if(o.stopped||lamp){ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,2.5),o.stopped?'#ff3a2a':'#c84a40',o.stopped?2:1)}if(o.haz&&blink(T,.4,.4)){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,3),'#ffb040',2);ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,3),'#ffb040',2)}}
@@ -702,12 +709,15 @@ function frame(ts){
   for(const o of dyn){let smp;if(o.kind==='car'||o.kind==='train'){const r=o.kind==='car'?rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M):rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);smp=r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}else if(o.kind==='truck'){smp=rect(o.gx,o.gy,1,0,6.5/M,2.6/M).map(p=>[p[0],p[1],0])}else smp=[[o.gx,o.gy,0]];
     const cuts=blockersFor(smp).map(b=>silhouette(b).p);if(o.kind!=='train')cuts.push(...occludersAt(o.gx,o.gy));
     if(!cuts.length){drawDyn(o,w);continue}
+    if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}
     const[x,y]=P(o.gx,o.gy),d=DB[o.kind]||DB.car;drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL})}
+  BM&&bm('dyn');
   // live clocks: Lincoln Financial's bulb sign (time, then temperature) and the depot clock
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
   for(const t of L.trucks){const[sx,sy]=P(t.gx,t.gy,13);for(let i=0;i<5;i++){const ph=(T*.5+i/5)%1;w.globalAlpha=(1-ph)*.55;w.fillStyle='#f2eee6';w.beginPath();w.arc(sx+ph*10+Math.sin(ph*6+i)*2,sy-ph*26,2+ph*4,0,7);w.fill()}w.globalAlpha=1}
   // leaves and petals blowing off the trees on screen, in the wind's real direction (model pixels)
   {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;const lk=look(o.sp,DOY,o.seed);if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
+  BM&&bm('blow');
   // weather in screen pixels
   w.setTransform(1,0,0,1,0,0);const ps=Math.max(1,Math.round(VS));
   if(S.wx==='rain'){w.fillStyle='rgba(205,215,235,.55)';const slant=20+Math.min(30,L.windMph)*4,nr=Math.round(rain.length*(L.intensity==='light'?.4:L.intensity==='heavy'?1:.7));rain.forEach((r,i)=>{if(i>=nr)return;if(!reduce){r[0]-=dt*slant*ps;r[1]+=dt*300*ps;if(r[1]>H){r[1]=-4;r[0]=Math.random()*W+40}if(r[0]<0)r[0]+=W}w.fillRect(r[0]|0,r[1]|0,ps,4*ps)})}
@@ -724,11 +734,14 @@ function frame(ts){
   ctx.globalCompositeOperation='source-over';
   if(L.storm){if(flash<=0&&!reduce&&Math.random()<.003)flash=10;if(flash>0){ctx.fillStyle=`rgba(255,255,240,${flash>7?.5:flash/30})`;ctx.fillRect(0,0,W,H);flash--}}
   ctx.drawImage(Ec,0,0);ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over';
+  BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
   if(HASFILTER){tc.clearRect(0,0,W,H);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';const gr=tc.createLinearGradient(0,0,0,H);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(.3,'rgba(0,0,0,0)');gr.addColorStop(.68,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,1)');tc.fillStyle=gr;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';ctx.drawImage(Tc,0,0)}
+  BM&&bm('tilt');
   // Lincoln Financial's bulb sign (time, then temperature) goes on last, outside the tilt-shift blur, so it stays sharp
   const tw=byId.tower;if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');ctx.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))lanternSign(ctx,wl,tw.lanternZ,tw.lanternTop,txt);ctx.setTransform(1,0,0,1,0,0)}
   const vg=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);vg.addColorStop(0,'rgba(20,10,30,0)');vg.addColorStop(1,'rgba(20,10,30,.22)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
   ctx.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
   ctx.font='8px Silkscreen, monospace';ctx.textBaseline='top';
@@ -754,6 +767,7 @@ function frame(ts){
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   ctx.setTransform(1,0,0,1,0,0);
+  if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 
