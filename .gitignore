@@ -12,3 +12,5 @@ data/civic/*.ics
 public/data/crime.json
 # Gmail credentials for npm run fetch
 .env
+# Last good City YouTube feed (kept in the Actions cache, not git).
+data/civic/youtube.xml

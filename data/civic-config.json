@@ -3,7 +3,7 @@
   "url": "https://www.greensboro-nc.gov/government/city-council/council-meetings",
   "venue": "Katie Dorsett Council Chamber, Melvin Municipal Office Building",
   "address": "300 W. Washington St, Greensboro, NC",
-  "youtube": "https://www.youtube.com/feeds/videos.xml?user=CityofGreensboroNC",
+  "youtube": ["https://www.youtube.com/feeds/videos.xml?user=CityofGreensboroNC", "https://www.youtube.com/feeds/videos.xml?channel_id=UC6u9e0wa_uPlkMg_uMn4hOA"],
   "schedules": {
     "2026": {
       "source": "https://www.greensboro-nc.gov/home/showpublisheddocument/65180/639161739697830000",

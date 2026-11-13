@@ -4,12 +4,25 @@
 
 ## Sources
 
-1. **The City's published council schedule.** Each year the City posts a "City Council Regular Meetings Schedule" and a "Subcommittee Meeting Schedule" (PDFs on the [Council Meetings page](https://www.greensboro-nc.gov/government/city-council/council-meetings)). Their dates live in `schedules` in `data/civic-config.json`. They include moved dates the 1st-and-3rd-Tuesday rule would get wrong, such as Nov 10, 2026, which moved because Nov 3 was Election Day. When the City posts next year's schedule, add a new year block to the config. That's a once-a-year edit. Until then, the run prints a notice in December and falls back to the usual rule.
-2. **The usual rule** (`usual`): first and third Tuesdays at 5:30 PM. It is used only for years with no published schedule, and those items are labeled "Usual schedule, check the city site".
-3. **The City's YouTube channel** (public Atom feed, no key). Videos titled "Greensboro City Council Meeting MM/DD/YYYY" become a "Watch" link on that meeting, and the meeting stays listed for a week after it ends. The newest "On the Town - Week of ..." video (GTN's weekly roundup of things to do) becomes a week-long item on the town board.
-4. **Optional calendars:** `.ics` files in `data/civic/` and URLs in `feeds`. Nothing uses them now.
+No single official feed of council meetings exists that a script can read (see below). So the dates start from the City's published yearly schedule, and several automatic sources correct it during the year. Disagreements between sources show up as warnings in the publish run.
 
-`skip` drops a date the City cancels after publishing. `extra` adds a one-off meeting, for example `{ "date": "2026-12-08", "time": "14:00", "title": "City Council special meeting" }`.
+1. **The City's published council schedule (the baseline).** Each year the City posts a "City Council Regular Meetings Schedule" and a "Subcommittee Meeting Schedule" (PDFs on the [Council Meetings page](https://www.greensboro-nc.gov/government/city-council/council-meetings)). Their dates live in `schedules` in `data/civic-config.json`. They include moved dates the 1st-and-3rd-Tuesday rule would get wrong, such as Nov 10, 2026, which moved because Nov 3 was Election Day. For a year with no published schedule, the usual rule (`usual`) fills in, and those items are labeled "Usual schedule, check the city site". In December the run reminds you to add next year's dates.
+2. **Changes reported during the year (automatic).** The City's own posts (Muse digest) and verified local news (the RSS feeds in `data/sources.json`, such as Rhino Times and News & Record) are scanned for council headlines with a date:
+   - A **cancellation** ("Council cancels Dec. 1 meeting") removes that meeting, shows a "cancelled" notice, and keeps City Hall dark.
+   - A **special meeting, work session or new date** on a day with nothing scheduled adds that meeting, with a link to the report.
+   - A **report on a scheduled day** confirms the meeting and fixes the start time if the report gives a different one.
+   - A cancellation or rescheduling headline **with no date** can't be applied safely, so it becomes a warning instead.
+   - Only the City's own accounts and verified news count. Posts by individuals never change the schedule.
+3. **The City's YouTube channel (automatic check).**
+   - A recording titled "Greensboro City Council Meeting MM/DD/YYYY" becomes a "Watch" link, and the meeting stays listed for a week.
+   - A recording for a day with no scheduled meeting is added, with a warning, because the schedule changed without us hearing.
+   - A scheduled meeting with no recording 3 days later gives a warning that it may have been cancelled or moved.
+   - The newest "On the Town - Week of ..." video becomes a week-long item on the town board.
+   - YouTube's feeds sometimes answer 404 for a while, so the fetch retries two URLs. The last good copy is kept in the publish workflow's cache (public videos only), and "no recording" warnings are skipped when the feed is down.
+4. **Hand overrides, rarely needed:** `skip` drops a date and `extra` adds one, for anything the automatic sources miss.
+5. **Optional calendars:** `.ics` files in `data/civic/` and URLs in `feeds`. Nothing uses them now.
+
+Warnings appear as `::warning` annotations and in a "Council schedule checks" section of the publish run summary.
 
 ### What doesn't work, and why
 

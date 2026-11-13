@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseICS, icsTime, eventsToItems, expandRRule, parseYouTube, applyVideos, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
+import { parseICS, icsTime, eventsToItems, expandRRule, parseYouTube, applyVideos, councilSignals, applySignals, checkRecordings, dateInText, timeInText, usualMeetings, mergeCivic, upcoming, classify, easternISO } from '../scripts/civic-lib.mjs';
 
 const ics = await readFile(new URL('./fixtures/sample-city.ics', import.meta.url), 'utf8');
 const config = {
@@ -153,4 +153,64 @@ test('recordings attach to meetings, and the newest On the Town video becomes a 
   const shown = upcoming(items, now, 45, 7);
   assert.ok(shown.includes(nov10)); // past, but has a recording
   assert.ok(!upcoming(items, new Date('2026-11-20T17:00:00Z'), 45, 7).includes(nov10)); // more than a week ago
+});
+
+const news = (title, extra = {}) => ({ title, url: `https://news.example/${encodeURIComponent(title)}`, accountType: 'news', verified: true, account: 'Rhino Times', posted: '2026-11-13T15:00:00Z', start: null, allDay: false, ...extra });
+
+test('reads dates and times out of headlines', () => {
+  assert.equal(dateInText('Council cancels Dec. 1 meeting', new Date('2026-11-13T00:00:00Z')), '2026-12-01');
+  assert.equal(dateInText('Council will meet January 5th', new Date('2026-12-20T00:00:00Z')), '2027-01-05');
+  assert.equal(dateInText('No date here'), null);
+  assert.equal(timeInText('special meeting at 3 p.m. Friday'), '15:00');
+  assert.equal(timeInText('work session 10:30 AM'), '10:30');
+});
+
+test('finds council changes only in trusted items', () => {
+  const { signals, undated } = councilSignals([
+    news('Greensboro City Council cancels Dec. 1 meeting'),
+    news('City Council to hold special meeting Nov. 20 at 4 p.m.'),
+    news('City Council postpones its next meeting'),
+    news('City Council cancels Dec. 15 meeting', { accountType: 'individual', verified: false }),
+    news('Planning board cancels Nov. 16 meeting'),
+    { ...news('City Council Work Session'), accountType: 'government', start: '2026-11-19T15:00:00-05:00' },
+  ]);
+  assert.deepEqual(signals.map((x) => [x.date, x.time, x.type]), [
+    ['2026-12-01', null, 'cancel'], ['2026-11-20', '16:00', 'meeting'], ['2026-11-19', '15:00', 'meeting'],
+  ]);
+  assert.equal(undated.length, 1);
+});
+
+test('cancellations remove the meeting; reported meetings confirm, move or add', () => {
+  const now = new Date('2026-11-13T15:00:00Z');
+  const base = usualMeetings(published, now, 40);
+  const notices = [];
+  const out = applySignals(base, [
+    { date: '2026-12-01', time: null, type: 'cancel', title: 'cancels Dec. 1', url: 'https://n/1' },
+    { date: '2026-11-17', time: '16:00', type: 'meeting', title: 'meets Nov. 17 at 4 p.m.', url: 'https://n/2' },
+    { date: '2026-11-20', time: '16:00', type: 'meeting', title: 'special meeting Nov. 20 at 4 p.m.', url: 'https://n/3' },
+  ], published, notices);
+  assert.ok(!out.some((i) => i.kind === 'council' && i.start.startsWith('2026-12-01')));
+  const note = out.find((i) => i.kind === 'notice');
+  assert.equal(note.start, '2026-12-01');
+  const nov17 = out.find((i) => i.kind === 'council' && i.start.startsWith('2026-11-17'));
+  assert.equal(nov17.start, '2026-11-17T16:00:00-05:00');
+  assert.equal(nov17.end, '2026-11-17T19:00:00-05:00');
+  assert.equal(nov17.confirmedBy, 'https://n/2');
+  const special = out.find((i) => i.start.startsWith('2026-11-20'));
+  assert.equal(special.title, 'City Council special meeting');
+  assert.equal(special.scheduled, 'reported');
+  assert.equal(notices.length, 3);
+});
+
+test('flags meetings with no recording, and recordings with no meeting', async () => {
+  const videos = parseYouTube(await readFile(new URL('./fixtures/sample-youtube.xml', import.meta.url), 'utf8'));
+  const sched = { ...published, schedules: { 2026: { ...published.schedules[2026], council: ['2026-11-03', '2026-11-17'] } } };
+  const notices = [];
+  const items = applyVideos(usualMeetings(sched, new Date('2026-11-12T17:00:00Z'), 10, 10), videos, notices);
+  assert.equal(notices.length, 1); // Nov 10 recording, nothing scheduled that day
+  const added = items.find((i) => i.recording);
+  assert.deepEqual([added.start, added.scheduled, added.kind], ['2026-11-10', 'reported', 'council']);
+  const warn = checkRecordings(items, new Date('2026-11-12T17:00:00Z'));
+  assert.equal(warn.length, 1);
+  assert.match(warn[0], /2026-11-03/);
 });

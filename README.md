@@ -88,4 +88,4 @@ The feed URLs in `data/sources.json` haven't been checked against the live sites
 
 ## Council meetings and city events
 
-`npm run civic` builds `public/data/civic.json` from city calendar `.ics` files and the usual council schedule; City Hall lights up on council nights. See [docs/civic.md](docs/civic.md).
+`npm run civic` builds `public/data/civic.json` from the City's published council schedule, corrected during the year by City posts, local news and the City's YouTube recordings; City Hall lights up on council nights. See [docs/civic.md](docs/civic.md).
