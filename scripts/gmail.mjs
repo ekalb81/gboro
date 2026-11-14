@@ -30,13 +30,34 @@ export async function getAccessToken({ clientId, clientSecret, refreshToken }, f
   return body.access_token;
 }
 
-export function gmailClient(accessToken, fetchImpl = fetch) {
+// Gmail answers 429, or 403 with a rate-limit reason, when the per-minute quota is used up.
+export function isRateLimited(status, text) {
+  return status === 429 || (status === 403 && /rateLimitExceeded|RATE_LIMIT_EXCEEDED|userRateLimitExceeded/.test(text));
+}
+
+// Waits before each retry: the quota is per minute, so the later ones ride out a full window.
+export const RETRY_WAITS_MS = [5e3, 15e3, 30e3, 60e3, 60e3];
+
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function gmailClient(accessToken, fetchImpl = fetch, { sleep = sleepMs, waits = RETRY_WAITS_MS, gapMs = 100 } = {}) {
   async function get(path, params = {}) {
     const url = new URL(API + path);
     for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, v);
-    const res = await fetchImpl(url, { headers: { authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) throw new Error(`Gmail ${path} failed (${res.status}): ${await res.text()}`);
-    return res.json();
+    for (let attempt = 0; ; attempt++) {
+      if (gapMs) await sleep(gapMs); // a steady pace keeps well under the per-minute quota
+      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${accessToken}` } });
+      if (res.ok) return res.json();
+      const text = await res.text();
+      if (isRateLimited(res.status, text) && attempt < waits.length) {
+        const after = Number(res.headers?.get?.('retry-after')) * 1000;
+        const wait = Math.max(waits[attempt], Number.isFinite(after) ? after : 0);
+        console.warn(`  Gmail rate limit on ${path}; waiting ${Math.round(wait / 1000)}s (retry ${attempt + 1} of ${waits.length})`);
+        await sleep(wait);
+        continue;
+      }
+      throw new Error(`Gmail ${path} failed (${res.status}): ${text}`);
+    }
   }
   return {
     // All message ids matching a Gmail search query, following pagination.
