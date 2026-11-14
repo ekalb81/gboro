@@ -38,13 +38,17 @@ const EXTRA = opt('--query', ''); // extra URL parameters, e.g. --query weather=
 
 // Fixed scene: mid-November (fall colour, leaves dropping), a 18 mph south-west wind gusting 30, midday light.
 // bench=flush: count a new tile's (lazy, software) drawing in the frame that makes it; not with a real GPU.
-const FIXED = 'date=2026-11-13&wind=18-30@230&time=day&bench' + (HEADED || args.includes('--swgpu') ? '' : '=flush');
+// --swgpu stands for a machine with a graphics card, so it gets the compositor layers and clipped cut-outs such a
+// machine would use (the model itself keeps the old canvas compositing and scratch cards on a software renderer).
+const FIXED = 'date=2026-11-13&wind=18-30@230&time=day&bench' + (HEADED || args.includes('--swgpu') ? '' : '=flush') + (args.includes('--swgpu') ? '&compose=layers&cut=clip' : '');
 // at: a busy corner (Elm and Market); zoomed views use z (device pixels per model pixel).
 const SCENARIOS = [
   { name: 'desktop', vw: 1920, vh: 1080, dpr: 1, q: '' },
   { name: 'desktop-dpr2', vw: 1920, vh: 1080, dpr: 2, q: '' },
   { name: 'zoomed-in', vw: 1920, vh: 1080, dpr: 1, q: '&z=6' },
   { name: 'zoomed-out', vw: 1920, vh: 1080, dpr: 1, q: '&z=0.5' },
+  { name: 'retina', vw: 1335, vh: 805, dpr: 2, q: '' }, // a Retina MacBook window: the model about 1870x1610 device pixels
+  { name: 'retina-night', vw: 1335, vh: 805, dpr: 2, q: '&time=night' },
   { name: 'pan-zoom', vw: 1920, vh: 1080, dpr: 1, q: '', gesture: 'mixed' },
   { name: 'laptop-4x', vw: 1366, vh: 768, dpr: 1, q: '', cpu: 4 },
   { name: 'phone-4x', vw: 390, vh: 844, dpr: 3, q: '', cpu: 4, mobile: true },
@@ -58,7 +62,7 @@ const SCENARIOS = [
   { name: 'laptop-wheel', vw: 1366, vh: 768, dpr: 1, q: '', cpu: 4, gesture: 'wheel' },
   { name: 'phone-touch', vw: 390, vh: 844, dpr: 3, q: '', cpu: 4, mobile: true, gesture: 'touch' },
 ];
-const STEADY = ['desktop', 'desktop-dpr2', 'zoomed-in', 'zoomed-out', 'pan-zoom', 'laptop-4x', 'phone-4x'];
+const STEADY = ['desktop', 'desktop-dpr2', 'retina', 'retina-night', 'zoomed-in', 'zoomed-out', 'pan-zoom', 'laptop-4x', 'phone-4x'];
 
 async function loadPlaywright() {
   try { return await import('playwright'); } catch {}
@@ -136,12 +140,30 @@ async function gesture(page, cdp, kind, secs) {
   return spans;
 }
 
-const PHASES = ['tiles', 'sim', 'dyn', 'blow', 'grade', 'tilt', 'sign', 'labels'];
+const PHASES = ['tiles', 'sim', 'dyn', 'blow', 'grade', 'tilt', 'sign', 'labels', 'ahead'];
 
 async function run(browser, base, sc) {
   const ctx = await browser.newContext({ viewport: { width: sc.vw, height: sc.vh }, deviceScaleFactor: sc.dpr, isMobile: !!sc.mobile, hasTouch: !!sc.mobile });
   await ctx.addInitScript(() => {
     window.__long = [];
+    // Canvas calls that are cheap in Chromium but costly elsewhere (WebKit above all), counted for every 2D canvas:
+    // src = drawImage with a canvas as its source; dirty = of those, the source had been drawn on since it was last
+    // used as a source (the browser must flush it and often copy it); full = draws, fills and clears covering at least
+    // half of a canvas as big as the model's; clip = clip() calls; filter = draws with a canvas filter set.
+    const ops = (window.__ops = { src: 0, dirty: 0, full: 0, clip: 0, filter: 0 });
+    const P = CanvasRenderingContext2D.prototype, big = (c) => { const v = document.getElementById('village'); return v && c.width * c.height >= 0.9 * v.width * v.height; };
+    const area = (ctx, w, h) => { const m = ctx.getTransform(); return Math.abs(w * h * (m.a * m.d - m.b * m.c)); };
+    const full = (ctx, w, h) => { const c = ctx.canvas; if (big(c) && area(ctx, w, h) >= 0.5 * c.width * c.height) ops.full++; };
+    for (const k of ['fill', 'stroke', 'fillText', 'strokeRect', 'putImageData']) { const f = P[k]; P[k] = function (...a) { this.canvas.__d = 1; return f.apply(this, a); }; }
+    for (const k of ['fillRect', 'clearRect']) { const f = P[k]; P[k] = function (x, y, w, h) { this.canvas.__d = 1; full(this, w, h); return f.call(this, x, y, w, h); }; }
+    const cl = P.clip; P.clip = function (...a) { ops.clip++; return cl.apply(this, a); };
+    const di = P.drawImage; P.drawImage = function (...a) {
+      const src = a[0]; this.canvas.__d = 1;
+      if (src instanceof HTMLCanvasElement) { ops.src++; if (src.__d) { ops.dirty++; src.__d = 0; } }
+      if (this.filter && this.filter !== 'none') ops.filter++;
+      full(this, a.length >= 9 ? a[7] : a.length >= 5 ? a[3] : src.width, a.length >= 9 ? a[8] : a.length >= 5 ? a[4] : src.height);
+      return di.apply(this, a);
+    };
     try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push(e.duration); }).observe({ type: 'longtask', buffered: true }); } catch {}
   });
   const page = await ctx.newPage();
@@ -160,7 +182,8 @@ async function run(browser, base, sc) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const t0 = Date.now();
-  const qs = new URLSearchParams(FIXED + sc.q);
+  const qs = new URLSearchParams(FIXED);
+  for (const [k, v] of new URLSearchParams(sc.q)) qs.set(k, v);
   for (const [k, v] of new URLSearchParams(EXTRA)) qs.set(k, v); // --query overrides the fixed defaults
   await page.goto(base + '?' + qs);
   await page.waitForFunction(() => window.__bench && window.__bench.frames.length > 0, null, { timeout: 120000 });
@@ -170,7 +193,7 @@ async function run(browser, base, sc) {
   let warmS = 0; // --warm: also wait (up to 60 s) until the model has drawn ahead everything it wants to, as after a minute's look
   if (WARM && sc.gesture) { const w0 = Date.now(); await page.waitForFunction(() => window.__bench.aheadLeft === 0, null, { timeout: 60000, polling: 250 }).catch(() => {}); warmS = (Date.now() - w0) / 1000; }
   const tilesBefore = await page.evaluate(() => [window.__bench.tiles, window.__bench.tileMs]);
-  const n0 = await page.evaluate(() => { window.__long.length = 0; return window.__bench.frames.length; });
+  const n0 = await page.evaluate(() => { window.__long.length = 0; window.__ops0 = { ...window.__ops }; return window.__bench.frames.length; });
   if (PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start'); }
   const tStart = Date.now();
   const spans = sc.gesture ? await gesture(page, cdp, sc.gesture, SECS) : (await page.waitForTimeout(SECS * 1000), []);
@@ -180,7 +203,7 @@ async function run(browser, base, sc) {
     mkdirSync(PROFILE, { recursive: true });
     writeFileSync(join(PROFILE, `${sc.name}.cpuprofile`), JSON.stringify(profile));
   }
-  const r = await page.evaluate((n0) => ({ frames: window.__bench.frames.slice(n0), long: window.__long.slice(), tiles: window.__bench.tiles, tileMs: window.__bench.tileMs, mem: window.__bench.mem() }), n0);
+  const r = await page.evaluate((n0) => ({ frames: window.__bench.frames.slice(n0), long: window.__long.slice(), tiles: window.__bench.tiles, tileMs: window.__bench.tileMs, mem: window.__bench.mem(), ops: Object.fromEntries(Object.keys(window.__ops).map((k) => [k, window.__ops[k] - window.__ops0[k]])) }), n0);
   const { metrics } = await cdp.send('Performance.getMetrics');
   const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
   await ctx.close();
@@ -217,6 +240,7 @@ async function run(browser, base, sc) {
     heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), canvasMB: +r.mem.canvasMB.toFixed(1), canvas: `${r.mem.W}x${r.mem.H} vs${+r.mem.VS.toFixed(2)}`,
     loadKB: Math.round(bytes / 1024), gzipKB: Math.round(gz / 1024), firstFrameMs: Math.round(firstFrame), loadWallMs: loadWall,
     phases, errors, inter,
+    ops: Object.fromEntries(Object.entries(r.ops).map(([k, v]) => [k, +(v / Math.max(1, r.frames.length)).toFixed(1)])),
   };
 }
 
@@ -246,6 +270,11 @@ for (const r of results) if (!r.inter || r.name === 'pan-zoom') console.log(row(
 console.log('\nmean ms per frame in each phase of model.js frame():');
 console.log([''.padEnd(Math.max(8, w[0])), ...PHASES.map((k) => k.padStart(6))].join('  '));
 for (const r of results) console.log([r.name.padEnd(Math.max(8, w[0])), ...PHASES.map((k) => String(r.phases[k]).padStart(Math.max(6, k.length)))].join('  '));
+console.log('\ncanvas calls per frame (src = drawImage from a canvas; dirty = from a canvas drawn on since it was last a source;');
+console.log('full = draws/fills/clears over half or more of a model-sized canvas; clip = clip() calls; filter = draws with a canvas filter):');
+const OPS = ['src', 'dirty', 'full', 'clip', 'filter'];
+console.log([''.padEnd(Math.max(8, w[0])), ...OPS.map((k) => k.padStart(7))].join('  '));
+for (const r of results) console.log([r.name.padEnd(Math.max(8, w[0])), ...OPS.map((k) => String(r.ops[k]).padStart(7))].join('  '));
 const IR = results.filter((r) => r.inter);
 if (IR.length) {
   console.log('\nduring gestures only (frame interval ms; tiles = static tiles drawn whole within a frame; multi = frames that drew 2 or more; stand-in = frames showing a missing tile stretched from another scale):');
