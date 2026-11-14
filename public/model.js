@@ -61,7 +61,8 @@ function hull(p){p=p.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=
 const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
 const cv=cv0,ctx=cv.getContext('2d');
 let Wc,Ec,Gc,Tc,w,E,GL,tc;
-function makeLayers(){Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
+function makeLayers(){if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
+  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
 makeLayers();
 let TGT={c:null,e:null,g:null};
 // BT: the transform from model pixels to the canvas being drawn (set per tile or per frame); routines that set their
@@ -80,11 +81,13 @@ let SUN=sunPos(new Date());
 const evening=()=>SUN.alt<4,night=()=>SUN.alt<-8,lampsOn=()=>SUN.alt<2;
 function surf(col,top){if(S.wx==='snow'&&top)return mix(col,'#f5f7fb',.78);if(S.wx==='pollen'&&top)return mix(col,'#e8d860',.16);return col}
 
-function erase(p){for(const e of [TGT.e,TGT.g]){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}}
+// TGT.de / TGT.dg: something may be painted on the lit-window / glow layer; while not, rubbing out there is a no-op and is skipped
+function erase(p){if(TGT.de)eraseOn(TGT.e,p);if(TGT.dg)eraseOn(TGT.g,p)}
+function eraseOn(e,p){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}
 function path(pts){const p=new Path2D();p.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)p.lineTo(pts[i][0],pts[i][1]);p.closePath();return p}
 function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke(p)}if(c===TGT.c)erase(p)}
 function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
-function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){TGT.e.clearRect(x,y,ww,hh);TGT.g.clearRect(x,y,ww,hh)}}
+function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
 const eq=(q,col)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
 const ed=(p,col,s=1)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
@@ -469,8 +472,9 @@ function drawCut(box,fn,cuts,dst){
   const T_={c:scr[0],e:scr[1],g:scr[2],de:0,dg:0};TGT=T_;fn();scrInk[1]=T_.de;scrInk[2]=T_.dg;
   const k=1/BT[0],pd=2*k+1,ax=-BT[4]*k-(ox-BOX),ay=-BT[5]*k-(oy-BOY),cb=[ax-pd,ay-pd,ax+w_*k+pd,ay+h_*k+pd];
   for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb))c.fill(q.p);c.restore()}
-  BT=b0;TGT=t0;if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
-  for(const d of [dst.e,dst.g]){d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
+  BT=b0;TGT=t0;
+  for(const d of [t0.de?dst.e:null,t0.dg?dst.g:null]){if(!d)continue;d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
+  if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
   const ds=[dst.c,dst.e,dst.g];for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const d=ds[i];d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}}
 
 // screen boxes (model pixels, static origin) for culling, the samples that decide what stands in front of each
@@ -675,7 +679,7 @@ function frame(ts){
   frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
   trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
-  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
+  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL,de:1,dg:1};ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
