@@ -61,7 +61,8 @@ function hull(p){p=p.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=
 const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
 const cv=cv0,ctx=cv.getContext('2d');
 let Wc,Ec,Gc,Tc,w,E,GL,tc;
-function makeLayers(){Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
+function makeLayers(){if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
+  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
 makeLayers();
 let TGT={c:null,e:null,g:null};
 // BT: the transform from model pixels to the canvas being drawn (set per tile or per frame); routines that set their
@@ -80,11 +81,13 @@ let SUN=sunPos(new Date());
 const evening=()=>SUN.alt<4,night=()=>SUN.alt<-8,lampsOn=()=>SUN.alt<2;
 function surf(col,top){if(S.wx==='snow'&&top)return mix(col,'#f5f7fb',.78);if(S.wx==='pollen'&&top)return mix(col,'#e8d860',.16);return col}
 
-function erase(p){for(const e of [TGT.e,TGT.g]){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}}
+// TGT.de / TGT.dg: something may be painted on the lit-window / glow layer; while not, rubbing out there is a no-op and is skipped
+function erase(p){if(TGT.de)eraseOn(TGT.e,p);if(TGT.dg)eraseOn(TGT.g,p)}
+function eraseOn(e,p){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}
 function path(pts){const p=new Path2D();p.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)p.lineTo(pts[i][0],pts[i][1]);p.closePath();return p}
 function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke(p)}if(c===TGT.c)erase(p)}
 function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
-function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){TGT.e.clearRect(x,y,ww,hh);TGT.g.clearRect(x,y,ww,hh)}}
+function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
 const eq=(q,col)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
 const ed=(p,col,s=1)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
@@ -342,7 +345,7 @@ function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),g
 function drawGround(c){
   setT(c);c.fillStyle='#3a2c26';c.fillRect(0,0,BW,BH);
   // table weave
-  c.fillStyle='rgba(255,255,255,.025)';for(let y=0;y<BH;y+=4)c.fillRect(0,y,BW,1);
+  c.fillStyle='rgba(255,255,255,.025)';for(let y=Math.max(0,Math.floor(TR[1]/4)*4-4);y<Math.min(BH,TR[3]+4);y+=4)c.fillRect(0,y,BW,1);
   // model base slab
   const D=18;const A=P(0,GY),B_=P(GX,GY),Cc=P(GX,0);
   c.fillStyle='rgba(0,0,0,.35)';c.beginPath();c.moveTo(A[0]+6,A[1]+D+8);c.lineTo(B_[0]+6,B_[1]+D+8);c.lineTo(Cc[0]+10,Cc[1]+D+8);c.lineTo(Cc[0]+10,Cc[1]);c.closePath();c.fill();
@@ -461,16 +464,18 @@ function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;con
 const scr=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d'));const scrInk=[0,0,0];
 // cuts: [{p: Path2D, box}] in model pixels, static origin. Only the cuts whose box meets the card are filled, and the
 // card's lit-window and glow layers are skipped while nothing has been painted on them (most people and cars by day).
+function growScr(w_,h_){if(scr[0].canvas.width<w_||scr[0].canvas.height<h_){for(const c of scr){c.canvas.width=Math.max(c.canvas.width,w_);c.canvas.height=Math.max(c.canvas.height,h_)}scrInk.fill(0)}}
 function drawCut(box,fn,cuts,dst){
   const X0=Math.floor(BT[0]*box[0]+BT[4]),Y0=Math.floor(BT[3]*box[1]+BT[5]),X1=Math.ceil(BT[0]*box[2]+BT[4]),Y1=Math.ceil(BT[3]*box[3]+BT[5]);const w_=X1-X0,h_=Y1-Y0;if(w_<=0||h_<=0)return;
-  if(scr[0].canvas.width<w_||scr[0].canvas.height<h_){for(const c of scr){c.canvas.width=Math.max(c.canvas.width,w_);c.canvas.height=Math.max(c.canvas.height,h_)}scrInk.fill(0)}
+  growScr(w_,h_);
   const t0=TGT,b0=BT;BT=[b0[0],0,0,b0[3],b0[4]-X0,b0[5]-Y0];
   for(let i=0;i<3;i++){const c=scr[i];c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.globalAlpha=1;if(!i)c.clearRect(0,0,w_,h_);else if(scrInk[i]){c.clearRect(0,0,c.canvas.width,c.canvas.height);scrInk[i]=0}c.setTransform(...BT)}
   const T_={c:scr[0],e:scr[1],g:scr[2],de:0,dg:0};TGT=T_;fn();scrInk[1]=T_.de;scrInk[2]=T_.dg;
   const k=1/BT[0],pd=2*k+1,ax=-BT[4]*k-(ox-BOX),ay=-BT[5]*k-(oy-BOY),cb=[ax-pd,ay-pd,ax+w_*k+pd,ay+h_*k+pd];
   for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb))c.fill(q.p);c.restore()}
-  BT=b0;TGT=t0;if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
-  for(const d of [dst.e,dst.g]){d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
+  BT=b0;TGT=t0;
+  for(const d of [t0.de?dst.e:null,t0.dg?dst.g:null]){if(!d)continue;d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
+  if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
   const ds=[dst.c,dst.e,dst.g];for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const d=ds[i];d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}}
 
 // screen boxes (model pixels, static origin) for culling, the samples that decide what stands in front of each
@@ -497,29 +502,77 @@ function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx
 // The still parts of the model are rendered in TILE-pixel squares at the current scale, only where the camera looks,
 // and kept until the light or the scene changes (then they are redrawn a few at a time, old ones showing meanwhile).
 // ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
-const BM=new URLSearchParams(location.search).has('bench')?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0}):null;let bmT=0,bmF=null;
+const BM=new URLSearchParams(location.search).has('bench')?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:new URLSearchParams(location.search).get('bench')==='flush'}):null;let bmT=0,bmF=null;
 const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
-function renderTile(tx,ty,t){const T0=performance.now();
+let TR=null;const scales=new Set();
+// A tile is drawn in small steps (the ground, then one building, tree, lamp or parked car at a time), so the work can be
+// spread over frames; run straight through, the steps are exactly the drawing a tile always had.
+function* tileSteps(tx,ty,t,vs){scales.add(vs);
   if(!t){t={};for(const k of ['c','e','g']){t[k]=mk(TILE,TILE).getContext('2d')}}
   // a tile's lit-window and glow layers shrink to nothing when nothing is painted on them (most of the day)
   for(const k of ['c','e','g']){const cv_=t[k].canvas;if(cv_.width!==TILE){cv_.width=TILE;cv_.height=TILE}t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
-  BT=[VS,0,0,VS,-tx*TILE,-ty*TILE];setT(t.c,t.e,t.g);TGT={c:t.c,e:t.e,g:t.g,de:0,dg:0};ox=BOX;oy=BOY;
-  const r=[tx*TILE/VS,ty*TILE/VS,(tx+1)*TILE/VS,(ty+1)*TILE/VS];
+  const bt=[vs,0,0,vs,-tx*TILE,-ty*TILE],tg={c:t.c,e:t.e,g:t.g,de:0,dg:0},r=[tx*TILE/vs,ty*TILE/vs,(tx+1)*TILE/vs,(ty+1)*TILE/vs];
+  const at=()=>{BT=bt;TGT=tg;ox=BOX;oy=BOY;TR=r};at();setT(t.c,t.e,t.g);
   const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]};const cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
   TG=[Math.min(...cs.map(c=>c[0])),Math.min(...cs.map(c=>c[1])),Math.max(...cs.map(c=>c[0])),Math.max(...cs.map(c=>c[1]))];
-  drawGround(t.c);drawShadows(t.c);TG=null;
-  for(const b of blds)if(hitBox(b.box,r))drawBuilding(t.c,b);
-  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}
+  drawGround(t.c);drawShadows(t.c);TG=null;yield;at();
+  for(const b of blds)if(hitBox(b.box,r)){drawBuilding(t.c,b);yield;at()}
+  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);yield;at()}
   drawNet(t.c);
-  t.de=TGT.de;t.dg=TGT.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
-  t.ver=stver;t.vs=VS;if(BM){BM.tiles++;BM.tileMs+=performance.now()-T0}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
+  t.de=tg.de;t.dg=tg.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
+  t.vs=vs;t.sw=scr[0].canvas.width;t.sh=scr[0].canvas.height;return t}
+function tileDone(t,ms,tx,ty,inFrame=true){if(BM){if(BM.flush){const T0=performance.now();for(const k of ['c','e','g'])t[k].getImageData(0,0,1,1);ms+=performance.now()-T0} // software canvases draw lazily: count the drawing here
+    BM.tiles++;BM.tileMs+=ms;if(bmF&&inFrame){bmF.nt=(bmF.nt||0)+1;bmF.tt=(bmF.tt||0)+ms;(bmF.tl||(bmF.tl=[])).push(+ms.toFixed(1))}}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(ms)+'ms')}
+function renderTile(tx,ty,t,vs=VS){const T0=performance.now(),ver=stver;const g=tileSteps(tx,ty,t,vs);let r;while(!(r=g.next()).done);t=r.value;t.ver=ver;tileDone(t,performance.now()-T0,tx,ty);return t}
+// tiles part drawn, by key; a step at a time until `until` (performance.now()), then they wait for the next frame
+const jobs=new Map();
+function work(key,tx,ty,vs,until){let j=jobs.get(key);if(j&&j.ver!==stver){jobs.delete(key);j=null}
+  if(!j){j={g:tileSteps(tx,ty,null,vs),ms:0,ver:stver};jobs.set(key,j);while(jobs.size>4)jobs.delete(jobs.keys().next().value)}
+  const sv=[BT,TGT,ox,oy,TR],t0=performance.now();let r;do r=j.g.next();while(!r.done&&performance.now()<until);[BT,TGT,ox,oy,TR]=sv;const dt_=performance.now()-t0;j.ms+=dt_;if(BM&&bmF)bmF.tw=(bmF.tw||0)+dt_;
+  if(!r.done)return null;jobs.delete(key);const t=r.value;t.ver=j.ver;tileDone(t,j.ms,tx,ty,false);tiles.set(key,t);return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
   if(t){tiles.delete(key);tiles.set(key,t);if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
-  const t0=performance.now();t=renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
-function trimTiles(keep){while(tiles.size>keep){const k=tiles.keys().next().value;tiles.delete(k)}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=5*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS}};
+  const t0=performance.now();t=jobs.has(key)?work(key,tx,ty,VS,Infinity):renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
+// While a drag or a zoom brings in tiles that are not drawn yet, a frame draws them within its budget and, until each
+// is done, stands in for it with the same ground at another scale already drawn (a zoom step's previous scale, or the
+// next zoom level drawn ahead), stretched to fit. With nothing to stand in, the tile is drawn at once, as before.
+function standInAt(tx,ty){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,r3=(ty+1)*TILE/VS;let best=null,bd=1e9;
+  for(const s of scales){if(s===VS)continue;const d=Math.abs(Math.log(s/VS));if(d>=bd)continue;const nx=Math.ceil(BW*s/TILE)-1,ny=Math.ceil(BH*s/TILE)-1;
+    const a0=Math.max(0,Math.floor(r0*s/TILE)),a1=Math.max(0,Math.floor(r1*s/TILE)),b0=Math.min(nx,Math.ceil(r2*s/TILE)-1),b1=Math.min(ny,Math.ceil(r3*s/TILE)-1);let ok=true;
+    for(let y=a1;y<=b1&&ok;y++)for(let x=a0;x<=b0;x++)if(!tiles.has(s+'|'+x+'|'+y)){ok=false;break}
+    if(ok){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bd=d}}
+  return best}
+function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
+  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);
+    const i0=Math.max(r0,x*TILE/s),i1=Math.max(r1,y*TILE/s),i2=Math.min(r2,(x+1)*TILE/s),i3=Math.min(r3,(y+1)*TILE/s);if(i2<=i0||i3<=i1)continue;
+    const dx=Math.round(i0*VS)-cx,dy=Math.round(i1*VS)-cy,dw=Math.round(i2*VS)-cx-dx,dh=Math.round(i3*VS)-cy-dy,sx=i0*s-x*TILE,sy=i1*s-y*TILE,sw=(i2-i0)*s,sh=(i3-i1)*s;
+    w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de)E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.dg)GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}
+// What is worth drawing ahead: the whole model at a small scale (once), the ring of tiles just outside the view, then
+// the view at the next zoom out and in. A little of it is drawn at the end of each frame (what is left of ~10 ms, at
+// least 2), so a drag or a zoom step usually finds its tiles ready, and otherwise has something to stand in.
+let keepN=24,nVis=12;const OV=.5;
+function aheadList(){const out=[];const{dw,dh}=dev();const mx=camX+VWm()/2,my=camY+VHm()/2;
+  const add=(vs,x0,y0,x1,y1,skip)=>{const nx=Math.ceil(BW*vs/TILE)-1,ny=Math.ceil(BH*vs/TILE)-1;for(let y=Math.max(0,y0);y<=Math.min(ny,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(nx,x1);x++)if(!skip||!skip(x,y))out.push([x,y,vs])};
+  const cx=Math.round(camX*VS),cy=Math.round(camY*VS),tx0=Math.floor(cx/TILE),ty0=Math.floor(cy/TILE),tx1=Math.floor((cx+W-1)/TILE),ty1=Math.floor((cy+H-1)/TILE);
+  add(VS,tx0-1,ty0-1,tx1+1,ty1+1,(x,y)=>x>=tx0&&x<=tx1&&y>=ty0&&y<=ty1);
+  for(const d of [-1,1]){if(!zoomAllowed(zi+d,dw,dh))continue;const{vs}=planFor(ZL[zi+d],dw,dh);if(vs===VS)continue;const hw=dw/ZL[zi+d]/2,hh=dh/ZL[zi+d]/2;
+    add(vs,Math.floor((mx-hw)*vs/TILE),Math.floor((my-hh)*vs/TILE),Math.floor((mx+hw)*vs/TILE),Math.floor((my+hh)*vs/TILE))}
+  // first the whole model at a small scale (OV), kept for good: then there is always something to stand in
+  const ov=[];if(VS!==OV){const nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1;for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV])}
+  return ov.concat(out.slice(0,Math.max(0,keepN-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
+// Drawing ahead uses scratch canvases of its own: how big the shared ones have grown decides some edge antialiasing,
+// so leaving them as they are keeps every frame drawn exactly as before.
+const scrA=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d')),scrInkA=[0,0,0];
+// A tile drawn ahead starts from the shared ones' size, and when it comes into view the shared ones grow as drawing it
+// there would have grown them: so it, and everything after, comes out exactly as if it had been drawn then.
+function drawAhead(until){const miss=([x,y,vs])=>{const t=tiles.get(vs+'|'+x+'|'+y);return!t||t.ver!==stver},al=aheadList();if(BM)BM.aheadLeft=al.filter(miss).length;const q=al.find(miss);if(!q)return;const[x,y,vs]=q,key=vs+'|'+x+'|'+y;
+  if(!jobs.has(key))for(let i=0;i<3;i++){const a=scrA[i].canvas,m=scr[i].canvas;if(a.width!==m.width||a.height!==m.height){a.width=m.width;a.height=m.height;scrInkA[i]=0}}
+  const sv=scr.slice(),si=scrInk.slice();scr.splice(0,3,...scrA);scrInk.splice(0,3,...scrInkA);
+  try{const t=work(key,x,y,vs,until);if(t)t.ah=1}finally{scrA.splice(0,3,...scr);scrInkA.splice(0,3,...scrInk);scr.splice(0,3,...sv);scrInk.splice(0,3,...si)}trimTiles(keepN)}
+function trimTiles(keep){let n=0;for(const t of tiles.values())if(t.vs!==OV)n++;if(n<=keep)return;for(const[k,t]of tiles){if(t.vs===OV)continue;tiles.delete(k);if(--n<=keep)break}}
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=5*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH}};
 function renderStatic(){const T0=performance.now();
   SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree')o.cut.p=o.occ=treeOcc(o)}}buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
@@ -663,8 +716,8 @@ function signText(cx,wl,z0,txt){
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
-function frame(ts){
-  if(BM){bmT=performance.now();bmF={t:bmT}}
+function frame(ts){const F0=performance.now();
+  if(BM){bmT=performance.now();bmF={t:bmT,fit:BM.fitMs||0};BM.fitMs=0}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
   if(S.time==='now'&&ts-lastCheck>30000){lastCheck=ts;SUN=sunPos(new Date());if(stateKey()!==renderedFor)renderStatic()}
   const D=sceneDate();
@@ -673,9 +726,15 @@ function frame(ts){
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
   for(const c of [w,E,GL]){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H)}w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
   frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
-  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
-  trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
-  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
+  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const X=tx*TILE-cx,Y=ty*TILE-cy,key=VS+'|'+tx+'|'+ty;let t,si;
+    // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
+    if(!tiles.has(key)&&(si=standInAt(tx,ty))){const t0=performance.now();t=budget.left>0?work(key,tx,ty,VS,t0+budget.left):null;budget.left-=performance.now()-t0;
+      if(!t){drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
+    else t=getTile(tx,ty,budget);
+    if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
+    if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
+  const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+8);trimTiles(keepN);
+  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL,de:1,dg:1};ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
@@ -785,6 +844,8 @@ function frame(ts){
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   ctx.setTransform(1,0,0,1,0,0);
   if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
+  // a little drawing ahead with what is left of the frame (at least 2 ms, so it gets done on a slow machine too)
+  if(!frame.stale)drawAhead(performance.now()+Math.max(2,10-(performance.now()-F0)));
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 
@@ -831,7 +892,8 @@ const dev=()=>{const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1
 function planFor(z,dw,dh){let k=1;while(z/k>RESMAX+1e-9||(dw/k)*(dh/k)>MAXPX)k++;return{k,vs:z/k}}
 // zoom out until the whole model is in view, and in until about 160 model pixels fill the width
 const zoomAllowed=(i,dw,dh)=>i>=0&&i<ZL.length&&dw/ZL[i]>=160&&(i>=zi||BW*ZL[i+1]>dw*.92||BH*ZL[i+1]>dh*.92);
-function fit(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;
+function fit(force){const F0=BM?performance.now():0;fit0(force);if(BM)BM.fitMs=(BM.fitMs||0)+performance.now()-F0}
+function fit0(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;
   if(zi<0){const zq=+new URLSearchParams(location.search).get('z');const want=zq>0?zq:r.width<700?Math.max(1,dpr*.8):Math.max(1,Math.round(dw/1000));zi=ZL.reduce((bi,v,i)=>Math.abs(v-want)<Math.abs(ZL[bi]-want)?i:bi,0)}
   while(zi>0&&dw/ZL[zi]<160)zi--;
   const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k);if(!force&&nW===W&&nH===H&&vs===VS)return;
