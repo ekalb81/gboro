@@ -60,6 +60,9 @@ function hull(p){p=p.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=
 // ---------- canvases ----------
 const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
 const cv=cv0,ctx=cv.getContext('2d');
+// Name tags, signposts and the highlight go on a canvas of their own laid over the model, at the screen's own resolution:
+// the model canvas is drawn at half or a third of that when zoomed in, which made small type chunky.
+const lc=document.createElement('canvas');lc.setAttribute('aria-hidden','true');lc.style.pointerEvents='none';cv.after(lc);const lx=lc.getContext('2d');let LSO=2;
 let Wc,Ec,Gc,Tc,w,E,GL,tc;
 function makeLayers(){if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
   Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
@@ -115,7 +118,7 @@ const blds=MAP.B.map((b,i)=>{
   if(SPECIAL[b.id]==='kress'){delete b.tr;delete b.tb}
   const hm=(b.tb>2.5?b.tb:0)||(b.id!==208115796&&b.lh>2.5?b.lh:0)||b.h||lv*3.6;if(b.lh>2.5&&!b.l&&!(F&&F.floors))lv=Math.max(1,Math.round(b.lh/3.8));const hpx=Math.min(250,hm*ZPM);
   const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
-  const o={i,id:b.id,pts,t,name:b.n,lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
+  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
   if(o.special==='tower'){o.wall='#ece4d2';o.roof='#cfc6b3';o.win=3.2;o.cornice=1}
   else if(o.special==='kress'){o.wall='#f0e4c4';o.roof='#cdc6b8';o.win=2.6;o.cornice=1;o.shop=1;o.lv=4;o.piers=1}
@@ -713,7 +716,16 @@ function signText(cx,wl,z0,txt){
   const pnl=[WP(wl,u(-1.5),z0+1,.02),WP(wl,u(cols+.5),z0+1,.02),WP(wl,u(cols+.5),z0+13,.02),WP(wl,u(-1.5),z0+13,.02)];poly(cx,pnl,'#221c26');
   for(let i=0;i<txt.length;i++){const g=FONT[txt[i]]||FONT[' '];for(let r=0;r<5;r++)for(let k=0;k<3;k++){const on=g[r*3+k]==='1';on?ed(WP(wl,u(i*4+k),z0+11-r*2,.03),BULB,2):ed(WP(wl,u(i*4+k),z0+11-r*2,.03),'#3a2e30')}}
 }
-const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
+// What each building is called on the model: a short form for the landmarks, else its own name, else who is inside it, else its
+// street address (all from the model data, see tools/model/names.py). LAB lists them most recognisable first: landmarks, named
+// buildings, tenants, addresses, and bigger before smaller within each. Each frame they are laid on in that order, and a label that
+// would touch one already down waits for a closer zoom, so the model is never papered over.
+const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],['ballpark','First National Bank Field'],['kress','Kress Building'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
+const wrapLabel=t=>{if(t.length<=20)return[t];const w=t.split(' ');let best=null;for(let i=1;i<w.length;i++){const a=w.slice(0,i).join(' '),b=w.slice(i).join(' '),m=Math.max(a.length,b.length);if(!best||m<best.m)best={m,a,b}}if(!best)return[t.slice(0,19)+'…'];const cut=x=>x.length>28?x.slice(0,27).trimEnd()+'…':x;return[cut(best.a),cut(best.b)]};
+for(const b of blds){const park=b.t==='parking'||b.am==='parking';b.label=b.name||b.tn[0]||b.ad||(park?'Parking deck':'');b.lt=b.name?1:b.tn.length?2:3;b.more=b.name?b.tn.length:Math.max(0,b.tn.length-1)}
+for(const[k,t]of LABELS){const b=byId[k];if(b){b.label=t;b.lt=0}}
+const LAB=blds.filter(b=>b.label);for(const b of LAB){b.ll=wrapLabel(b.label);b.lsz=b.area*Math.max(8,b.htop||b.hpx)}LAB.sort((a,b)=>a.lt-b.lt||b.lsz-a.lsz);
+const LFONT='800 6.5px "Nunito Sans", system-ui, sans-serif',LFONT2='600 6px "Nunito Sans", system-ui, sans-serif';let labW=false;
 
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){const F0=performance.now();
@@ -819,15 +831,30 @@ function frame(ts){const F0=performance.now();
   if(!VGR||VGR.W!==W||VGR.H!==H){VGR=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}ctx.fillStyle=VGR;ctx.fillRect(0,0,W,H);
   BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
-  ctx.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
-  ctx.font='8px Silkscreen, monospace';ctx.textBaseline='top';
-  const tag=(x,y,t)=>{x=Math.round(x);y=Math.round(y);const tw_=Math.ceil(ctx.measureText(t).width)+8;const bx=Math.max(2,Math.min(WL-tw_-2,x-(tw_>>1)));if(y<2||y>HL-14||x<4||x>WL-4)return;ctx.fillStyle=SH;ctx.fillRect(bx+1,y-1,tw_-2,13);ctx.fillRect(bx,y,tw_,11);ctx.fillStyle=C.Paper;ctx.fillRect(bx+1,y,tw_-2,11);ctx.fillStyle=SH;ctx.fillRect(x-1,y+12,3,2);ctx.fillText(t,bx+4,y+2)};
+  {const ctx=lx,LS=LSO,kx=lc.width/W,ky=lc.height/H;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,lc.width,lc.height);
+  ctx.setTransform(LS,0,0,LS,0,0);const WL=lc.width/LS,HL=lc.height/LS,LP=([x,y])=>[x*VS*kx/LS,y*VS*ky/LS];
+  ctx.font=LFONT;ctx.textBaseline='top';
+  const tag=(x,y,t)=>{x=Math.round(x);y=Math.round(y);const tw_=Math.ceil(ctx.measureText(t).width)+8;const bx=Math.max(2,Math.min(WL-tw_-2,x-(tw_>>1)));if(y<2||y>HL-14||x<4||x>WL-4)return;ctx.fillStyle=SH;ctx.fillRect(bx+1,y-1,tw_-2,13);ctx.fillRect(bx,y,tw_,11);ctx.fillStyle=C.Paper;ctx.fillRect(bx+1,y,tw_-2,11);ctx.fillStyle=SH;ctx.fillRect(x-1,y+12,3,2);ctx.fillText(t,bx+4,y+2.5)};
   const top=b=>LP(P(b.cx,b.cy,(b.htop||b.hpx)+(b.special==='tower'?10:8)));
   const bub=[];const nb=L.bubbles.length;
   if(nb){const slot=Math.floor(T/7);for(let k=0;k<Math.min(2,nb);k++){const o=L.bubbles[(slot*2+k)%nb];if(!blink(T+k*3.5,6,1))continue;const b=o.id!=null?byId[o.id]:null;bub.push([b?top(b):LP(P(o.gx,o.gy,24)),o.text])}}
-  if(S.labels){for(const[k,t]of LABELS){const b=byId[k];if(!b)continue;const[x,y]=top(b);tag(x,y-10,t)}}
+  if(S.labels){
+    if(!labW){labW=true;
+      // a building whose roof is hidden behind a nearer one is not named (the tag would sit on the wrong building); landmarks always are
+      const o0=ox,o1=oy;ox=BOX;oy=BOY;for(const b of blds)if(!b.hull){const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}
+      for(const b of LAB){if(!b.lt)continue;const q=P(b.cx,b.cy,b.htop||b.hpx);for(let j=b.i+1;j<blds.length;j++)if(pip(q[0],q[1],blds[j].hull)){b.lhid=1;break}}ox=o0;oy=o1;
+      for(const b of LAB){ctx.font=b.lt>1?LFONT2:LFONT;b.lw=Math.ceil(Math.max(...b.ll.map(t=>ctx.measureText(t).width)))+(b.lt>1?6:8)}ctx.font=LFONT}
+    // f: label pixels per model pixel. Far out only the landmarks are named; names, then tenants, then addresses join on the way in.
+    const f=VS*kx/LS,maxT=f<.3?0:f<.45?1:f<.95?2:3,put=[],said=new Set(),gap=f<.55?5:3;
+    for(const b of LAB){if(b.lt>maxT)break;if(b.lhid||said.has(b.label))continue;const[px,py]=top(b),n=b.ll.length,small=b.lt>1,lh=small?7:8,w=b.lw,h=n*lh+3,x=Math.round(px),bx=x-(w>>1),by=Math.round(py)-10-(n-1)*lh;
+      if(bx>WL+40||bx+w<-40||by>HL+20||by+h<-20)continue;
+      let hit=false;for(const r of put)if(bx<r[0]+r[2]+gap&&bx+w+gap>r[0]&&by<r[1]+r[3]+gap&&by+h+gap>r[1]){hit=true;break}if(hit)continue;
+      put.push([bx,by,w,h]);said.add(b.label);
+      ctx.fillStyle=SH;ctx.fillRect(bx+1,by-1,w-2,h+2);ctx.fillRect(bx,by,w,h);ctx.fillStyle=b.lt?(small?'#f3e9d2':C.Paper):'#ffe9a8';ctx.fillRect(bx+1,by,w-2,h);ctx.fillStyle=SH;ctx.fillRect(x-1,by+h+1,3,2);
+      ctx.font=small?LFONT2:LFONT;ctx.fillStyle=b.lt===3?'#6b5a55':SH;ctx.textAlign='center';b.ll.forEach((t,i)=>ctx.fillText(t,bx+w/2,by+2.5+i*lh));ctx.textAlign='start'}
+    ctx.font=LFONT}
   else bub.forEach(([[x,y],t])=>tag(x,y-10,t));
-  if(hoverB&&hoverB.name&&!hoverB.sign){const[x,y]=top(hoverB);tag(x,y-10,hoverB.name)}
+  if(hoverB&&(hoverB.label||hoverB.name)&&!hoverB.sign){const[x,y]=top(hoverB);tag(x,y-10,hoverB.label||hoverB.name)}
   // signposts at the edge of the model, pointing to the rest of town
   signRects=[];
   for(const g of L.signs){const[px,py]=LP(P(g.gx,g.gy));if(px<-80||px>WL+80||py<-10||py>HL+40)continue;const x=Math.round(px),y=Math.round(py);
@@ -842,7 +869,7 @@ function frame(ts){const F0=performance.now();
     ctx.lineJoin='round';ctx.strokeStyle=SH;ctx.lineWidth=4;ctx.stroke(hp);ctx.strokeStyle='#ffd23f';ctx.lineWidth=2;ctx.stroke(hp);
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
-  ctx.setTransform(1,0,0,1,0,0);
+  ctx.setTransform(1,0,0,1,0,0)}
   if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
   // a little drawing ahead with what is left of the frame (at least 2 ms, so it gets done on a slow machine too)
   if(!frame.stale)drawAhead(performance.now()+Math.max(2,10-(performance.now()-F0)));
@@ -897,7 +924,7 @@ function fit0(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;
   if(zi<0){const zq=+new URLSearchParams(location.search).get('z');const want=zq>0?zq:r.width<700?Math.max(1,dpr*.8):Math.max(1,Math.round(dw/1000));zi=ZL.reduce((bi,v,i)=>Math.abs(v-want)<Math.abs(ZL[bi]-want)?i:bi,0)}
   while(zi>0&&dw/ZL[zi]<160)zi--;
   const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k);if(!force&&nW===W&&nH===H&&vs===VS)return;
-  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;makeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
+  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;{const j=Math.max(1,Math.ceil(Math.sqrt(dw*dh/6e6)));lc.width=Math.ceil(dw/j);lc.height=Math.ceil(dh/j);lc.style.imageRendering=j>1?'auto':'';LSO=Math.max(1,Math.round(dpr*2))/j}makeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
   if(started&&reduce)requestAnimationFrame(frame)}
 function zoomBy(d){const{dw,dh}=dev();if(!zoomAllowed(zi+d,dw,dh))return false;zi+=d;fit(true);return true}
 const canZoom=d=>{const{dw,dh}=dev();return zoomAllowed(zi+d,dw,dh)};

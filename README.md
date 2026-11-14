@@ -84,6 +84,8 @@ Point it at a dedicated project inbox rather than a personal account if you can.
 python3 tools/model/prep.py downtown-osm.json path/to/survey-inputs public/model/downtown.json
 ```
 
+**Building names.** The tag button on the model names the buildings. `tools/model/names.py` (run by `prep.py`) gives each building, from OpenStreetMap alone, its own name (`n`), the shops, restaurants and offices mapped inside it (`tn`), and its street address (`ad`); closed places are left out. The model labels a building with the first of those it has: 220 of the 272 buildings have one, and the rest are sheds, roofs and a few decks with nothing mapped. Landmarks show from far out, and named buildings, tenants and then addresses join as you zoom in; a label that would touch another waits for a closer zoom. Corrections for typos upstream go in `data/model/names.json`. The same data places digest items: a post about a shop lands on the building it is in.
+
 Dropping in a newer file (for example after the 2024 lidar update) needs no code change.
 
 What the live data does on the model, all from real data and nothing faked:
