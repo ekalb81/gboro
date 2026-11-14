@@ -137,7 +137,10 @@ export function makePlacer(model, eatsPlaces = []) {
     if (t) return { gx: t.gx, gy: t.gy, how: 'building', buildingId: t.id };
     const a = parseAddress(item.address);
     if (!a) return null;
-    const at = addressed.find((x) => x.street === a.street && a.num >= x.lo && a.num <= x.hi);
+    // The exact number first; then a range, which only covers its own side of the street (odd or even) when both ends agree.
+    const on = addressed.filter((x) => x.street === a.street);
+    const at = on.find((x) => x.lo === a.num || x.hi === a.num)
+      || on.find((x) => a.num > x.lo && a.num < x.hi && ((x.lo - x.hi) % 2 !== 0 || (a.num - x.lo) % 2 === 0));
     if (at) return { gx: at.gx, gy: at.gy, how: 'building', buildingId: at.id };
     const g = byAddress(a);
     return g && inModel(model, g.gx, g.gy) ? g : null;

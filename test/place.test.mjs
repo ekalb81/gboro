@@ -88,4 +88,7 @@ test('items are placed by a tenant of a building, or by the building at that add
   assert.equal(popup.buildingId, books.id);
   const range = model.B.find((b) => b.ad === '346-348 S Elm St');
   assert.equal(P.place({ venue: 'Another One', address: '348 South Elm Street' }).buildingId, range.id);
+  // A range covers its own side of the street only: 343 is across from 342-344.
+  const odd = model.B.find((b) => b.ad === '343 S Elm St');
+  assert.equal(P.place({ venue: 'New event', address: '343 S Elm St' }).buildingId, odd.id);
 });
