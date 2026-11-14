@@ -25,7 +25,9 @@ npm run bench -- --only desktop,zoomed-out     only these scenarios
 npm run bench -- --secs 15                     measure longer
 npm run bench -- --json bench.json             also save the numbers
 npm run bench -- --profile profiles            save a CPU profile per scenario (open in Chrome DevTools > Performance)
-npm run bench -- --query time=night            extra URL parameters for every scenario
+npm run bench -- --only interaction            only the drag / wheel / pinch scenarios ('steady' for the rest)
+npm run bench -- --warm                        interaction scenarios wait until the model has drawn ahead first
+npm run bench -- --query time=night            extra URL parameters for every scenario (they override the defaults)
 npm run bench -- --headed                      show the browser: uses your real graphics card
 ```
 
@@ -42,6 +44,11 @@ nothing is recorded.
 | pan-zoom | drags back and forth and zooms in and out with the wheel the whole time (new tiles get drawn) |
 | laptop-4x | 1366x768, CPU slowed 4x (a modest laptop) |
 | phone-4x | 390x844 at pixel ratio 3, touch, CPU slowed 4x |
+| drag, drag-dpr2 | the mouse held down and dragged in slow sweeps across the view, a move every 16 ms |
+| wheel, wheel-dpr2 | three mouse-wheel notches in, then three out, half a second apart |
+| trackpad | a trackpad pinch: 45 small ctrl+wheel steps 16 ms apart, in then out |
+| laptop-drag, laptop-wheel | drag and wheel at 1366x768 with the CPU slowed 4x |
+| phone-touch | one-finger drag, then a two-finger pinch out and in, at 390x844@3 with the CPU slowed 4x |
 
 Columns: **fps**; **frame p50/p95/max**, the time between frames (ms); **work p50/p95**, the time spent inside the
 model's `frame()` (ms); **long**, long tasks (over 50 ms); **tiles**, static tiles drawn while measuring; **heap MB**, JS
@@ -51,6 +58,14 @@ from navigation to the first drawn frame. The second table splits the work by ph
 static tiles on), `sim` (traffic, people, train and the list of moving things), `dyn` (drawing the moving things, with
 their cut-outs), `blow` (blowing leaves and petals), `grade` (weather, colour grade, lit windows and glow), `tilt`
 (tilt-shift blur), `sign` (the lantern clock and vignette), `labels`.
+
+The third table covers only the frames while a gesture is going on (and 0.3 s after each): the frame interval
+p50/p95/p99/max and how many were over 50 and 100 ms; **tiles**, static tiles drawn whole inside one frame; **multi**,
+frames that drew two or more; **max/frame**; **ms/tile** and **tile max**, what one such tile cost; **tiles in 1 frame
+ms**, the most tile drawing done in a single frame (whole tiles plus tiles drawn a step at a time); **resize ms**, the
+longest canvas resize on a zoom step; **stand-in frames**, frames that showed a missing tile stretched from another
+scale, and **stand-in after ms**, how long after the end of a gesture the last of those was. In software (headless),
+tile drawing is lazy, so `?bench=flush` makes each new tile finish its drawing where it is counted.
 
 ## The graphics card caveat
 
@@ -150,6 +165,75 @@ zoomed in and out, the phone, night (two zooms), spring dusk with petals, a stor
 zoom by keyboard. All are identical pixel for pixel, except the storm view, where 366 pixels in the HTML alert chip
 (not the model) differ between any two runs.
 
+## Dragging and zooming (second pass)
+
+Measured with the gesture scenarios above, software drawing, same container, before and after run back to back.
+
+**What made it janky.** Not the input handling: the pointer and wheel handlers only move the camera or change the
+zoom level (a mouse move with hover hit-testing against cached building outlines: 0.06 ms; a wheel event that
+changes the zoom level: 0.2 ms), and a zoom step's canvas resize is 1-7 ms. The hitches were new static tiles drawn all at once in the frame that needed them:
+
+- **A zoom step changes the tile scale**, so every visible tile is new: 4 to 12 tiles in one frame (desktop at pixel
+  ratio 2: 12 tiles, 572 ms of tile drawing in a single frame; the laptop with the CPU slowed 4x: 9 tiles, 1.8 s).
+- **A drag** brings in a column or row of tiles at once: 2-4 tiles in one frame (100-160 ms in software).
+- The 12 ms per-frame budget applied only to redrawing *stale* tiles; missing tiles were always drawn at once,
+  because there was nothing to show in their place.
+
+**What changed** (`public/model.js`, the static tiles section):
+
+- `tileSteps`: a tile is drawn as a series of steps (ground and shadows, then one building, tree, lamp or parked car
+  at a time); `renderTile` runs it straight through, exactly the drawing a tile always had. `work` advances a tile
+  a step at a time until a deadline and keeps the part-drawn tile for the next frame.
+- `drawAhead`, called at the end of each frame with what is left of ~10 ms (at least 2 ms): draws, in order, the
+  whole model at half scale (12 tiles, kept for good: `OV`), the ring of tiles just outside the view, and the view at
+  the next zoom level out and in. The cache size accounts for the ring so drawing ahead never evicts what it drew.
+- `standInAt` / `drawStandIn`: when a frame needs a tile that is not drawn and another scale has that ground drawn,
+  the frame draws the missing tile a step at a time within the 12 ms budget and, until it is done, shows the other
+  scale's tiles stretched to fit. With nothing to stand in (only in the first seconds after load), the tile is drawn
+  at once, as before.
+- Exactness: how big the shared scratch cards have grown decides a few edge pixels' antialiasing, so drawing ahead
+  uses scratch cards of its own sized from the shared ones, and when a tile drawn ahead comes into view the shared
+  cards grow as drawing it there would have grown them (`growScr`). Every settled frame is identical to before.
+- The table weave is laid only across the tile being drawn (it was the full model height for every tile).
+
+**Visible during a gesture.** While a tile is missing at the new scale, its area shows the same ground from another
+scale stretched to fit: slightly soft (upscaled from half or the neighbouring scale) or slightly sharper (downscaled),
+for one to a few frames, only right after a zoom step or when a drag uncovers ground not drawn ahead. Measured: 1-4
+frames per gesture on desktop when the model has had time to draw ahead, at most 24-28 frames over a whole six-step
+wheel sequence at pixel ratio 2 or on the slowed laptop; the last stand-in was gone within 0-180 ms after the gesture
+ended. Nothing else changes, and once settled the picture is the same pixel for pixel.
+
+During gestures only (frame interval ms; **tiles**/**max** = whole tiles drawn inside a frame and the most in one
+frame; **tile ms** = the most tile drawing in one frame). "After, warm" waited until drawing ahead had finished (about
+40 s in software on desktop; it never finished within 60 s with the CPU slowed 4x); "after, cold" started 3 s after
+load, like the "before" run:
+
+| Scenario | before p95 / max | after cold | after warm | tiles / max before → warm | tile ms before → cold → warm |
+| --- | --- | --- | --- | --- | --- |
+| drag | 168 / 229 | 177 / 202 | 179 / 233 | 8 / 4 → 0 / 0 | 117 → 44 → 14 |
+| wheel | 110 / 320 | 135 / 229 | 123 / 218 | 4 / 4 → 0 / 0 | 263 → 92 → 15 |
+| trackpad | 123 / 207 | 138 / 283 | 123 / 183 | 4 / 4 → 0 / 0 | 156 → 96 → 12 |
+| drag-dpr2 | 193 / 252 | 219 / 281 | 167 / 223 | 10 / 4 → 0 / 0 | 93 → 52 → 12 |
+| wheel-dpr2 | 231 / 770 | 204 / 360 | 219 / 245 | 38 / 12 → 0 / 0 | 572 → 220 → 21 |
+| laptop-drag | 432 / 481 | 421 / 450 | 411 / 432 | 6 / 3 → 4 / 2 | 159 → 151 → 169 |
+| laptop-wheel | 576 / 2136 | 455 / 519 | 389 / 489 | 15 / 9 → 1 / 1 | 1758 → 255 → 155 |
+| phone-touch | 755 / 1251 | 802 / 1195 | 876 / 1361 | 16 / 6 → 8 / 4 | 945 → 457 → 542 |
+
+The worst frames and the tile hitches are gone on desktop; the typical frame interval during a gesture did not move,
+because in software it is the same per-frame cost as standing still (the tilt-shift blur alone is ~80 ms here). The
+slowed phone does not get time to draw ahead in software, so it still draws tiles whole after a pinch.
+
+On the graphics-card path (`--swgpu`: canvases through SwiftShader, so frame intervals are meaningless but the
+main-thread work is real), the mean `tiles` phase during gestures went from 18.8 → 8.6 ms (drag), 9.7 → 4.8 (wheel),
+23.9 → 12.8 (drag-dpr2) and 298 → 16.8 ms (wheel-dpr2), and the p95 of `frame()` work on wheel-dpr2 from 337 → 44 ms.
+
+Standing still (software, fps and frame p50, before → after): desktop 8.7 → 8.2 / 108 → 114, desktop-dpr2 7.9 → 7.4 /
+121 → 129, zoomed-in 58.2 → 57.7 / 16.7 → 16.7, zoomed-out 7.0 → 7.0 / 131 → 129, laptop-4x 3.0 → 2.9 / 316 → 330,
+phone-4x 1.5 → 1.5 / 675 → 694: the same within run-to-run noise (the unchanged tilt-shift phase moved by as much).
+The cost is memory and a few seconds of background drawing after load: canvas memory goes up by the half-scale model
+and the ring (desktop 45.7 → 50.7 MB; zoomed-in 7.8 → 29.8 MB, still less than the other views), and until drawing
+ahead is done each frame spends up to ~10 ms on it (at least 2 ms).
+
 ## What is left, and whether to change engines
 
 - **Tilt-shift blur** is the biggest software cost (30+ ms a frame). On a graphics card it is cheap. Making it cheaper
@@ -165,3 +249,9 @@ zoom by keyboard. All are identical pixel for pixel, except the storm view, wher
   `npm run bench -- --headed` first. If a mid-range laptop still shows `dyn` over 10 ms a frame there, a WebGL
   renderer (depth-sorted sprites with a depth test instead of cut-out cards) is the change that would remove it; a
   worker with OffscreenCanvas would only move the same work off the main thread.
+- **After the second pass**, dragging and zooming cost the same per frame as standing still, so a gesture is as
+  smooth as the steady frame rate. What remains per frame on a graphics card is the model's own JavaScript, mostly the
+  cut-out cards (`dyn`, ~10-25 ms at 1920x1080 on the `--swgpu` path). WebGL would make that nearly free (the GPU
+  sorts by depth instead of cutting cards) and would draw tiles as textures, but it is a rewrite of the drawing code
+  (weeks, not days), and every outline, antialiased edge and blend would have to be re-matched by eye: the picture
+  would no longer be pixel-identical. Measure `npm run bench -- --headed --only interaction` on the real machine first.
