@@ -364,10 +364,16 @@ function showBuilding(b, look = false) {
   const here = items.filter((it) => spots.get(it.id)?.bid === b.id).sort(byTime);
   const ps = places.filter((p) => p.bid === b.id);
   const now = etNow();
-  const name = b.name || ps[0]?.name || 'A downtown building';
+  const name = b.name || b.label || ps[0]?.name || 'A downtown building';
+  // who else is inside, from the model's own data, without repeating the title or the places listed below
+  const shown = new Set([name, ...ps.map((p) => p.name)].map(norm));
+  const inside = (b.tn || []).filter((t) => !shown.has(norm(t)));
+  const where = b.ad && b.ad !== name ? b.ad : '';
   const card = el('div', { className: 'card' },
     el('button', { title: 'Close', ariaLabel: 'Close', onclick: () => showBuilding(null) }, icon('close')),
     el('div', { className: 't', textContent: name }),
+    where ? el('div', { className: 'sub', textContent: where }) : null,
+    inside.length ? el('div', { className: 'sub', textContent: `Inside: ${inside.join(', ')}` }) : null,
     !here.length && !ps.length ? el('div', { className: 'sub', textContent: 'Nothing posted here right now.' }) : null,
     ps.length ? el('ul', {}, ...ps.map((p) => placeLi(p, now))) : null,
     here.length ? el('ul', {}, ...here.map((it) => itemLi(it))) : null);
@@ -430,7 +436,10 @@ function syncTools() { $('zin').disabled = !model.canZoom(1); $('zout').disabled
 $('zin').onclick = () => { model.zoomIn(); syncTools(); };
 $('zout').onclick = () => { model.zoomOut(); syncTools(); };
 $('home').onclick = () => model.home();
-$('labels').onclick = (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); model.setLabels(on); };
+// The name tags stay how the visitor left them; ?labels in the address turns them on for a shared link.
+function setLabels(on, keep) { $('labels').setAttribute('aria-pressed', on); model.setLabels(on); if (keep) try { localStorage.setItem('gso-labels', on ? '1' : '0'); } catch { /* private window */ } }
+$('labels').onclick = (e) => setLabels(e.currentTarget.getAttribute('aria-pressed') !== 'true', true);
+{ let on = new URLSearchParams(location.search).has('labels'); try { on = on || localStorage.getItem('gso-labels') === '1'; } catch { /* private window */ } if (on) setLabels(true); }
 $('fold').onclick = (e) => { const on = $('app').classList.toggle('folded'); e.currentTarget.setAttribute('aria-pressed', on); e.currentTarget.title = on ? 'Bring the paper back' : 'Fold the paper away'; };
 new ResizeObserver(syncTools).observe($('village'));
 // the hint goes once someone has had a look around, or after a while

@@ -1,0 +1,6 @@
+{
+  "_note": "Corrections to building names for tools/model/prep.py, keyed by OpenStreetMap way id. Only for typos and gaps upstream; everything else comes from OpenStreetMap by itself.",
+  "buildings": {
+    "208189131": { "name": "Elm Street Center" }
+  }
+}
