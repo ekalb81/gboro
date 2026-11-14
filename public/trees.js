@@ -256,19 +256,31 @@ export function drawTree(c, o, h) {
   }
 }
 
-/** The tree's outline as a Path2D in model pixels relative to its base point, for cutting things out behind it. */
-export function treeOutline(o, lean = [0, 0], doy = null) {
+/**
+ * The tree's outline in model pixels relative to its base point, for cutting things out behind it, as its simple
+ * pieces: [['e', cx, cy, rx, ry]] ellipses, [['r', x, y, w, h]] rectangles, [['p', [[x, y], ...]]] polygons.
+ */
+export function treeOutlineParts(o, lean = [0, 0], doy = null) {
   const sp = SPECIES[o.sp] || SPECIES.redmaple;
   const { hp, rp } = dims(o);
-  const p = new Path2D();
   // a bare deciduous tree hides only its trunk; a thinning crown hides less of what is behind it
   const leaf = sp.ever || doy == null ? 1 : look(o.sp, doy, o.seed).leaf;
-  if (leaf < 0.35) { p.rect(-1, -hp * 0.4, 2, hp * 0.4); return p; }
-  if (sp.shape === 'pine') { const cr = Math.max(4, rp * 0.8); p.ellipse(lean[0] * 0.75, lean[1] * 0.75 - hp * 0.75, cr * 1.1, hp * 0.22, 0, 0, 7); p.rect(-1, -hp * 0.6, 2, hp * 0.6); return p; }
-  if (sp.shape === 'cedar' || sp.shape === 'holly') { const w = Math.max(3, rp * 0.8); p.moveTo(-w, -2); p.lineTo(w, -2); p.lineTo(lean[0], lean[1] - hp); p.closePath(); return p; }
+  if (leaf < 0.35) return [['r', -1, -hp * 0.4, 2, hp * 0.4]];
+  if (sp.shape === 'pine') { const cr = Math.max(4, rp * 0.8); return [['e', lean[0] * 0.75, lean[1] * 0.75 - hp * 0.75, cr * 1.1, hp * 0.22], ['r', -1, -hp * 0.6, 2, hp * 0.6]]; }
+  if (sp.shape === 'cedar' || sp.shape === 'holly') { const w = Math.max(3, rp * 0.8); return [['p', [[-w, -2], [w, -2], [lean[0], lean[1] - hp]]]]; }
   const f = leaf < 0.7 ? 0.75 : 1;
-  p.ellipse(lean[0] * 0.6, lean[1] * 0.6 - hp * 0.6, rp * f, Math.min(Math.max(rp * 0.9, hp * 0.3), hp * 0.48) * f, 0, 0, 7);
-  p.rect(-1, -hp * 0.4, 2, hp * 0.4);
+  return [['e', lean[0] * 0.6, lean[1] * 0.6 - hp * 0.6, rp * f, Math.min(Math.max(rp * 0.9, hp * 0.3), hp * 0.48) * f], ['r', -1, -hp * 0.4, 2, hp * 0.4]];
+}
+/** One piece of an outline (see treeOutlineParts) added to a Path2D, moved by (dx, dy). */
+export function addOutlinePart(p, part, dx = 0, dy = 0) {
+  if (part[0] === 'e') { p.moveTo(part[1] + dx + part[3], part[2] + dy); p.ellipse(part[1] + dx, part[2] + dy, part[3], part[4], 0, 0, 7); p.closePath(); }
+  else if (part[0] === 'r') p.rect(part[1] + dx, part[2] + dy, part[3], part[4]);
+  else { part[1].forEach(([x, y], i) => (i ? p.lineTo(x + dx, y + dy) : p.moveTo(x + dx, y + dy))); p.closePath(); }
+}
+/** The tree's outline as a Path2D in model pixels relative to its base point, for cutting things out behind it. */
+export function treeOutline(o, lean = [0, 0], doy = null) {
+  const p = new Path2D();
+  for (const part of treeOutlineParts(o, lean, doy)) addOutlinePart(p, part);
   return p;
 }
 

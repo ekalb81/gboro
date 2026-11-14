@@ -10,7 +10,7 @@
 // something; it never wanders off on its own.
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
-import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
+import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
 
 export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
@@ -59,10 +59,45 @@ function hull(p){p=p.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=
 
 // ---------- canvases ----------
 const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
-const cv=cv0,ctx=cv.getContext('2d');
-let Wc,Ec,Gc,Tc,w,E,GL,tc;
-function makeLayers(){if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
-  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H}
+const cv=cv0,ctx=cv.getContext('2d');const QS=new URLSearchParams(location.search);
+// How a frame is put together. 'layers' (the default): the picture is drawn straight onto the visible canvas, the lit
+// windows and the glow are two more canvases stacked on it, and the browser's compositor does the colour grade
+// (saturate, multiply, add), the tilt-shift blur (backdrop-filter under a fading mask) and the vignette; the lantern
+// sign and the labels go on one more canvas on top, so they stay sharp. Nothing is copied from canvas to canvas.
+// 'canvas' (?compose=canvas, or a browser without the CSS it needs): everything is composited in the canvas, as before.
+// Without a graphics card (a software renderer) the compositor's blur and blending and the clipping of moving things
+// cost more than the old way, so such a machine keeps the old way throughout: ?compose=layers and ?cut=clip force the new.
+const SOFT=(()=>{try{const g=document.createElement('canvas').getContext('webgl');if(!g)return false;const x=g.getExtension('WEBGL_debug_renderer_info'),r=String(x?g.getParameter(x.UNMASKED_RENDERER_WEBGL):g.getParameter(g.RENDERER));
+  const l=g.getExtension('WEBGL_lose_context');if(l)l.loseContext();return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(r)}catch{return false}})();
+let LYWHY='';const LY=(()=>{const par=cv.parentElement,sup=(k,v)=>!!(window.CSS&&CSS.supports&&CSS.supports(k,v));
+  const bf=sup('backdrop-filter','blur(1px)')?'backdropFilter':sup('-webkit-backdrop-filter','blur(1px)')?'webkitBackdropFilter':'';
+  if(QS.get('compose')==='canvas'){LYWHY='asked for';return null}
+  if(!par||!bf||!sup('mix-blend-mode','plus-lighter')||!sup('mix-blend-mode','multiply')||getComputedStyle(par).position==='static'){LYWHY='the browser lacks backdrop-filter or plus-lighter';return null}
+  if(SOFT&&QS.get('compose')!=='layers'){LYWHY='software renderer, no graphics card';return null}
+  const base='position:absolute;pointer-events:none;margin:0;padding:0;border:0;',ir=getComputedStyle(cv).imageRendering;
+  const el=(tag,css)=>{const e=document.createElement(tag);e.setAttribute('aria-hidden','true');e.style.cssText=base+css;if(tag==='canvas'){e.width=e.height=1;e.style.imageRendering=ir}return e};
+  const mask=d=>{const g=`linear-gradient(to ${d},#000,transparent)`;return`-webkit-mask-image:${g};mask-image:${g};`};
+  const L_={bf,mul:el('div','mix-blend-mode:multiply;display:none;'),add:el('div','mix-blend-mode:plus-lighter;display:none;'),flash:el('div','display:none;'),
+    e:el('canvas',''),g:el('canvas','mix-blend-mode:plus-lighter;display:none;'),bt:el('div',mask('bottom')),bb:el('div',mask('top')),vig:el('div',''),o:el('canvas',''),gOn:false,css:{}};
+  L_.all=[L_.mul,L_.add,L_.flash,L_.e,L_.g,L_.bt,L_.bb,L_.vig,L_.o];let at=cv;for(const e of L_.all){at.after(e);at=e}
+  return L_})();
+let Wc,Ec,Gc,Tc,w,E,GL,tc,oc;
+function makeLayers(){
+  if(LY){for(const c of [cv,LY.e,LY.o].concat(LY.gOn?[LY.g]:[]))if(c.width!==W||c.height!==H){c.width=W;c.height=H}
+    if(!w){w=ctx;E=LY.e.getContext('2d');GL=LY.g.getContext('2d');oc=LY.o.getContext('2d')}return}
+  if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
+  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H;oc=ctx}
+// layers mode: the stacked elements sit exactly on the canvas; the blur and the vignette are sized in CSS pixels
+function placeLayers(){if(!LY)return;const x=cv.offsetLeft,y=cv.offsetTop,cw=cv.offsetWidth,ch=cv.offsetHeight,k=[x,y,cw,ch,W,H,VS].join();if(k===LY.placed||!cw)return;LY.placed=k;
+  const s=cw/W,box=(e,t,h)=>{e.style.left=x+'px';e.style.top=y+t+'px';e.style.width=cw+'px';e.style.height=h+'px'};
+  for(const e of LY.all)box(e,0,ch);box(LY.bt,0,ch*.3);box(LY.bb,ch*.68,ch-ch*.68);
+  const bl=`blur(${(1.6*Math.max(.6,VS)*.8*s).toFixed(2)}px)`;LY.bt.style[LY.bf]=bl;LY.bb.style[LY.bf]=bl;
+  // the same as the canvas gradient from radius .45 H (clear) to .62 W (dark); on a tall view the second is the smaller, and it runs the other way
+  const r0=H*.45*s,r1=W*.62*s,c0='rgba(20,10,30,0)',c1='rgba(20,10,30,.22)';
+  LY.vig.style.background=`radial-gradient(circle at 50% 50%,${r0<r1?c0:c1} ${Math.min(r0,r1).toFixed(1)}px,${r0<r1?c1:c0} ${Math.max(r0,r1).toFixed(1)}px)`}
+// the glow canvas is only there while something glows (lamps on, or a tile with glow on it)
+function useGlow(on){if(!LY||LY.gOn===on)return;LY.gOn=on;LY.g.style.display=on?'':'none';if(on){if(LY.g.width!==W||LY.g.height!==H){LY.g.width=W;LY.g.height=H}}else LY.g.width=LY.g.height=1}
+const layerCss=(e,k,v)=>{if(LY.css[k]===v)return;LY.css[k]=v;e.style.display=v?'':'none';if(v)e.style.background=v};
 makeLayers();
 let TGT={c:null,e:null,g:null};
 // BT: the transform from model pixels to the canvas being drawn (set per tile or per frame); routines that set their
@@ -89,8 +124,8 @@ function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if
 function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
 function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
-const eq=(q,col)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
-const ed=(p,col,s=1)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
+const eq=(q,col)=>{TGT.de=TGT.wide=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
+const ed=(p,col,s=1)=>{TGT.de=1;if(TGT.ink)TGT.ink.push(p[0],p[1]);TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
 function eg(x,y,r,al,sy=1,col='255,205,120'){TGT.dg=1;const G=TGT.g;G.save();G.translate(x,y);G.scale(1,sy);const gr=G.createRadialGradient(0,0,0,0,0,r);gr.addColorStop(0,`rgba(${col},${al})`);gr.addColorStop(1,`rgba(${col},0)`);G.fillStyle=gr;G.fillRect(-r,-r,r*2,r*2);G.restore()}
 
 // ---------- buildings ----------
@@ -456,11 +491,54 @@ function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(
 // Anything that is partly behind a building (or, for moving things, behind a tree, lamp or parked car) is drawn on a
 // small scratch card, the outlines of whatever stands in front are cut out of the card, and the rest goes onto the
 // picture. Nothing in front is ever painted again, so nearer buildings never get painted over.
-function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;const p=new Path2D();let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-  const prism=(pts,h)=>{const n=pts.length;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
+function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;const p=new Path2D(),polys=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  const prism=(pts,h)=>{const n=pts.length;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();polys.push(q);q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
     add(pts.map(q=>P(q[0],q[1])));add(pts.map(q=>P(q[0],q[1],h)));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1]),P(c[0],c[1]),P(c[0],c[1],h),P(a[0],a[1],h)])}};
   prism(b.pts,b.hpx+(b.special?14:2));if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
-  ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1]};return b.sil}
+  ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1],polys};return b.sil}
+// The outline of the union of overlapping polygons (filled nonzero), as closed loops with no overlaps, so that an
+// even-odd fill of the loops is the union. Vertical slabs between every vertex and crossing; in each slab the covered
+// stretches; their upper and lower edges plus the vertical steps between neighbouring slabs are the outline.
+function unionOutline(polys){const ED=[],xsA=[];
+  for(const q of polys)for(let k=0;k<q.length;k++){const a=q[k],b=q[(k+1)%q.length];xsA.push(a[0]);if(a[0]===b[0])continue;ED.push(a[0]<b[0]?[a[0],a[1],b[0],b[1],1]:[b[0],b[1],a[0],a[1],-1])}
+  for(let i=0;i<ED.length;i++)for(let j=i+1;j<ED.length;j++){const a=ED[i],b=ED[j];if(a[2]<=b[0]||b[2]<=a[0])continue;
+    const d1x=a[2]-a[0],d1y=a[3]-a[1],d2x=b[2]-b[0],d2y=b[3]-b[1],den=d1x*d2y-d1y*d2x;if(Math.abs(den)<1e-12)continue;
+    const t=((b[0]-a[0])*d2y-(b[1]-a[1])*d2x)/den,u=((b[0]-a[0])*d1y-(b[1]-a[1])*d1x)/den;if(t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9)xsA.push(a[0]+t*d1x)}
+  xsA.sort((a,b)=>a-b);const xs=[];for(const x of xsA)if(!xs.length||x-xs[xs.length-1]>1e-6)xs.push(x);
+  const yAt=(e,x)=>e[1]+(e[3]-e[1])*(x-e[0])/(e[2]-e[0]),segs=[];let prev=[];
+  const steps=(x,L,R)=>{const ev=[];for(const[a,b]of L)ev.push([a,1,0],[b,-1,0]);for(const[a,b]of R)ev.push([a,0,1],[b,0,-1]);ev.sort((a,b)=>a[0]-b[0]);let l=0,r=0;
+    for(let i=0;i<ev.length-1;i++){l+=ev[i][1];r+=ev[i][2];if((l>0)!==(r>0)&&ev[i+1][0]-ev[i][0]>1e-7)segs.push([x,ev[i][0],x,ev[i+1][0]])}};
+  for(let i=0;i<xs.length-1;i++){const xa=xs[i],xb=xs[i+1],xm=(xa+xb)/2;const act=ED.filter(e=>e[0]<=xa+1e-6&&e[2]>=xb-1e-6).map(e=>[yAt(e,xm),e]).sort((a,b)=>a[0]-b[0]);
+    const iv=[];let wd=0,top=null;for(const[y,e]of act){const w0=wd;wd+=e[4];if(!w0&&wd)top=[y,e];else if(w0&&!wd){const l=iv[iv.length-1];if(y-top[0]<1e-7)continue;if(l&&top[0]-l[2]<1e-7){l[1]=e;l[2]=y}else iv.push([top[1],e,y])}}
+    const L=[],R=[];for(const[t,b]of iv){const ta=yAt(t,xa),tb=yAt(t,xb),ba=yAt(b,xa),bb=yAt(b,xb);segs.push([xa,ta,xb,tb],[xa,ba,xb,bb]);L.push([ta,ba]);R.push([tb,bb])}
+    steps(xa,prev,L);prev=R}
+  if(xs.length)steps(xs[xs.length-1],prev,[]);
+  // chain the pieces into loops, dropping points along a straight run
+  const key=(x,y)=>Math.round(x*256)+'|'+Math.round(y*256),at=new Map(),used=new Uint8Array(segs.length),loops=[];
+  segs.forEach((g,i)=>{for(const k of [key(g[0],g[1]),key(g[2],g[3])]){if(!at.has(k))at.set(k,[]);at.get(k).push(i)}});
+  for(let i=0;i<segs.length;i++){if(used[i])continue;const lp=[];let g=segs[i],x=g[0],y=g[1],j=i;const k0=key(x,y);
+    for(;;){used[j]=1;g=segs[j];const fwd=key(g[0],g[1])===key(x,y);lp.push([x,y]);x=fwd?g[2]:g[0];y=fwd?g[3]:g[1];const k=key(x,y);if(k===k0)break;const nx=(at.get(k)||[]).find(n=>!used[n]);if(nx==null)break;j=nx}
+    const out=[];for(let n=0;n<lp.length;n++){const a=lp[(n+lp.length-1)%lp.length],b=lp[n],c=lp[(n+1)%lp.length];if(Math.abs((b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]))>1e-6)out.push(b)}
+    if(out.length>2)loops.push(out)}
+  return loops}
+// For cutting a moving thing out where something stands in front of it, without a scratch card: clip paths that are
+// everything except the outline (a huge rectangle with the outline as a hole, filled even-odd). Buildings: one path
+// from the union of their walls and roofs. Trees, lamps and parked cars: one per simple piece (clips intersect).
+function invOf(q){if(q.inv)return q.inv;const big=()=>{const p=new Path2D();p.rect(-1e5,-1e5,2e5,2e5);return p};
+  if(q.polys){const p=big();q.loops=unionOutline(q.polys);for(const lp of q.loops){lp.forEach(([x,y],i)=>i?p.lineTo(x,y):p.moveTo(x,y));p.closePath()}q.inv=[p]}
+  else{q.inv=q.parts.map(([pt,dx,dy])=>{const p=big();addOutlinePart(p,pt,dx,dy);return p});
+    q.pb=q.parts.map(([pt,dx,dy])=>{if(pt[0]==='e')return[pt[1]-pt[3]+dx,pt[2]-pt[4]+dy,pt[1]+pt[3]+dx,pt[2]+pt[4]+dy];if(pt[0]==='r')return[pt[1]+dx,pt[2]+dy,pt[1]+pt[3]+dx,pt[2]+pt[4]+dy];
+      const xs=pt[1].map(v=>v[0]+dx),ys=pt[1].map(v=>v[1]+dy);return[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]})}
+  return q.inv}
+// How a box lies against an outline (loops from unionOutline): 0 clear of it, 1 partly over it, 2 wholly inside it.
+function boxVsLoops(b,loops){const[x0,y0,x1,y1]=b;
+  for(const lp of loops)for(let i=0,n=lp.length;i<n;i++){const a=lp[i],c=lp[(i+1)%n];let ax=a[0],ay=a[1],dx=c[0]-ax,dy=c[1]-ay;
+    if(Math.max(ax,c[0])<x0||Math.min(ax,c[0])>x1||Math.max(ay,c[1])<y0||Math.min(ay,c[1])>y1)continue;
+    let t0=0,t1=1,ok=true;for(const[pp,qq]of [[-dx,ax-x0],[dx,x1-ax],[-dy,ay-y0],[dy,y1-ay]]){if(pp===0){if(qq<0){ok=false;break}}else{const r=qq/pp;if(pp<0){if(r>t1){ok=false;break}if(r>t0)t0=r}else{if(r<t0){ok=false;break}if(r<t1)t1=r}}}
+    if(ok)return 1}
+  // no edge touches the box: it is wholly inside or wholly outside; one corner tells which
+  let inside=false;for(const lp of loops)for(let i=0,n=lp.length,j=n-1;i<n;j=i++){const a=lp[i],c=lp[j];if((a[1]>y0)!==(c[1]>y0)&&x0<(c[0]-a[0])*(y0-a[1])/(c[1]-a[1])+a[0])inside=!inside}
+  return inside?2:0}
 const scr=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d'));const scrInk=[0,0,0];
 // cuts: [{p: Path2D, box}] in model pixels, static origin. Only the cuts whose box meets the card are filled, and the
 // card's lit-window and glow layers are skipped while nothing has been painted on them (most people and cars by day).
@@ -481,7 +559,8 @@ function drawCut(box,fn,cuts,dst){
 // screen boxes (model pixels, static origin) for culling, the samples that decide what stands in front of each
 // static point, and the outlines with which trees, lamps and parked cars hide whatever passes behind them
 // a tree's outline as it is drawn now (its lean in the wind, how much crown it has this time of year)
-function treeOcc(o){const o0=ox,o1=oy;ox=BOX;oy=BOY;const[x,y]=P(o.gx,o.gy);ox=o0;oy=o1;const q=new Path2D();q.addPath(treeOutline(o,WIND.lean,DOY),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));return q}
+function treeOcc(o){const o0=ox,o1=oy;ox=BOX;oy=BOY;const[x,y]=P(o.gx,o.gy);ox=o0;oy=o1;const q=new Path2D();q.addPath(treeOutline(o,WIND.lean,DOY),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));
+  o.occParts=treeOutlineParts(o,WIND.lean,DOY).map(pt=>[pt,Math.round(x),Math.round(y)]);return q}
 let occFor='';
 (function prepPoints(){for(const b of blds)silhouette(b);ox=BOX;oy=BOY;
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
@@ -489,11 +568,11 @@ let occFor='';
   for(const o of pts0){let fp,zmax,pad,smp;
     if(o.kind==='tree'){const hp=Math.max(9,o.h*2),rp=Math.max(3,o.r*1.9)+4;fp=[[o.gx,o.gy]];zmax=hp+4;pad=rp+1;smp=[[o.gx,o.gy,0]];
       o.occ=treeOcc(o)}
-    else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=20;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-16),1,16);q.rect(Math.round(x-1),Math.round(y-17),3,2);o.occ=q}
-    else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h)}
+    else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=20;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-16),1,16);q.rect(Math.round(x-1),Math.round(y-17),3,2);o.occ=q;o.occParts=[[['r',Math.round(x),Math.round(y-16),1,16],0,0],[['r',Math.round(x-1),Math.round(y-17),3,2],0,0]]}
+    else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h);o.occParts=[[['p',h],0,0]]}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
     else{fp=[o.a,o.b];zmax=24;pad=4;smp=[[o.a[0],o.a[1],0],[o.b[0],o.b[1],0],[o.gx,o.gy,0]]}
-    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
+    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,parts:o.occParts,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
 const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)*4096+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}
 /** Static things standing in front of a moving thing at (gx,gy): trees, lamps and parked cars nearer the viewer. */
 function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx/2)-1;i<=Math.floor(gx/2)+3;i++)for(let j=Math.floor(gy/2)-1;j<=Math.floor(gy/2)+3;j++){const l=OCC.get(i*4096+j);if(!l)continue;for(const o of l){const du=o.gx+o.gy-u;if(du>.02&&du<6&&Math.abs(o.gx-o.gy-s)<2.6)out.push(o.cut)}}return out}
@@ -502,7 +581,9 @@ function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx
 // The still parts of the model are rendered in TILE-pixel squares at the current scale, only where the camera looks,
 // and kept until the light or the scene changes (then they are redrawn a few at a time, old ones showing meanwhile).
 // ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
-const BM=new URLSearchParams(location.search).has('bench')?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:new URLSearchParams(location.search).get('bench')==='flush'}):null;let bmT=0,bmF=null;
+// ?fps: the same timings shown in a small box on the page (see fpsBox), for checking a browser by eye.
+const FPS=QS.has('fps'),CARD=QS.get('cut')==='card'||(SOFT&&QS.get('cut')!=='clip');
+const BM=QS.has('bench')||FPS?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:QS.get('bench')==='flush'}):null;let bmT=0,bmF=null;
 const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
@@ -548,7 +629,7 @@ function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
   for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);
     const i0=Math.max(r0,x*TILE/s),i1=Math.max(r1,y*TILE/s),i2=Math.min(r2,(x+1)*TILE/s),i3=Math.min(r3,(y+1)*TILE/s);if(i2<=i0||i3<=i1)continue;
     const dx=Math.round(i0*VS)-cx,dy=Math.round(i1*VS)-cy,dw=Math.round(i2*VS)-cx-dx,dh=Math.round(i3*VS)-cy-dy,sx=i0*s-x*TILE,sy=i1*s-y*TILE,sw=(i2-i0)*s,sh=(i3-i1)*s;
-    w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de)E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.dg)GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}
+    w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}}
 // What is worth drawing ahead: the whole model at a small scale (once), the ring of tiles just outside the view, then
 // the view at the next zoom out and in. A little of it is drawn at the end of each frame (what is left of ~10 ms, at
 // least 2), so a drag or a zoom step usually finds its tiles ready, and otherwise has something to stand in.
@@ -560,8 +641,10 @@ function aheadList(){const out=[];const{dw,dh}=dev();const mx=camX+VWm()/2,my=ca
   for(const d of [-1,1]){if(!zoomAllowed(zi+d,dw,dh))continue;const{vs}=planFor(ZL[zi+d],dw,dh);if(vs===VS)continue;const hw=dw/ZL[zi+d]/2,hh=dh/ZL[zi+d]/2;
     add(vs,Math.floor((mx-hw)*vs/TILE),Math.floor((my-hh)*vs/TILE),Math.floor((mx+hw)*vs/TILE),Math.floor((my+hh)*vs/TILE))}
   // first the whole model at a small scale (OV), kept for good: then there is always something to stand in
-  const ov=[];if(VS!==OV){const nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1;for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV])}
-  return ov.concat(out.slice(0,Math.max(0,keepN-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
+  // ...as far as the memory allows: a tile is one canvas by day and up to three once windows are lit and lamps glow
+  const fit_=Math.floor(TILE_MB*262144/(TILE*TILE*(lampsOn()||FT.de?3:1.2))),nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1,nOv=(nx+1)*(ny+1)<=fit_/4?(nx+1)*(ny+1):0;
+  const ov=[];if(VS!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
+  return ov.concat(out.slice(0,Math.max(0,Math.min(keepN,fit_-nOv)-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
 // Drawing ahead uses scratch canvases of its own: how big the shared ones have grown decides some edge antialiasing,
 // so leaving them as they are keeps every frame drawn exactly as before.
 const scrA=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d')),scrInkA=[0,0,0];
@@ -571,10 +654,16 @@ function drawAhead(until){const miss=([x,y,vs])=>{const t=tiles.get(vs+'|'+x+'|'
   if(!jobs.has(key))for(let i=0;i<3;i++){const a=scrA[i].canvas,m=scr[i].canvas;if(a.width!==m.width||a.height!==m.height){a.width=m.width;a.height=m.height;scrInkA[i]=0}}
   const sv=scr.slice(),si=scrInk.slice();scr.splice(0,3,...scrA);scrInk.splice(0,3,...scrInkA);
   try{const t=work(key,x,y,vs,until);if(t)t.ah=1}finally{scrA.splice(0,3,...scr);scrInkA.splice(0,3,...scrInk);scr.splice(0,3,...sv);scrInk.splice(0,3,...si)}trimTiles(keepN)}
-function trimTiles(keep){let n=0;for(const t of tiles.values())if(t.vs!==OV)n++;if(n<=keep)return;for(const[k,t]of tiles){if(t.vs===OV)continue;tiles.delete(k);if(--n<=keep)break}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=5*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH}};
+// The cache is bounded by count and by memory (TILE_MB of tile canvases; browsers, Safari above all, cap the total
+// canvas memory of a page and fail badly past it). The tiles on screen always stay. A dropped tile gives its canvases
+// back at once instead of waiting for the garbage collector.
+const TILE_MB=+QS.get('tilemb')||(window.matchMedia&&matchMedia('(pointer:coarse)').matches?64:160);
+const tilePx=t=>t.c.canvas.width*t.c.canvas.height+t.e.canvas.width*t.e.canvas.height+t.g.canvas.width*t.g.canvas.height;
+function trimTiles(keep){let n=0,px=0;for(const t of tiles.values()){px+=tilePx(t);if(t.vs!==OV)n++}const cap=TILE_MB*262144;if(n<=keep&&px<=cap)return;
+  for(const[k,t]of tiles){if(t.vs===OV)continue;if(n<=nVis)break;px-=tilePx(t);tiles.delete(k);for(const c of [t.c,t.e,t.g])c.canvas.width=c.canvas.height=0;if(--n<=keep&&px<=cap)break}}
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY)}};
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree')o.cut.p=o.occ=treeOcc(o)}}buildGroundTex();buildShadows();stver++;
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
 const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
@@ -700,10 +789,10 @@ function lanternSign(cx,wl,z0,z1,txt){
   const ws=[...txt].map(ch=>ch===':'?1:3);const cols=ws.reduce((s,v)=>s+v,0)+ws.length-1;
   const pu=Math.min(1.7,span*.9/(cols+1)),du=pu/span,pz=Math.min(pu*1.05,(z1-z0)*.8/6);
   const u=k=>{const v=.5-cols*du/2+k*du;return flip?1-v:v};const zt=(z0+z1)/2+2.5*pz;
-  poly(cx,[WP(wl,u(-.7),zt+.8*pz,.02),WP(wl,u(cols+.7),zt+.8*pz,.02),WP(wl,u(cols+.7),zt-5.8*pz,.02),WP(wl,u(-.7),zt-5.8*pz,.02)],'#1d1a1c');
+  const pnl=[WP(wl,u(-.7),zt+.8*pz,.02),WP(wl,u(cols+.7),zt+.8*pz,.02),WP(wl,u(cols+.7),zt-5.8*pz,.02),WP(wl,u(-.7),zt-5.8*pz,.02)];poly(cx,pnl,'#1d1a1c');
   let k0=0;txt.split('').forEach((ch,i)=>{const g=gl[i],wdt=ws[i];for(let r=0;r<5;r++)for(let k=0;k<wdt;k++){const on=g[r*wdt+k]==='1';
     const ua=u(k0+k+.1),ub=u(k0+k+.9),za=zt-(r+.1)*pz,zb=zt-(r+.9)*pz;poly(cx,[WP(wl,ua,za,.03),WP(wl,ub,za,.03),WP(wl,ub,zb,.03),WP(wl,ua,zb,.03)],on?'#ffb43a':'#33282a')}k0+=wdt+1});
-}
+  return pnl}
 function signText(cx,wl,z0,txt){
   // bulb matrix at a fixed 2px pitch, centred on the wall and reading left to right on screen
   const A=P(wl.a[0],wl.a[1],0),Q=P(wl.q[0],wl.q[1],0);const flip=Q[0]<A[0];
@@ -715,6 +804,31 @@ function signText(cx,wl,z0,txt){
 }
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 
+// ?fps: a small box in the corner with the frame rate, the time between frames, the time in each part of frame()
+// (averages over the last half second or so) and what it is running on. Canvas drawing that the browser defers to its
+// graphics process is not in the per-part times, only in the time between frames.
+let fpsEl=null,fpsN=0,fpsT=0;
+function fpsBox(){const fr_=BM.frames,now=performance.now();if(now-fpsT<500)return;const fs=fr_.slice(fpsN);if(fs.length<2)return;fpsN=fr_.length>3000?(fr_.length=0):fr_.length;fpsT=now;
+  if(!fpsEl){fpsEl=document.createElement('pre');fpsEl.style.cssText='position:fixed;left:8px;bottom:8px;z-index:99;margin:0;padding:6px 8px;background:rgba(0,0,0,.8);color:#9f9;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;pointer-events:none;border-radius:6px;white-space:pre';document.body.appendChild(fpsEl)}
+  const iv=fs.slice(1).map((f,i)=>f.t-fs[i].t),span=fs[fs.length-1].t-fs[0].t,avg=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0)/fs.length,PH=['tiles','sim','dyn','blow','grade','tilt','sign','labels','ahead'];
+  const ua=navigator.userAgent,br=(/Edg\/([\d.]+)/.exec(ua)&&'Edge '+RegExp.$1)||(/Firefox\/([\d.]+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Chrome\/([\d.]+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Version\/([\d.]+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||ua.slice(0,40);
+  let mb=0;for(const t of tiles.values())mb+=tilePx(t);
+  fpsEl.textContent=`${(1000*(fs.length-1)/span).toFixed(1)} fps   frame ${(span/(fs.length-1)).toFixed(1)} ms (max ${Math.max(...iv).toFixed(0)})   work ${PH.reduce((s_,k)=>s_+avg(k),0).toFixed(1)} ms\n`+
+    PH.map(k=>k+' '+avg(k).toFixed(1)).join('  ')+'\n'+
+    `moving things ${Math.round(avg('n'))}, cut out ${Math.round(avg('cut'))}   tiles ${tiles.size} (${(mb*4/1048576).toFixed(0)} MB of ${TILE_MB})   glow ${FT.dg?'on':'off'}\n`+
+    `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)}\n`+
+    `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}`}
+// The buildings that could stand in front of something at grid box (x0,y0)-(x1,y1): a coarse grid over each building's
+// reach (its footprint plus how far its height carries up the screen), so a frame does not scan every building for
+// every moving thing. In the buildings' own order, each once.
+let BGRID=null,bgStamp=0;const BGC=4,bgOut=[];
+function bldsNear(x0,y0,x1,y1){
+  if(!BGRID){BGRID=new Map();blds.forEach((b,i)=>{b.bi=i;b.bq=0;for(let cx=Math.floor((b.minx-b.tmax-.5)/BGC);cx<=Math.floor((b.maxx+.05)/BGC);cx++)for(let cy=Math.floor((b.miny-b.tmax-.5)/BGC);cy<=Math.floor((b.maxy+.05)/BGC);cy++){const k=cx*4096+cy;if(!BGRID.has(k))BGRID.set(k,[]);BGRID.get(k).push(b)}})}
+  const ax=Math.floor(x0/BGC),bx=Math.floor(x1/BGC),ay=Math.floor(y0/BGC),by=Math.floor(y1/BGC);if(ax===bx&&ay===by)return BGRID.get(ax*4096+ay)||bgOut0;
+  bgOut.length=0;bgStamp++;for(let cx=ax;cx<=bx;cx++)for(let cy=ay;cy<=by;cy++){const l=BGRID.get(cx*4096+cy);if(l)for(const b of l)if(b.bq!==bgStamp){b.bq=bgStamp;bgOut.push(b)}}
+  return bgOut.sort((a,b)=>a.bi-b.bi)}
+const bgOut0=[];
+let FT={de:1,dg:1};const glowOn=()=>{useGlow(true);FT.dg=1};
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){const F0=performance.now();
   if(BM){bmT=performance.now();bmF={t:bmT,fit:BM.fitMs||0};BM.fitMs=0}
@@ -724,7 +838,11 @@ function frame(ts){const F0=performance.now();
   if(glide&&!drag){camX+=(tgtX-camX)*Math.min(1,dt*2);camY+=(tgtY-camY)*Math.min(1,dt*2);if(Math.hypot(tgtX-camX,tgtY-camY)<1)glide=false}
   const cx=Math.round(camX*VS),cy=Math.round(camY*VS);
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
-  for(const c of [w,E,GL]){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H)}w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
+  // FT.de / FT.dg: whether anything is on the lit-window / glow layer so far this frame. While a layer is blank,
+  // rubbing out on it, clipping it and laying it on the picture are all skipped; a blank layer is not cleared again.
+  if(lampsOn())useGlow(true);
+  for(const c of [w,E,GL])c.setTransform(1,0,0,1,0,0);if(FT.de)E.clearRect(0,0,W,H);if(FT.dg)GL.clearRect(0,0,W,H);w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
+  FT={c:w,e:E,g:GL,de:0,dg:0,wide:CARD?1:0,ink:[]};
   frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const X=tx*TILE-cx,Y=ty*TILE-cy,key=VS+'|'+tx+'|'+ty;let t,si;
     // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
@@ -732,9 +850,9 @@ function frame(ts){const F0=performance.now();
       if(!t){drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
     else t=getTile(tx,ty,budget);
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
-    if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
+    if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
   const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+8);trimTiles(keepN);
-  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL,de:1,dg:1};ox=BOX-cx/VS;oy=BOY-cy/VS;
+  BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT=FT;ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
@@ -780,11 +898,23 @@ function frame(ts){const F0=performance.now();
     const[x,y]=P(o.gx,o.gy),d=DB[o.kind]||DB.car,sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
     const occ=o.kind!=='train'?occludersAt(o.gx,o.gy):[];let any=occ.length>0;const cuts=[];
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
-    for(const b of blds){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;for(const p of smp)if(rayHits(b,p[0],p[1],0)){any=true;if(near)cuts.push(b.sil);break}}
-    if(!any){drawDyn(o,w);continue}
-    for(const q of occ)if(hitBox(q.box,sb))cuts.push(q);
-    if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}
-    drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL})}
+    for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;for(const p of smp)if(rayHits(b,p[0],p[1],0)){any=true;if(near)cuts.push(b.sil);break}}
+    if(any){for(const q of occ)if(hitBox(q.box,sb))cuts.push(q);if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}}
+    if(CARD){if(any)drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL});else drawDyn(o,w);continue}
+    // No scratch card: the thing is drawn straight onto the picture, clipped to everything except the outlines that
+    // really reach its box (building outlines are tested exactly; wholly behind one, it is not drawn at all).
+    const ips=[];let hid=false;
+    for(const q of cuts){const iv=invOf(q);if(q.loops){const r_=boxVsLoops(sb,q.loops);if(r_===2){hid=true;break}if(r_)ips.push(iv[0])}else for(let i=0;i<iv.length;i++)if(hitBox(q.pb[i],sb))ips.push(iv[i])}
+    if(hid){if(BM)bmF.hid=(bmF.hid||0)+1;continue}
+    // The lit-window layer matters to this thing only if it paints there, or something already painted there is under
+    // it (rubbed out where the thing covers it); otherwise that layer is left alone, as is the glow layer by day.
+    const k=o.kind;let nE=FT.wide||k==='sig'||(k==='car'?lamp||o.stopped||o.haz:k==='barrel'?lamp:k==='truck'?ev:k==='train'&&o.eng);const nG=FT.dg||(lamp&&(k==='sig'||k==='train'));
+    if(!nE)for(let i=0,ik=FT.ink;i<ik.length;i+=2)if(ik[i]>x-d[0]-2&&ik[i]<x+d[2]+2&&ik[i+1]>y-d[1]-2&&ik[i+1]<y+d[3]+2){nE=true;break}
+    const de0=FT.de;if(!nE)FT.de=0;
+    if(ips.length){if(BM)bmF.clip=(bmF.clip||0)+1;for(let i=0;i<3;i++){if(i===1&&!nE||i===2&&!nG)continue;const c=i?i>1?GL:E:w;c.save();c.translate(sx0,sy0);for(const ip of ips)c.clip(ip,'evenodd');c.setTransform(VS,0,0,VS,0,0)}}
+    drawDyn(o,w);
+    if(ips.length){w.restore();if(nE)E.restore();if(nG)GL.restore()}
+    if(!nE)FT.de=de0}
   BM&&bm('dyn');
   // live clocks: Lincoln Financial's bulb sign (time, then temperature) and the depot clock
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
@@ -800,28 +930,40 @@ function frame(ts){const F0=performance.now();
   if(L.fog){if(!FOGP){const f=mk(2,2),g=f.getContext('2d');g.fillStyle='rgba(232,234,238,.10)';g.fillRect(0,0,1,1);g.fillRect(1,1,1,1);FOGP=w.createPattern(f,'repeat')}w.fillStyle=FOGP;w.fillRect(0,0,W,H);w.fillStyle='rgba(232,234,238,.18)';w.fillRect(0,0,W,H)}
   // grade (saturation up in daylight for the painted-model look), done by the graphics card: saturate, multiply, add
   const G=gradeFor(SUN),X=L.cloudy&&S.wx==='clear'?WXG.cloudy:WXG[S.wx];const m=[G.m[0]*X.m[0],G.m[1]*X.m[1],G.m[2]*X.m[2]],a=[G.a[0]+X.a[0],G.a[1]+X.a[1],G.a[2]+X.a[2]],d=Math.min(.6,G.d+X.d);
+  const c255=v=>Math.max(0,Math.min(255,Math.round(v))),add=a.map((v,i)=>v+Math.max(0,m[i]-1)*110);
+  const mulC=m.some(v=>v<.999)?`rgb(${m.map(v=>c255(Math.min(1,v)*255)).join(',')})`:'',addC=add.some(v=>v>.5)?`rgb(${add.map(c255).join(',')})`:'';let flC='';
+  if(L.storm){if(flash<=0&&!reduce&&Math.random()<.003)flash=10;if(flash>0){flC=`rgba(255,255,240,${flash>7?.5:flash/30})`;flash--}}
+  if(LY){ // the compositor grades, blurs and stacks: only styles change here, and only when their values do
+    const sat=Math.abs(d)>.005?`saturate(${(1-d).toFixed(3)})`:'';if(LY.css.sat!==sat){LY.css.sat=sat;cv.style.filter=sat}
+    layerCss(LY.mul,'mul',mulC);layerCss(LY.add,'add',addC);layerCss(LY.flash,'flash',flC);
+    if(!FT.dg&&!lampsOn())useGlow(false);
+    BM&&bm('grade');
+    oc.setTransform(1,0,0,1,0,0);oc.clearRect(0,0,W,H);
+  }else{
   ctx.setTransform(1,0,0,1,0,0);ctx.globalCompositeOperation='source-over';
   if(HASFILTER&&Math.abs(d)>.005){ctx.filter=`saturate(${(1-d).toFixed(3)})`;ctx.drawImage(Wc,0,0);ctx.filter='none'}else ctx.drawImage(Wc,0,0);
-  const c255=v=>Math.max(0,Math.min(255,Math.round(v)));
-  if(m.some(v=>v<.999)){ctx.globalCompositeOperation='multiply';ctx.fillStyle=`rgb(${m.map(v=>c255(Math.min(1,v)*255)).join(',')})`;ctx.fillRect(0,0,W,H)}
-  const add=a.map((v,i)=>v+Math.max(0,m[i]-1)*110);if(add.some(v=>v>.5)){ctx.globalCompositeOperation='lighter';ctx.fillStyle=`rgb(${add.map(c255).join(',')})`;ctx.fillRect(0,0,W,H)}
+  if(mulC){ctx.globalCompositeOperation='multiply';ctx.fillStyle=mulC;ctx.fillRect(0,0,W,H)}
+  if(addC){ctx.globalCompositeOperation='lighter';ctx.fillStyle=addC;ctx.fillRect(0,0,W,H)}
   ctx.globalCompositeOperation='source-over';
-  if(L.storm){if(flash<=0&&!reduce&&Math.random()<.003)flash=10;if(flash>0){ctx.fillStyle=`rgba(255,255,240,${flash>7?.5:flash/30})`;ctx.fillRect(0,0,W,H);flash--}}
-  ctx.drawImage(Ec,0,0);ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over';
+  if(flC){ctx.fillStyle=flC;ctx.fillRect(0,0,W,H)}
+  if(FT.de)ctx.drawImage(Ec,0,0);if(FT.dg){ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over'}
   BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
   if(HASFILTER){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
     // the mask is clear between 30% and 68% of the height, so only the two bands are laid on
     const m1=Math.ceil(H*.3)+1,m2=Math.floor(H*.68)-1;ctx.drawImage(Tc,0,0,W,m1,0,0,W,m1);ctx.drawImage(Tc,0,m2,W,H-m2,0,m2,W,H-m2)}
+  }
   BM&&bm('tilt');
   // Lincoln Financial's bulb sign (time, then temperature) goes on last, outside the tilt-shift blur, so it stays sharp
-  const tw=byId.tower;if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');ctx.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))lanternSign(ctx,wl,tw.lanternZ,tw.lanternTop,txt);ctx.setTransform(1,0,0,1,0,0)}
-  if(!VGR||VGR.W!==W||VGR.H!==H){VGR=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}ctx.fillStyle=VGR;ctx.fillRect(0,0,W,H);
+  const tw=byId.tower,pnls=[];if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');oc.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))pnls.push(lanternSign(oc,wl,tw.lanternZ,tw.lanternTop,txt));oc.setTransform(1,0,0,1,0,0)}
+  if(!VGR||VGR.W!==W||VGR.H!==H){VGR=oc.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}
+  // layers mode: the vignette is an element under this canvas, so the sign (which the vignette used to cover) gets its share here
+  if(!LY){oc.fillStyle=VGR;oc.fillRect(0,0,W,H)}else if(pnls.length){oc.save();oc.setTransform(VS,0,0,VS,0,0);const cp=new Path2D();for(const q of pnls){q.forEach(([x,y],i)=>i?cp.lineTo(x,y):cp.moveTo(x,y));cp.closePath()}oc.clip(cp);oc.setTransform(1,0,0,1,0,0);oc.fillStyle=VGR;oc.fillRect(0,0,W,H);oc.restore()}
   BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
-  ctx.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
-  ctx.font='8px Silkscreen, monospace';ctx.textBaseline='top';
-  const tag=(x,y,t)=>{x=Math.round(x);y=Math.round(y);const tw_=Math.ceil(ctx.measureText(t).width)+8;const bx=Math.max(2,Math.min(WL-tw_-2,x-(tw_>>1)));if(y<2||y>HL-14||x<4||x>WL-4)return;ctx.fillStyle=SH;ctx.fillRect(bx+1,y-1,tw_-2,13);ctx.fillRect(bx,y,tw_,11);ctx.fillStyle=C.Paper;ctx.fillRect(bx+1,y,tw_-2,11);ctx.fillStyle=SH;ctx.fillRect(x-1,y+12,3,2);ctx.fillText(t,bx+4,y+2)};
+  oc.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
+  oc.font='8px Silkscreen, monospace';oc.textBaseline='top';
+  const tag=(x,y,t)=>{x=Math.round(x);y=Math.round(y);const tw_=Math.ceil(oc.measureText(t).width)+8;const bx=Math.max(2,Math.min(WL-tw_-2,x-(tw_>>1)));if(y<2||y>HL-14||x<4||x>WL-4)return;oc.fillStyle=SH;oc.fillRect(bx+1,y-1,tw_-2,13);oc.fillRect(bx,y,tw_,11);oc.fillStyle=C.Paper;oc.fillRect(bx+1,y,tw_-2,11);oc.fillStyle=SH;oc.fillRect(x-1,y+12,3,2);oc.fillText(t,bx+4,y+2)};
   const top=b=>LP(P(b.cx,b.cy,(b.htop||b.hpx)+(b.special==='tower'?10:8)));
   const bub=[];const nb=L.bubbles.length;
   if(nb){const slot=Math.floor(T/7);for(let k=0;k<Math.min(2,nb);k++){const o=L.bubbles[(slot*2+k)%nb];if(!blink(T+k*3.5,6,1))continue;const b=o.id!=null?byId[o.id]:null;bub.push([b?top(b):LP(P(o.gx,o.gy,24)),o.text])}}
@@ -831,21 +973,22 @@ function frame(ts){const F0=performance.now();
   // signposts at the edge of the model, pointing to the rest of town
   signRects=[];
   for(const g of L.signs){const[px,py]=LP(P(g.gx,g.gy));if(px<-80||px>WL+80||py<-10||py>HL+40)continue;const x=Math.round(px),y=Math.round(py);
-    ctx.fillStyle='rgba(44,33,71,.35)';ctx.fillRect(x-2,y,6,2);ctx.fillStyle='#6a4a30';ctx.fillRect(x,y-22,2,22);
-    const t=g.n?`${g.name} ${g.n}`:g.name,tw_=Math.ceil(ctx.measureText(t).width)+8,right=g.sx>=0,bx=right?x-2:x+4-tw_,by=y-34,hot=hoverB&&hoverB.sign===g.id;
-    ctx.fillStyle=SH;ctx.fillRect(bx-1,by-1,tw_+2,13);ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(bx,by,tw_,11);
-    for(let k=0;k<6;k++){const ax=right?bx+tw_+1+k:bx-2-k;ctx.fillStyle=SH;ctx.fillRect(ax,by+k,1,11-2*k);if(k<5){ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(ax+(right?-1:1)*0,by+k+1,1,Math.max(0,9-2*k))}}
-    ctx.fillStyle=g.n?'#8a3b2b':SH;ctx.fillText(t,bx+4,by+2);signRects.push({id:g.id,name:g.name,x:Math.min(bx,bx-7),y:by,w:tw_+8,h:22+12})}
+    oc.fillStyle='rgba(44,33,71,.35)';oc.fillRect(x-2,y,6,2);oc.fillStyle='#6a4a30';oc.fillRect(x,y-22,2,22);
+    const t=g.n?`${g.name} ${g.n}`:g.name,tw_=Math.ceil(oc.measureText(t).width)+8,right=g.sx>=0,bx=right?x-2:x+4-tw_,by=y-34,hot=hoverB&&hoverB.sign===g.id;
+    oc.fillStyle=SH;oc.fillRect(bx-1,by-1,tw_+2,13);oc.fillStyle=hot?'#fff7e0':C.Paper;oc.fillRect(bx,by,tw_,11);
+    for(let k=0;k<6;k++){const ax=right?bx+tw_+1+k:bx-2-k;oc.fillStyle=SH;oc.fillRect(ax,by+k,1,11-2*k);if(k<5){oc.fillStyle=hot?'#fff7e0':C.Paper;oc.fillRect(ax+(right?-1:1)*0,by+k+1,1,Math.max(0,9-2*k))}}
+    oc.fillStyle=g.n?'#8a3b2b':SH;oc.fillText(t,bx+4,by+2);signRects.push({id:g.id,name:g.name,x:Math.min(bx,bx-7),y:by,w:tw_+8,h:22+12})}
   // the building picked in the paper: a gold outline and a bobbing marker above it
   if(hiB){if(!hiB.hull){const o0=ox,o1=oy;ox=BOX;oy=BOY;const z=hiB.htop||hiB.hpx;hiB.hull=hull(hiB.pts.map(p=>P(p[0],p[1])).concat(hiB.pts.map(p=>P(p[0],p[1],z))));ox=o0;oy=o1}
     const hp=new Path2D();hiB.hull.forEach(([x,y],i)=>{const[qx,qy]=LP([x+ox-BOX,y+oy-BOY]);i?hp.lineTo(qx+.5,qy+.5):hp.moveTo(qx+.5,qy+.5)});hp.closePath();
-    ctx.lineJoin='round';ctx.strokeStyle=SH;ctx.lineWidth=4;ctx.stroke(hp);ctx.strokeStyle='#ffd23f';ctx.lineWidth=2;ctx.stroke(hp);
+    oc.lineJoin='round';oc.strokeStyle=SH;oc.lineWidth=4;oc.stroke(hp);oc.strokeStyle='#ffd23f';oc.lineWidth=2;oc.stroke(hp);
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
-    ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
-  ctx.setTransform(1,0,0,1,0,0);
+    oc.fillStyle=SH;oc.fillRect(x-5,y-11,11,9);oc.fillRect(x-3,y-2,7,2);oc.fillRect(x-1,y,3,2);oc.fillStyle='#ffd23f';oc.fillRect(x-4,y-10,9,7);oc.fillRect(x-2,y-3,5,2);oc.fillRect(x,y-1,1,2);oc.fillStyle=SH;oc.fillRect(x-1,y-8,3,3)}
+  oc.setTransform(1,0,0,1,0,0);
   if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
   // a little drawing ahead with what is left of the frame (at least 2 ms, so it gets done on a slow machine too)
   if(!frame.stale)drawAhead(performance.now()+Math.max(2,10-(performance.now()-F0)));
+  if(BM){bm('ahead');if(FPS)fpsBox()}
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 
@@ -893,11 +1036,11 @@ function planFor(z,dw,dh){let k=1;while(z/k>RESMAX+1e-9||(dw/k)*(dh/k)>MAXPX)k++
 // zoom out until the whole model is in view, and in until about 160 model pixels fill the width
 const zoomAllowed=(i,dw,dh)=>i>=0&&i<ZL.length&&dw/ZL[i]>=160&&(i>=zi||BW*ZL[i+1]>dw*.92||BH*ZL[i+1]>dh*.92);
 function fit(force){const F0=BM?performance.now():0;fit0(force);if(BM)BM.fitMs=(BM.fitMs||0)+performance.now()-F0}
-function fit0(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;
+function fit0(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;placeLayers();
   if(zi<0){const zq=+new URLSearchParams(location.search).get('z');const want=zq>0?zq:r.width<700?Math.max(1,dpr*.8):Math.max(1,Math.round(dw/1000));zi=ZL.reduce((bi,v,i)=>Math.abs(v-want)<Math.abs(ZL[bi]-want)?i:bi,0)}
   while(zi>0&&dw/ZL[zi]<160)zi--;
   const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k);if(!force&&nW===W&&nH===H&&vs===VS)return;
-  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;makeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
+  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;makeLayers();placeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
   if(started&&reduce)requestAnimationFrame(frame)}
 function zoomBy(d){const{dw,dh}=dev();if(!zoomAllowed(zi+d,dw,dh))return false;zi+=d;fit(true);return true}
 const canZoom=d=>{const{dw,dh}=dev();return zoomAllowed(zi+d,dw,dh)};
