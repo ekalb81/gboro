@@ -2,6 +2,8 @@
 
 A watch-only scale model of downtown Greensboro, NC, lit and peopled by live local data: the "Brick and Clay" design.
 
+Live at https://ekalb81.github.io/gboro/. The full documentation, covering every data source, the model build, publishing, secrets and running it locally, is one page published with the site: [public/docs.html](public/docs.html), live at https://ekalb81.github.io/gboro/docs.html. This README and the files in `docs/` go deeper on single topics.
+
 ```
 collectors (digests, news, weather, council, roads, restaurants and bars, crime)  ->  public/data/*.json
 public/model/downtown.json (the model)  +  public/data/*.json  ->  public/index.html (canvas model + the paper)
