@@ -30,7 +30,8 @@ const LAT=36.0726,LON=-79.792;
 function sunPos(d){const n=d.getTime()/86400000+2440587.5-2451545.0;const L=(280.46+0.9856474*n)%360,g=((357.528+0.9856003*n)%360)*rad;const lam=(L+1.915*Math.sin(g)+0.02*Math.sin(2*g))*rad,eps=(23.439-4e-7*n)*rad;
   const ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam)),dec=Math.asin(Math.sin(eps)*Math.sin(lam));const gmst=((18.697374558+24.06570982441908*n)%24+24)%24;const ha=(gmst*15+LON)*rad-ra;const la=LAT*rad;
   const alt=Math.asin(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(ha));const A=Math.atan2(Math.sin(ha),Math.cos(ha)*Math.sin(la)-Math.tan(dec)*Math.cos(la));return{alt:alt/rad,az:((A/rad+180)%360+360)%360}}
-const nyParts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23',weekday:'short'}).formatToParts(d).map(p=>[p.type,p.value]));
+const NYF=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23',weekday:'short'});
+const nyParts=d=>Object.fromEntries(NYF.formatToParts(d).map(p=>[p.type,p.value]));
 function nyDate(h,m){const now=new Date(),p=nyParts(now);const guess=Date.UTC(+p.year,+p.month-1,+p.day,h,m);const q=nyParts(new Date(guess));const off=(Date.UTC(+q.year,+q.month-1,+q.day,+q.hour,+q.minute)-guess);return new Date(guess-off)}
 const fmtTime=d=>{const p=nyParts(d);let h=+p.hour%12;if(!h)h=12;return h+':'+p.minute.padStart(2,'0')};
 const ampm=d=>+nyParts(d).hour<12?'AM':'PM';
@@ -85,9 +86,9 @@ function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if
 function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
 function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){TGT.e.clearRect(x,y,ww,hh);TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
-const eq=(q,col)=>{TGT.e.fillStyle=col;TGT.e.fill(path(q))};
-const ed=(p,col,s=1)=>{TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
-function eg(x,y,r,al,sy=1,col='255,205,120'){const G=TGT.g;G.save();G.translate(x,y);G.scale(1,sy);const gr=G.createRadialGradient(0,0,0,0,0,r);gr.addColorStop(0,`rgba(${col},${al})`);gr.addColorStop(1,`rgba(${col},0)`);G.fillStyle=gr;G.fillRect(-r,-r,r*2,r*2);G.restore()}
+const eq=(q,col)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
+const ed=(p,col,s=1)=>{TGT.de=1;TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
+function eg(x,y,r,al,sy=1,col='255,205,120'){TGT.dg=1;const G=TGT.g;G.save();G.translate(x,y);G.scale(1,sy);const gr=G.createRadialGradient(0,0,0,0,0,r);gr.addColorStop(0,`rgba(${col},${al})`);gr.addColorStop(1,`rgba(${col},0)`);G.fillStyle=gr;G.fillRect(-r,-r,r*2,r*2);G.restore()}
 
 // ---------- buildings ----------
 const PART=Object.fromEntries((MAP.PT||[]).map(p=>[p.id,p]));
@@ -311,7 +312,9 @@ function rayHits(b,gx,gy,zpx){if(b.minx>gx+b.tmax+.5||b.maxx<gx-.05||b.miny>gy+b
   const hit=(pts,top)=>{const t=(top-zpx)/(2*TH);return t>0&&segHits(gx,gy,t,pts)};
   if(hit(b.pts,b.hpx+(b.special==='jsb'?12:0)))return true;if(b.tiers)for(const t of b.tiers)if(hit(t.pts,Math.min(250,t.h*ZPM)))return true;return false}
 /** Buildings standing between the viewer and any of the sample points [gx,gy,zpx]. */
-function blockersFor(smp){const out=[];for(const b of blds){for(const[gx,gy,z] of smp)if(rayHits(b,gx,gy,z||0)){out.push(b);break}}return out}
+function blockersFor(smp){const out=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
+  // rayHits' own first test, for all the samples at once
+  for(const b of blds){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;for(const[gx,gy,z] of smp)if(rayHits(b,gx,gy,z||0)){out.push(b);break}}return out}
 const blockers=(gx,gy,zpx=0)=>blockersFor([[gx,gy,zpx]]);
 function rect(cx,cy,dx,dy,len,wid){const L=Math.hypot(dx,dy)||1;const ux=dx/L,uy=dy/L,vx=-uy,vy=ux;const a=len/2,b=wid/2;return[[cx-ux*a-vx*b,cy-uy*a-vy*b],[cx+ux*a-vx*b,cy+uy*a-vy*b],[cx+ux*a+vx*b,cy+uy*a+vy*b],[cx-ux*a+vx*b,cy-uy*a+vy*b]]}
 
@@ -455,24 +458,27 @@ function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;con
     add(pts.map(q=>P(q[0],q[1])));add(pts.map(q=>P(q[0],q[1],h)));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1]),P(c[0],c[1]),P(c[0],c[1],h),P(a[0],a[1],h)])}};
   prism(b.pts,b.hpx+(b.special?14:2));if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
   ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1]};return b.sil}
-const scr=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d'));
+const scr=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d'));const scrInk=[0,0,0];
+// cuts: [{p: Path2D, box}] in model pixels, static origin. Only the cuts whose box meets the card are filled, and the
+// card's lit-window and glow layers are skipped while nothing has been painted on them (most people and cars by day).
 function drawCut(box,fn,cuts,dst){
   const X0=Math.floor(BT[0]*box[0]+BT[4]),Y0=Math.floor(BT[3]*box[1]+BT[5]),X1=Math.ceil(BT[0]*box[2]+BT[4]),Y1=Math.ceil(BT[3]*box[3]+BT[5]);const w_=X1-X0,h_=Y1-Y0;if(w_<=0||h_<=0)return;
-  if(scr[0].canvas.width<w_||scr[0].canvas.height<h_)for(const c of scr){c.canvas.width=Math.max(c.canvas.width,w_);c.canvas.height=Math.max(c.canvas.height,h_)}
+  if(scr[0].canvas.width<w_||scr[0].canvas.height<h_){for(const c of scr){c.canvas.width=Math.max(c.canvas.width,w_);c.canvas.height=Math.max(c.canvas.height,h_)}scrInk.fill(0)}
   const t0=TGT,b0=BT;BT=[b0[0],0,0,b0[3],b0[4]-X0,b0[5]-Y0];
-  for(const c of scr){c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.globalAlpha=1;c.clearRect(0,0,w_,h_);c.setTransform(...BT)}
-  TGT={c:scr[0],e:scr[1],g:scr[2]};fn();
-  for(const c of scr){c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)c.fill(q);c.restore()}
-  BT=b0;TGT=t0;
+  for(let i=0;i<3;i++){const c=scr[i];c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.globalAlpha=1;if(!i)c.clearRect(0,0,w_,h_);else if(scrInk[i]){c.clearRect(0,0,c.canvas.width,c.canvas.height);scrInk[i]=0}c.setTransform(...BT)}
+  const T_={c:scr[0],e:scr[1],g:scr[2],de:0,dg:0};TGT=T_;fn();scrInk[1]=T_.de;scrInk[2]=T_.dg;
+  const k=1/BT[0],pd=2*k+1,ax=-BT[4]*k-(ox-BOX),ay=-BT[5]*k-(oy-BOY),cb=[ax-pd,ay-pd,ax+w_*k+pd,ay+h_*k+pd];
+  for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb))c.fill(q.p);c.restore()}
+  BT=b0;TGT=t0;if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
   for(const d of [dst.e,dst.g]){d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
-  [dst.c,dst.e,dst.g].forEach((d,i)=>{d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()})}
+  const ds=[dst.c,dst.e,dst.g];for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const d=ds[i];d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}}
 
 // screen boxes (model pixels, static origin) for culling, the samples that decide what stands in front of each
 // static point, and the outlines with which trees, lamps and parked cars hide whatever passes behind them
 // a tree's outline as it is drawn now (its lean in the wind, how much crown it has this time of year)
 function treeOcc(o){const o0=ox,o1=oy;ox=BOX;oy=BOY;const[x,y]=P(o.gx,o.gy);ox=o0;oy=o1;const q=new Path2D();q.addPath(treeOutline(o,WIND.lean,DOY),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));return q}
 let occFor='';
-(function prepPoints(){ox=BOX;oy=BOY;
+(function prepPoints(){for(const b of blds)silhouette(b);ox=BOX;oy=BOY;
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
   for(const b of blds){b.box=boxOf(b.pts,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
@@ -482,35 +488,41 @@ let occFor='';
     else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h)}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
     else{fp=[o.a,o.b];zmax=24;pad=4;smp=[[o.a[0],o.a[1],0],[o.b[0],o.b[1],0],[o.gx,o.gy,0]]}
-    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp)}})();
-const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)+','+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}
+    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
+const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)*4096+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}
 /** Static things standing in front of a moving thing at (gx,gy): trees, lamps and parked cars nearer the viewer. */
-function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx/2)-1;i<=Math.floor(gx/2)+3;i++)for(let j=Math.floor(gy/2)-1;j<=Math.floor(gy/2)+3;j++){const l=OCC.get(i+','+j);if(!l)continue;for(const o of l){const du=o.gx+o.gy-u;if(du>.02&&du<6&&Math.abs(o.gx-o.gy-s)<2.6)out.push(o.occ)}}return out}
+function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx/2)-1;i<=Math.floor(gx/2)+3;i++)for(let j=Math.floor(gy/2)-1;j<=Math.floor(gy/2)+3;j++){const l=OCC.get(i*4096+j);if(!l)continue;for(const o of l){const du=o.gx+o.gy-u;if(du>.02&&du<6&&Math.abs(o.gx-o.gy-s)<2.6)out.push(o.cut)}}return out}
 
 // ---------- static tiles ----------
 // The still parts of the model are rendered in TILE-pixel squares at the current scale, only where the camera looks,
 // and kept until the light or the scene changes (then they are redrawn a few at a time, old ones showing meanwhile).
+// ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
+const BM=new URLSearchParams(location.search).has('bench')?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0}):null;let bmT=0,bmF=null;
+const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
 function renderTile(tx,ty,t){const T0=performance.now();
   if(!t){t={};for(const k of ['c','e','g']){t[k]=mk(TILE,TILE).getContext('2d')}}
-  for(const k of ['c','e','g']){t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
-  BT=[VS,0,0,VS,-tx*TILE,-ty*TILE];setT(t.c,t.e,t.g);TGT={c:t.c,e:t.e,g:t.g};ox=BOX;oy=BOY;
+  // a tile's lit-window and glow layers shrink to nothing when nothing is painted on them (most of the day)
+  for(const k of ['c','e','g']){const cv_=t[k].canvas;if(cv_.width!==TILE){cv_.width=TILE;cv_.height=TILE}t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
+  BT=[VS,0,0,VS,-tx*TILE,-ty*TILE];setT(t.c,t.e,t.g);TGT={c:t.c,e:t.e,g:t.g,de:0,dg:0};ox=BOX;oy=BOY;
   const r=[tx*TILE/VS,ty*TILE/VS,(tx+1)*TILE/VS,(ty+1)*TILE/VS];
   const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]};const cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
   TG=[Math.min(...cs.map(c=>c[0])),Math.min(...cs.map(c=>c[1])),Math.max(...cs.map(c=>c[0])),Math.max(...cs.map(c=>c[1]))];
   drawGround(t.c);drawShadows(t.c);TG=null;
   for(const b of blds)if(hitBox(b.box,r))drawBuilding(t.c,b);
-  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(b=>silhouette(b).p),TGT)}
+  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}
   drawNet(t.c);
-  t.ver=stver;t.vs=VS;if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
+  t.de=TGT.de;t.dg=TGT.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
+  t.ver=stver;t.vs=VS;if(BM){BM.tiles++;BM.tileMs+=performance.now()-T0}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(performance.now()-T0)+'ms');return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
   if(t){tiles.delete(key);tiles.set(key,t);if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
   const t0=performance.now();t=renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
 function trimTiles(keep){while(tiles.size>keep){const k=tiles.keys().next().value;tiles.delete(k)}}
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=5*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS}};
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree')o.occ=treeOcc(o)}}buildGroundTex();buildShadows();stver++;
-  renderedFor=stateKey();if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree')o.cut.p=o.occ=treeOcc(o)}}buildGroundTex();buildShadows();stver++;
+  renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
 const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
 
@@ -650,8 +662,9 @@ function signText(cx,wl,z0,txt){
 }
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 
-let last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
+let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){
+  if(BM){bmT=performance.now();bmF={t:bmT}}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
   if(S.time==='now'&&ts-lastCheck>30000){lastCheck=ts;SUN=sunPos(new Date());if(stateKey()!==renderedFor)renderStatic()}
   const D=sceneDate();
@@ -660,9 +673,10 @@ function frame(ts){
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
   for(const c of [w,E,GL]){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H)}w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
   frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
-  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);E.drawImage(t.e.canvas,X,Y);GL.drawImage(t.g.canvas,X,Y)}
+  for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const t=getTile(tx,ty,budget);if(t.ver!==stver)frame.stale=true;const X=tx*TILE-cx,Y=ty*TILE-cy;w.drawImage(t.c.canvas,X,Y);if(t.de)E.drawImage(t.e.canvas,X,Y);if(t.dg)GL.drawImage(t.g.canvas,X,Y)}
   trimTiles(Math.max(24,(tx1-tx0+1)*(ty1-ty0+1)*2+8));
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT={c:w,e:E,g:GL};ox=BOX-cx/VS;oy=BOY-cy/VS;
+  BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
   if(!reduce)stepTraffic(Math.min(dt,.05));
@@ -685,6 +699,7 @@ function frame(ts){
   for(let k=0;k<7;k++){const d=trainD-k*2.3;if(d<0||d>trainCh.L)continue;const[gx,gy,ux,uy]=along(trainCh,d);if(!vis(gx,gy))continue;dyn.push({kind:'train',gx,gy,ux,uy,eng:k===0})}
   for(const f of FLAGS)if(vis(f.gx,f.gy))dyn.push(f);
   dyn.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
+  BM&&bm('sim');
   const drawDyn=(o,c)=>{
     if(o.kind==='car'){const r=rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M);drawPrism(c,r,0,4,o.col,o.col);const r2=rect(o.gx-o.ux*.3/M,o.gy-o.uy*.3/M,o.ux,o.uy,2.4/M,1.7/M);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2));
       if(lamp){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,2.5),'#fff4c8',2)}if(o.stopped||lamp){ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,2.5),o.stopped?'#ff3a2a':'#c84a40',o.stopped?2:1)}if(o.haz&&blink(T,.4,.4)){ed(P(o.gx+o.ux*2.3/M,o.gy+o.uy*2.3/M,3),'#ffb040',2);ed(P(o.gx-o.ux*2.3/M,o.gy-o.uy*2.3/M,3),'#ffb040',2)}}
@@ -699,15 +714,25 @@ function frame(ts){
   };
   // Anything with a building, tree, lamp or parked car in front of it is cut out where those stand (see drawCut).
   const DB={sig:[6,26,6,3],stopsign:[6,18,6,3],car:[14,16,14,6],pp:[5,13,6,3],cone:[4,7,4,2],barrel:[4,9,4,2],truck:[18,28,18,8],train:[34,40,34,16],flag:[4,34,16,4]};
+  const sx0=ox-BOX,sy0=oy-BOY,pd=3/VS+1;
   for(const o of dyn){let smp;if(o.kind==='car'||o.kind==='train'){const r=o.kind==='car'?rect(o.gx,o.gy,o.ux,o.uy,4.4/M,2/M):rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);smp=r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}else if(o.kind==='truck'){smp=rect(o.gx,o.gy,1,0,6.5/M,2.6/M).map(p=>[p[0],p[1],0])}else smp=[[o.gx,o.gy,0]];
-    const cuts=blockersFor(smp).map(b=>silhouette(b).p);if(o.kind!=='train')cuts.push(...occludersAt(o.gx,o.gy));
-    if(!cuts.length){drawDyn(o,w);continue}
-    const[x,y]=P(o.gx,o.gy),d=DB[o.kind]||DB.car;drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL})}
+    // Same choice as before (a cut-out card whenever any building, tree, lamp or parked car stands in front), but only
+    // the outlines near the thing are kept, and once one is found the far buildings need no line-of-sight test.
+    const[x,y]=P(o.gx,o.gy),d=DB[o.kind]||DB.car,sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
+    const occ=o.kind!=='train'?occludersAt(o.gx,o.gy):[];let any=occ.length>0;const cuts=[];
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
+    for(const b of blds){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;for(const p of smp)if(rayHits(b,p[0],p[1],0)){any=true;if(near)cuts.push(b.sil);break}}
+    if(!any){drawDyn(o,w);continue}
+    for(const q of occ)if(hitBox(q.box,sb))cuts.push(q);
+    if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}
+    drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL})}
+  BM&&bm('dyn');
   // live clocks: Lincoln Financial's bulb sign (time, then temperature) and the depot clock
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
   for(const t of L.trucks){const[sx,sy]=P(t.gx,t.gy,13);for(let i=0;i<5;i++){const ph=(T*.5+i/5)%1;w.globalAlpha=(1-ph)*.55;w.fillStyle='#f2eee6';w.beginPath();w.arc(sx+ph*10+Math.sin(ph*6+i)*2,sy-ph*26,2+ph*4,0,7);w.fill()}w.globalAlpha=1}
   // leaves and petals blowing off the trees on screen, in the wind's real direction (model pixels)
-  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;const lk=look(o.sp,DOY,o.seed);if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
+  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;if(o.lkD!==DOY){o.lkD=DOY;o.lk=look(o.sp,DOY,o.seed)}const lk=o.lk;if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
+  BM&&bm('blow');
   // weather in screen pixels
   w.setTransform(1,0,0,1,0,0);const ps=Math.max(1,Math.round(VS));
   if(S.wx==='rain'){w.fillStyle='rgba(205,215,235,.55)';const slant=20+Math.min(30,L.windMph)*4,nr=Math.round(rain.length*(L.intensity==='light'?.4:L.intensity==='heavy'?1:.7));rain.forEach((r,i)=>{if(i>=nr)return;if(!reduce){r[0]-=dt*slant*ps;r[1]+=dt*300*ps;if(r[1]>H){r[1]=-4;r[0]=Math.random()*W+40}if(r[0]<0)r[0]+=W}w.fillRect(r[0]|0,r[1]|0,ps,4*ps)})}
@@ -724,11 +749,16 @@ function frame(ts){
   ctx.globalCompositeOperation='source-over';
   if(L.storm){if(flash<=0&&!reduce&&Math.random()<.003)flash=10;if(flash>0){ctx.fillStyle=`rgba(255,255,240,${flash>7?.5:flash/30})`;ctx.fillRect(0,0,W,H);flash--}}
   ctx.drawImage(Ec,0,0);ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over';
+  BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
-  if(HASFILTER){tc.clearRect(0,0,W,H);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';const gr=tc.createLinearGradient(0,0,0,H);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(.3,'rgba(0,0,0,0)');gr.addColorStop(.68,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,1)');tc.fillStyle=gr;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';ctx.drawImage(Tc,0,0)}
+  if(HASFILTER){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
+    // the mask is clear between 30% and 68% of the height, so only the two bands are laid on
+    const m1=Math.ceil(H*.3)+1,m2=Math.floor(H*.68)-1;ctx.drawImage(Tc,0,0,W,m1,0,0,W,m1);ctx.drawImage(Tc,0,m2,W,H-m2,0,m2,W,H-m2)}
+  BM&&bm('tilt');
   // Lincoln Financial's bulb sign (time, then temperature) goes on last, outside the tilt-shift blur, so it stays sharp
   const tw=byId.tower;if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');ctx.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))lanternSign(ctx,wl,tw.lanternZ,tw.lanternTop,txt);ctx.setTransform(1,0,0,1,0,0)}
-  const vg=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);vg.addColorStop(0,'rgba(20,10,30,0)');vg.addColorStop(1,'rgba(20,10,30,.22)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  if(!VGR||VGR.W!==W||VGR.H!==H){VGR=ctx.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}ctx.fillStyle=VGR;ctx.fillRect(0,0,W,H);
+  BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
   ctx.setTransform(LS,0,0,LS,0,0);const WL=W/LS,HL=H/LS,LP=([x,y])=>[x*VS/LS,y*VS/LS];
   ctx.font='8px Silkscreen, monospace';ctx.textBaseline='top';
@@ -754,6 +784,7 @@ function frame(ts){
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   ctx.setTransform(1,0,0,1,0,0);
+  if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 

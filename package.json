@@ -18,6 +18,7 @@
     "dev": "node scripts/ingest.mjs && (node scripts/fetch-weather.mjs || true) && (node scripts/fetch-roads.mjs || true) && node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "crime": "node scripts/fetch-crime.mjs",
+    "bench": "node scripts/bench.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }
