@@ -1,0 +1,533 @@
+// The house up the street: one lot north of downtown, as a close-up model in the same manner as the downtown one,
+// with the one person who lives there going about a made-up day (homeday.js): mowing, a run, a walk, friends round
+// the back-yard fire. Plain canvas, no build step. The house is deliberately not named or placed: model/house.json
+// holds only metres from the corner of the lot.
+//
+//   const h = startHouse({ canvas, lot, weather, onSay });
+//   h.rotate() / h.zoom(±1) / h.home()
+//
+// Previews: ?do=mow|run|walk|fire|coffee|read|garden|asleep|inside, ?clock=sat-10:20, ?speed=30 (minutes run 30x),
+// ?time=day|dusk|night, ?date=2026-06-13 (the season), ?view=0..3 (which corner you look from).
+
+import { clockAt, parseWhen, nowDoing, sayDoing, planDay, dayRand } from './homeday.js';
+
+const C = { lawn: '#6fb650', rough: '#8fbf5f', clay: '#cf5a36', clayD: '#a84528', mortar: '#f5dba6', asphalt: '#57566a', gravel: '#d9c9a8', paver: '#c9b79c', mulch: '#7a4a35', wood: '#9a744e', woodD: '#7d5c3c', glass: '#7fa9c9', glow: '#ffd75e', plum: '#2c2147', hi: '#fff6e4', stone: '#a8a39a', pine: '#2b7448', night: '#1f1d44' };
+const rad = Math.PI / 180;
+const LAT = 36.0726, LON = -79.792; // downtown, as in model.js: near enough for the sun
+const TW = 12, TH = 6, ZP = 13.5; // model pixels per metre: across, down, up
+
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mixCache = new Map();
+function mix(a, b, t) {
+  if (t <= 0) return a; const k = a + b + (t * 64 | 0); let v = mixCache.get(k); if (v) return v;
+  const A = hex(a), B = hex(b); t = (t * 64 | 0) / 64;
+  v = '#' + A.map((x, i) => Math.max(0, Math.min(255, Math.round(x + (B[i] - x) * t))).toString(16).padStart(2, '0')).join('');
+  mixCache.set(k, v); return v;
+}
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const hash = (a, b = 0) => { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); };
+
+function sunPos(d) {
+  const n = d.getTime() / 86400000 + 2440587.5 - 2451545.0; const L = (280.46 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * rad;
+  const lam = (L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * rad, eps = (23.439 - 4e-7 * n) * rad;
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)), dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  const gmst = ((18.697374558 + 24.06570982441908 * n) % 24 + 24) % 24; const ha = (gmst * 15 + LON) * rad - ra; const la = LAT * rad;
+  const alt = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha));
+  const A = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(la) - Math.tan(dec) * Math.cos(la));
+  return { alt: alt / rad, az: ((A / rad + 180) % 360 + 360) % 360 };
+}
+
+// ---------- routes ----------
+const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+/** A walk along points: where you are after d metres, and which way you face. */
+function makeRoute(pts) {
+  const seg = []; let len = 0;
+  for (let i = 0; i < pts.length - 1; i++) { const l = dist(pts[i], pts[i + 1]); if (l > 1e-6) { seg.push({ a: pts[i], b: pts[i + 1], l, at: len }); len += l; } }
+  return { pts, seg, len, at(d) {
+    if (!seg.length) return { x: pts[0][0], y: pts[0][1], hx: 0, hy: 1 };
+    d = clamp(d, 0, len); let s = seg[seg.length - 1]; for (const q of seg) if (d <= q.at + q.l) { s = q; break; }
+    const t = (d - s.at) / s.l; return { x: s.a[0] + (s.b[0] - s.a[0]) * t, y: s.a[1] + (s.b[1] - s.a[1]) * t, hx: (s.b[0] - s.a[0]) / s.l, hy: (s.b[1] - s.a[1]) / s.l };
+  } };
+}
+
+/** The mowing round: up and down each patch in stripes, round the fire ring, pushing the mower between patches. */
+export function mowRoute(lot, W = 0.9) {
+  const pts = [], stripes = []; const f = lot.fire, R = f.r + 0.25;
+  const add = (p, stripe = null) => { pts.push(p); if (stripe) stripes.push(stripe); };
+  let first = true;
+  lot.mow.forEach((m, mi) => {
+    const [x0, y0, x1, y1] = m; const n = Math.max(1, Math.floor((x1 - x0) / W));
+    if (mi > 0) { const g = lot.doors.gate; add([g[0] - 1.2, g[1]]); add([g[0] + 0.9, g[1]]); add([x0 + W / 2, g[1]]); }
+    for (let i = 0; i < n; i++) {
+      const x = x0 + W * (i + 0.5), down = i % 2 === 0; const ya = down ? y0 : y1, yb = down ? y1 : y0; const dx = x - f.x;
+      const start = pts.length; if (first) { first = false; }
+      add([x, ya]);
+      if (Math.abs(dx) < R && f.y > y0 && f.y < y1) { // round the fire ring
+        const hc = Math.sqrt(R * R - dx * dx), s = down ? 1 : -1, side = dx >= 0 ? 1 : -1;
+        const a0 = Math.atan2(-s * hc, dx), a1 = Math.atan2(s * hc, dx);
+        add([x, f.y - s * hc]);
+        stripes.push({ x, ya, yb: f.y - s * hc, par: i % 2, mi, from: start, to: pts.length - 1 });
+        let da = a1 - a0; if (side > 0 && s > 0 && da < 0) da += 2 * Math.PI; if (side > 0 && s < 0 && da > 0) da -= 2 * Math.PI; if (side < 0 && s > 0 && da > 0) da -= 2 * Math.PI; if (side < 0 && s < 0 && da < 0) da += 2 * Math.PI;
+        for (let k = 1; k < 6; k++) add([f.x + R * Math.cos(a0 + da * k / 6), f.y + R * Math.sin(a0 + da * k / 6)]);
+        const s2 = pts.length; add([x, f.y + s * hc]); add([x, yb]);
+        stripes.push({ x, ya: f.y + s * hc, yb, par: i % 2, mi, from: s2, to: pts.length - 1 });
+      } else { add([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from: start, to: pts.length - 1 }); }
+    }
+  });
+  const route = makeRoute(pts);
+  // metres along the route at which each stripe starts and ends
+  const atPt = [0]; for (let i = 1; i < pts.length; i++) atPt.push(atPt[i - 1] + dist(pts[i - 1], pts[i]));
+  for (const s of stripes) { s.d0 = atPt[s.from]; s.d1 = atPt[s.to]; }
+  return { route, stripes, W };
+}
+
+export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
+  const Q = new URLSearchParams(location.search);
+  const ctx = canvas.getContext('2d');
+  const H = lot.house, F = lot.fire;
+  let rot = Q.has('view') ? (+Q.get('view') & 3) : 1; // 1: from the south-west, the back yard in front
+  const CX = (lot.base[0] + lot.base[2]) / 2, CY = (lot.base[1] + lot.base[3]) / 2;
+  const uv = (x, y) => { const a = x - CX, b = y - CY; return rot === 0 ? [a, b] : rot === 1 ? [b, -a] : rot === 2 ? [-a, -b] : [-b, a]; };
+  const P = (x, y, z = 0) => { const [u, v] = uv(x, y); return [(u - v) * TW, (u + v) * TH - z * ZP]; };
+  const VIS = () => [['E', 'S'], ['W', 'S'], ['W', 'N'], ['E', 'N']][rot];
+  const FACE = { S: 1, W: 0.9, E: 0.8, N: 0.68 };
+
+  // ---------- the clock ----------
+  const speed = +Q.get('speed') || 1, t00 = performance.now();
+  const dateQ = Q.get('date') && !isNaN(new Date(Q.get('date') + 'T12:00:00-05:00')) ? new Date(Q.get('date') + 'T12:00:00-05:00') : null;
+  const base0 = clockAt(dateQ || new Date()); if (dateQ) base0.min = clockAt().min;
+  const PRE = { dawn: 6 * 60 + 50, day: 12 * 60 + 30, dusk: 17 * 60 + 15, night: 22 * 60 }[Q.get('time')];
+  const FORCE = Q.get('do'), DBG = Q.has('debug');
+  const FMIN = { fire: 20 * 60 + 30, mow: 10 * 60 + 5, run: 7 * 60, walk: 16 * 60 + 30, coffee: 8 * 60, read: 14 * 60, garden: 15 * 60 + 10, asleep: 2 * 60, inside: 20 * 60 }[FORCE];
+  const start = parseWhen(Q.get('clock'), base0) || (PRE != null ? { ...base0, min: PRE } : FMIN != null ? { ...base0, min: FMIN, day: FORCE === 'mow' || FORCE === 'fire' ? 5 : base0.day } : base0);
+  const live = !Q.get('clock') && PRE == null && FMIN == null && !dateQ && speed === 1;
+  const FORCED = FORCE ? { kind: FORCE, t0: start.min - (FORCE === 'fire' ? 60 : FORCE === 'mow' ? 3 : 0.1) } : null;
+  function clock() {
+    if (live) return clockAt();
+    const el = (performance.now() - t00) / 60000 * speed; const c = { ...start, min: start.min + el };
+    while (c.min >= 1440) { c.min -= 1440; c.day = (c.day + 1) % 7; c.d += 1; }
+    return c;
+  }
+  // the moment as a Date, for the sun
+  const nyMidnight = (() => { const n = dateQ || new Date(); const c = clockAt(n); return n.getTime() - c.min * 60000; })();
+  const dateOf = (c) => new Date(nyMidnight + c.min * 60000);
+  const sunT = (() => { let rise = 420, set = 1080, prev = sunPos(new Date(nyMidnight)).alt; for (let m = 2; m < 1440; m += 2) { const a = sunPos(new Date(nyMidnight + m * 60000)).alt; if (prev < -0.833 && a >= -0.833) rise = m; if (prev >= -0.833 && a < -0.833) set = m; prev = a; } return { rise, set }; })();
+  const doy = (() => { const c = start; return Math.floor((Date.UTC(c.y, c.m - 1, c.d) - Date.UTC(c.y, 0, 0)) / 86400000); })();
+  const wx = () => weather || {};
+  const wet = () => !!wx().precip && wx().precip !== 'none';
+
+  // ---------- light ----------
+  let NIGHT = 0, SUN = { alt: 40, az: 180 };
+  const T = (col) => (NIGHT > 0 ? mix(col, C.night, NIGHT * 0.74) : col);
+  const shade = (col, f) => T(mix(col, C.plum, (1 - f) * 0.62));
+
+  // ---------- season ----------
+  // leaves: how much crown the leafy trees carry, and its colour
+  const leafAmt = doy < 80 ? 0 : doy < 125 ? (doy - 80) / 45 : doy < 290 ? 1 : doy < 340 ? 1 - (doy - 290) / 50 * 0.86 : 0.06;
+  const leafCol = (k, i) => {
+    if (doy < 140) return mix('#9fd66a', '#3d9a4f', clamp((doy - 85) / 55));
+    if (doy < 275) return k === 'maple' ? '#4aa34c' : '#3d9a4f';
+    const f = clamp((doy - 275) / 40); return mix('#3d9a4f', k === 'maple' ? (i % 2 ? '#e0662a' : '#d93f2b') : (i % 2 ? '#c98a2b' : '#b5652a'), f);
+  };
+  const lawnCol = doy < 60 || doy > 345 ? mix(C.lawn, '#b5a86a', 0.45) : doy > 180 && doy < 245 ? mix(C.lawn, '#a9b85c', 0.3) : C.lawn;
+  const growing = doy >= 74 && doy <= 334;
+
+  // ---------- drawing bits ----------
+  function poly(pts, fill, stroke = null, lw = 1) { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+  function line(a, b, col, lw = 1) { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
+  const ground = (r, col) => poly([P(r[0], r[1]), P(r[2], r[1]), P(r[2], r[3]), P(r[0], r[3])], col);
+  const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const P3 = (p) => P(p[0], p[1], p[2]);
+  function disc(x, y, z, r, col) { const p = P(x, y, z); ctx.beginPath(); ctx.ellipse(p[0], p[1], r * TW * 1.414, r * TH * 1.414, 0, 0, 7); ctx.fillStyle = col; ctx.fill(); }
+  // the four corners of one face of a box, bottom first, in the order that reads left to right on screen
+  function faceQuad(f, b, z0, z1, a0 = null, a1 = null) {
+    const [x0, y0, x1, y1] = b;
+    if (f === 'E') return [[x1, a0 ?? y0, z0], [x1, a1 ?? y1, z0], [x1, a1 ?? y1, z1], [x1, a0 ?? y0, z1]];
+    if (f === 'W') return [[x0, a0 ?? y0, z0], [x0, a1 ?? y1, z0], [x0, a1 ?? y1, z1], [x0, a0 ?? y0, z1]];
+    if (f === 'S') return [[a0 ?? x0, y1, z0], [a1 ?? x1, y1, z0], [a1 ?? x1, y1, z1], [a0 ?? x0, y1, z1]];
+    return [[a0 ?? x0, y0, z0], [a1 ?? x1, y0, z0], [a1 ?? x1, y0, z1], [a0 ?? x0, y0, z1]];
+  }
+  function box(b, z0, z1, col, top = null, raw = false) {
+    for (const f of VIS()) poly(faceQuad(f, b, z0, z1).map(P3), raw ? col : shade(col, FACE[f]));
+    poly([P(b[0], b[1], z1), P(b[2], b[1], z1), P(b[2], b[3], z1), P(b[0], b[3], z1)], raw ? (top || col) : T(top || mix(col, C.hi, 0.18)));
+  }
+
+  // ---------- the house ----------
+  let LIT = () => false; // which windows are lit, set each frame
+  function drawOpen(o, b, i) {
+    const door = o.k === 'door', w = door ? 1.0 : 1.15, z0 = door ? (o.f === 'E' ? 0.45 : 0.2) : 1.05, z1 = door ? z0 + 2.1 : 2.45, f = FACE[o.f];
+    const q = (a0, a1, za, zb) => faceQuad(o.f, b, za, zb, a0, a1).map(P3);
+    poly(q(o.a - w / 2 - 0.12, o.a + w / 2 + 0.12, z0 - (door ? 0 : 0.1), z1 + 0.12), shade(H.trim, f));
+    if (door) { poly(q(o.a - w / 2, o.a + w / 2, z0, z1), shade(o.c || '#2f5d50', f)); const lit = LIT(i); poly(q(o.a - 0.28, o.a + 0.28, z1 - 0.75, z1 - 0.2), lit ? C.glow : shade(C.glass, f)); return; }
+    const lit = LIT(i);
+    poly(q(o.a - w / 2, o.a + w / 2, z0, z1), lit ? (i % 3 === 0 ? '#ffe9a8' : C.glow) : shade(mix(C.glass, C.plum, 0.25), f));
+    const m = shade(H.trim, f), a = q(o.a, o.a, z0, z1), h = q(o.a - w / 2, o.a + w / 2, (z0 + z1) / 2, (z0 + z1) / 2);
+    line(a[0], a[3], m, 0.7); line(h[0], h[1], m, 0.7);
+    for (const s of [-1, 1]) poly(q(o.a + s * (w / 2 + 0.14), o.a + s * (w / 2 + 0.5), z0, z1), shade('#2f4f45', f)); // shutters
+  }
+  function roofFace(e0, e1, r1, r0, f) {
+    const col = shade(mix(H.roof, C.hi, f === 'S' || f === 'W' ? 0.1 : 0), FACE[f] * 0.5 + 0.5);
+    poly([e0, e1, r1, r0].map(P3), col);
+    ctx.globalAlpha = 0.16; for (let t = 0.2; t < 1; t += 0.2) line(P3(lerp3(e0, r0, t)), P3(lerp3(e1, r1, t)), T(C.plum), 0.6); ctx.globalAlpha = 1;
+    if (VIS().includes(f)) line(P3(e0), P3(e1), T(H.trim), 1.3);
+  }
+  function walls(b, name) {
+    for (const f of VIS()) {
+      poly(faceQuad(f, b, 0, H.eave).map(P3), shade(H.wall, FACE[f]));
+      poly(faceQuad(f, b, 0, 0.4).map(P3), shade(H.found, FACE[f]));
+      ctx.globalAlpha = 0.1; for (let z = 0.8; z < H.eave; z += 0.4) { const q = faceQuad(f, b, z, z).map(P3); line(q[0], q[1], T(C.plum), 0.5); } ctx.globalAlpha = 1;
+      H.open.forEach((o, i) => { if (o.b === name && o.f === f) drawOpen(o, b, i); });
+    }
+  }
+  const OV = 0.35;
+  function drawMain() {
+    const b = H.main; walls(b, 'main');
+    const X0 = b[0] - OV, Y0 = b[1] - OV, X1 = b[2] + OV, Y1 = b[3] + OV, e = H.eave, hw = (X1 - X0) / 2, zr = e + H.pitch * hw, cx = (X0 + X1) / 2;
+    const R1 = [cx, Y0 + hw, zr], R2 = [cx, Y1 - hw, zr];
+    const faces = { W: [[X0, Y1, e], [X0, Y0, e], R1, R2], E: [[X1, Y0, e], [X1, Y1, e], R2, R1], N: [[X0, Y0, e], [X1, Y0, e], R1, R1], S: [[X1, Y1, e], [X0, Y1, e], R2, R2] };
+    const vis = VIS(); for (const f of ['N', 'E', 'W', 'S'].filter((k) => !vis.includes(k))) roofFace(...faces[f], f);
+    for (const f of vis) roofFace(...faces[f], f);
+    const c = H.chimney; box([c[0], c[1], c[2], c[3]], zr - 0.9, c[4], '#9a4633'); box([c[0] - 0.08, c[1] - 0.08, c[2] + 0.08, c[3] + 0.08], c[4], c[4] + 0.18, C.stone);
+  }
+  function drawWing() {
+    const b = H.wing; walls(b, 'wing');
+    const X0 = b[0] - OV, Y0 = b[1] - OV, Y1 = b[3] + OV, XM = H.main[0] - OV, e = H.eave, hw = (Y1 - Y0) / 2, zr = e + H.pitch * hw, cy = (Y0 + Y1) / 2;
+    const A = [X0 + hw, cy, zr], B = [XM + hw, cy, zr];
+    const faces = { W: [[X0, Y1, e], [X0, Y0, e], A, A], S: [[XM, Y1, e], [X0, Y1, e], A, B], N: [[X0, Y0, e], [XM, Y0, e], B, A] };
+    const vis = VIS(); for (const f of ['N', 'W', 'S'].filter((k) => !vis.includes(k))) roofFace(...faces[f], f);
+    for (const f of vis) if (faces[f]) roofFace(...faces[f], f);
+  }
+
+  // ---------- trees and shrubs ----------
+  function drawTree(t, i, time) {
+    const sway = Math.sin(time * 0.8 + i * 1.7) * 0.06 * Math.min(3, (wx().windMph ?? 5) / 6);
+    const p0 = P(t.x, t.y), top = P(t.x + sway, t.y, t.h);
+    if (t.k === 'pine') {
+      line(p0, P(t.x, t.y, 1.2), T('#5a4030'), 2.2);
+      for (let k = 0; k < 4; k++) { const z0 = 1 + k * (t.h - 1) / 4.6, z1 = z0 + (t.h - 1) / 3, r = t.r * (1 - k * 0.21); const a = P(t.x + sway * k / 4, t.y, z0), b = P(t.x + sway, t.y, z1);
+        poly([[a[0] - r * TW * 1.2, a[1]], [a[0], a[1] + r * TH * 1.1], [a[0] + r * TW * 1.2, a[1]], b], T(mix(C.pine, k % 2 ? '#1f5a3a' : '#35875a', 0.4)));
+        poly([[a[0] - r * TW * 1.2, a[1]], [a[0], a[1] + r * TH * 1.1], b], T(mix(C.pine, C.plum, 0.25))); }
+      return;
+    }
+    const trunkTop = P(t.x + sway * 0.4, t.y, t.h * 0.45); ctx.lineCap = 'round';
+    line(p0, trunkTop, T('#6a5040'), Math.max(2, t.r * 0.75));
+    for (let k = 0; k < 7; k++) { // branches
+      const a = k * 0.9 + i, r = t.r * (0.55 + 0.4 * hash(i, k)), z = t.h * (0.62 + 0.36 * hash(k, i));
+      const e = P(t.x + Math.cos(a) * r + sway, t.y + Math.sin(a) * r, z); const mid = [(trunkTop[0] + e[0]) / 2 + 2 * Math.cos(a), (trunkTop[1] + e[1]) / 2 + 3];
+      ctx.beginPath(); ctx.moveTo(trunkTop[0], trunkTop[1]); ctx.quadraticCurveTo(mid[0], mid[1], e[0], e[1]); ctx.strokeStyle = T('#6a5040'); ctx.lineWidth = 1.5; ctx.stroke();
+      if (leafAmt < 0.5) { const e2 = P(t.x + Math.cos(a + 0.5) * r * 1.2 + sway, t.y + Math.sin(a + 0.5) * r * 1.2, z + 1.2); line(e, e2, T('#7a6050'), 0.8); }
+    }
+    ctx.lineCap = 'butt';
+    if (leafAmt > 0.02) {
+      const n = Math.round(26 * leafAmt) + 3;
+      for (let k = 0; k < n; k++) { const a = k * 2.4 + i, rr = t.r * 0.85 * Math.sqrt(hash(i + 3, k)), z = t.h * (0.58 + 0.36 * hash(k + 9, i)) + (k % 3) * 0.5;
+        const p = P(t.x + Math.cos(a) * rr + sway, t.y + Math.sin(a) * rr, z); const r = t.r * TW * (0.24 + 0.14 * hash(k, i + 5)) * (0.7 + 0.3 * leafAmt);
+        ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 7); ctx.fillStyle = T(mix(leafCol(t.k, k), k % 3 === 0 ? C.hi : C.plum, k % 3 === 0 ? 0.12 : 0.14)); ctx.fill(); }
+    }
+    void top;
+  }
+  function drawShrub(s, i) { const p = P(s[0], s[1], s[2] * 0.6); for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.arc(p[0] + (k - 1) * s[2] * TW * 0.5, p[1] + (k === 1 ? -2 : 1), s[2] * TW * 0.62, 0, 7); ctx.fillStyle = T(mix('#35875a', k === 1 ? C.hi : C.plum, k === 1 ? 0.1 : 0.15 + 0.05 * (i % 2))); ctx.fill(); } }
+
+  // ---------- people ----------
+  // A little figure about 22 model pixels tall, feet at (X, Y). o: { pose, face: ±1 on screen, away, t, look, hold }
+  function figure(X, Y, o) {
+    const L = o.look, f = o.face || 1, t = o.t || 0, run = o.pose === 'run', sit = o.pose === 'sit' || o.pose === 'kneel';
+    ctx.save(); ctx.translate(X, Y); ctx.lineCap = 'round';
+    ctx.fillStyle = 'rgba(44,33,71,.22)'; ctx.beginPath(); ctx.ellipse(0, 0.5, 5, 2, 0, 0, 7); ctx.fill();
+    const moving = o.pose === 'walk' || run || o.pose === 'push';
+    const sw = moving ? Math.sin(t) : 0, amp = run ? 4.6 : 2.8, bob = moving ? Math.abs(Math.cos(t)) * (run ? 1.6 : 0.7) : 0;
+    const hipY = sit ? (o.pose === 'kneel' ? -4 : -6.5) : -9.5 - bob, lean = run ? 1.6 * f : o.pose === 'push' ? 1 * f : 0;
+    const leg = (s, col) => { ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(s * 1.1, hipY);
+      if (sit) { ctx.lineTo(s * 1.1 + f * 4.2, hipY + (o.pose === 'kneel' ? 3.6 : 0.4)); ctx.lineTo(s * 1.1 + f * (o.pose === 'kneel' ? 0.5 : 4.6), 0); }
+      else { const a = s * sw; const kx = s * 1.1 + a * amp * 0.55 * f + (run ? f * 0.8 : 0), fx = s * 1.1 + a * amp * f, fy = -Math.max(0, -a) * (run ? 3.2 : 1.2); ctx.lineTo(kx, hipY / 2 + fy * 0.3); ctx.lineTo(fx, fy); ctx.stroke();
+        ctx.strokeStyle = T(L.shoes); ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + f * 1.3, fy); }
+      ctx.stroke(); };
+    leg(-1, T(mix(L.bottom, C.plum, 0.25))); leg(1, T(L.bottom));
+    const sh = hipY - 8.2; // shoulders
+    ctx.fillStyle = T(L.top); ctx.beginPath(); ctx.roundRect(-3 + lean * 0.5, sh, 6, hipY - sh + 1.2, 2.2); ctx.fill();
+    const arm = (s, col) => { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s * 2.6 + lean, sh + 1.2);
+      if (o.pose === 'push') ctx.lineTo(f * 5.6, sh + 5);
+      else if (o.hold && s === (f > 0 ? 1 : -1)) ctx.lineTo(f * 4.2, sh + 4.4);
+      else if (sit) ctx.lineTo(s * 2.6 + f * 2.6, sh + 6);
+      else if (run) { ctx.lineTo(s * 2.6 + lean - s * sw * 2.2 * f, sh + 4.2); ctx.lineTo(s * 2.6 + lean - s * sw * 3.4 * f + f * 1.6, sh + 2.6); }
+      else ctx.lineTo(s * 2.6 - s * sw * 2.4 * f, sh + 6.4);
+      ctx.stroke(); };
+    arm(-1, T(mix(L.top, C.plum, 0.25))); arm(1, T(mix(L.top, C.hi, 0.1)));
+    const hx = lean * 1.2, hy = sh - 2.9;
+    ctx.fillStyle = T(L.skin); ctx.beginPath(); ctx.arc(hx, hy, 2.9, 0, 7); ctx.fill();
+    ctx.fillStyle = T(L.hair); ctx.beginPath();
+    if (o.away) ctx.arc(hx, hy, 3.05, 0, 7); else { ctx.arc(hx, hy, 3.05, Math.PI * (f > 0 ? 0.95 : 1.25), Math.PI * (f > 0 ? 1.75 : 2.05)); ctx.lineTo(hx - f * 2.6, hy + 1.4); }
+    ctx.fill();
+    if (L.style === 'pony') { ctx.strokeStyle = T(L.hair); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(hx - f * 2.4, hy - 0.8); ctx.quadraticCurveTo(hx - f * (5 + (moving ? sw * 0.8 : 0)), hy - 0.5, hx - f * 4.4, hy + 3.6 + (moving ? Math.cos(t * 2) * (run ? 1.3 : 0.5) : 0)); ctx.stroke(); }
+    else if (L.style === 'long') { ctx.fillRect(hx - f * 3.1 - 1, hy, 2.2, 4.6); }
+    else if (L.style === 'cap') { ctx.fillStyle = T(L.cap || '#a63d2a'); ctx.beginPath(); ctx.arc(hx, hy - 0.6, 3.1, Math.PI, 0); ctx.fill(); ctx.fillRect(hx + (f > 0 ? 0 : -4.4), hy - 1, 4.4, 1); }
+    if (o.hold === 'mug') { ctx.fillStyle = T('#fff6e4'); ctx.fillRect(f * 4.2 - 0.7, sh + 3.4, 1.4, 1.6); }
+    if (o.hold === 'book') { ctx.fillStyle = T('#fff6e4'); ctx.fillRect(f * 3.2, sh + 3.2, f * 2.6, 2.4); ctx.fillStyle = T('#a63d2a'); ctx.fillRect(f * 3.2, sh + 5.4, f * 2.6, 0.6); }
+    if (o.hold === 'stick') { ctx.strokeStyle = T('#5a4030'); ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(f * 4.2, sh + 4.4); ctx.lineTo(f * 8.5, sh + 9); ctx.stroke(); }
+    if (wet() && !sit && o.out) { ctx.fillStyle = T(o.umb || '#a63d2a'); ctx.beginPath(); ctx.ellipse(hx, hy - 6, 8, 3.2, 0, Math.PI, 0); ctx.fill(); ctx.strokeStyle = T(C.plum); ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(hx, hy - 6); ctx.lineTo(f * 3, sh + 4); ctx.stroke(); }
+    ctx.restore();
+  }
+  // which way a heading in the yard points on screen
+  const facing = (hx, hy) => { const [u, v] = [uv(CX + hx, CY + hy)[0], uv(CX + hx, CY + hy)[1]]; return { face: u - v >= 0 ? 1 : -1, away: u + v < -0.2 }; };
+  const HER = lot.her;
+  const FRIENDS = [
+    { skin: '#c68a5e', hair: '#1c1616', style: 'short', top: '#c98a2b', bottom: '#3a3f55', shoes: '#f4ecda' },
+    { skin: '#f0c8a6', hair: '#c9a25a', style: 'long', top: '#a63d2a', bottom: '#2c2147', shoes: '#57566a' },
+    { skin: '#8a5a3c', hair: '#1c1616', style: 'cap', cap: '#4a68b0', top: '#f4ecda', bottom: '#4a5d3a', shoes: '#f4ecda' },
+    { skin: '#e2b08a', hair: '#7a3a22', style: 'short', top: '#4a68b0', bottom: '#57566a', shoes: '#2c2147' },
+  ];
+  const CARS = ['#4a68b0', '#f4ecda', '#a63d2a'];
+
+  // ---------- where everyone is ----------
+  const chairAt = (i) => { const a = lot.chairs[i].a * rad; return [F.x + Math.cos(a) * 1.95, F.y + Math.sin(a) * 1.95]; };
+  const D = lot.doors, SX = lot.street[0] + 0.7;
+  const MOW = mowRoute(lot);
+  const rFront = makeRoute([D.front, [D.front[0] + 0.95, D.front[1]], [D.front[0] + 0.95, D.gate[1]], [SX, D.gate[1]]]);
+  const outRoute = (north) => makeRoute([...rFront.pts, [SX, north ? lot.base[1] - 1 : lot.base[3] + 1]]);
+  const backTo = (p) => makeRoute([D.back, [D.back[0] - 1, D.back[1]], p]);
+  const mowAll = makeRoute([D.back, [D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], ...MOW.route.pts, [D.gate[0] + 0.9, D.gate[1]], [D.gate[0] - 1.2, D.gate[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]]);
+  const mowLead = dist(D.back, [D.back[0] - 1.4, D.back[1]]) + dist([D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]) + dist([lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], MOW.route.pts[0]);
+  const carY = (i) => 12.5 - i * 6.2;
+  const friendRoute = (i, car) => makeRoute([[SX - 0.5, carY(car)], [SX - 0.5, D.gate[1]], [D.gate[0] + 0.9, D.gate[1]], [D.gate[0] - 1.2, D.gate[1]], chairAt(i + 1)]);
+  const bedSpots = lot.beds.flatMap((b) => [[b[2] + 0.5, b[1] + 1.2], [b[2] + 0.5, (b[1] + b[3]) / 2], [b[2] + 0.5, b[3] - 1.2]]);
+
+  /** Everyone and everything that moves, for this minute: { people: [...], mower, cars, fire: 0..1, mown: metres, away } */
+  function cast(c, st, time) {
+    const out = { people: [], mower: null, cars: [], fire: 0, mown: null, away: false };
+    const t = (c.min - st.t0) * 60, Tt = (st.t1 - st.t0) * 60; // seconds in, seconds long
+    const walkT = time * 7.2, look = HER;
+    const her = (q, pose, extra = {}) => out.people.push({ x: q.x, y: q.y, ...facing(q.hx ?? 0, q.hy ?? 1), pose, t: pose === 'run' ? time * 11 : walkT, look: extra.look || look, ...extra });
+    // go somewhere, stay, come back: the route out, and what to do there
+    const errand = (route, pose, extra, focus, v = 1.25) => {
+      const d = route.len / v;
+      if (t < d) her(route.at(t * v), 'walk'); else if (t > Tt - d) { const q = route.at((Tt - t) * v); her({ ...q, hx: -q.hx, hy: -q.hy }, 'walk'); }
+      else { const e = route.at(route.len); her({ x: e.x, y: e.y, hx: focus[0] - e.x, hy: focus[1] - e.y }, pose, extra); }
+    };
+    if (st.kind === 'run' || st.kind === 'walk') {
+      const v = st.kind === 'run' ? 3.1 : 1.3, north = dayRand(c, 5) > 0.5, ro = outRoute(north), rb = outRoute(!north);
+      const lookOut = st.kind === 'run' ? { ...look, top: look.runTop, bottom: look.runBottom } : look, pose = st.kind;
+      if (t * v < ro.len) her(ro.at(t * v), pose, { look: lookOut, out: true });
+      else if ((Tt - t) * v < rb.len) { const q = rb.at((Tt - t) * v); her({ ...q, hx: -q.hx, hy: -q.hy }, pose, { look: lookOut, out: true }); }
+      else out.away = true;
+    } else if (st.kind === 'mow') {
+      const lead = 40, v = mowAll.len / Math.max(60, Tt - lead), d = clamp((t - lead / 2) * v, 0, mowAll.len), q = mowAll.at(d);
+      her(q, d > 0 && d < mowAll.len ? 'push' : 'stand'); out.mower = { x: q.x + q.hx * 0.75, y: q.y + q.hy * 0.75, hx: q.hx, hy: q.hy, on: d > 0 && d < mowAll.len };
+      out.mown = d - mowLead;
+    } else if (st.kind === 'garden') {
+      const n = bedSpots.length, each = Tt / n, k = Math.min(n - 1, Math.floor(t / each)), p = bedSpots[k];
+      const from = k ? bedSpots[k - 1] : D.front, r = makeRoute([from, p]), tt = t - k * each;
+      if (tt * 1.2 < r.len) her(r.at(tt * 1.2), 'walk'); else her({ x: p[0], y: p[1], hx: -1, hy: 0 }, Math.sin(time * 0.5 + k) > -0.3 ? 'kneel' : 'stand');
+    } else if (st.kind === 'coffee') errand(backTo(lot.patioChair), 'sit', { hold: 'mug', seat: true }, [lot.patioChair[0] - 3, lot.patioChair[1] + 1]);
+    else if (st.kind === 'read') errand(backTo(chairAt(0)), 'sit', { hold: 'book' }, [F.x, F.y]);
+    else if (st.kind === 'fire') {
+      const r = backTo(chairAt(0)), d = r.len / 1.25, tend = 7 * 60;
+      const near = [F.x - 1.1, F.y + 0.9], rn = makeRoute([D.back, [D.back[0] - 1, D.back[1]], near]);
+      if (t < rn.len / 1.25) her(rn.at(t * 1.25), 'walk');
+      else if (t < tend) her({ x: near[0], y: near[1], hx: F.x - near[0], hy: F.y - near[1] }, 'stand', { hold: 'stick' });
+      else if (t > Tt - d) { const q = r.at((Tt - t) * 1.25); her({ ...q, hx: -q.hx, hy: -q.hy }, 'walk'); }
+      else { const e = chairAt(0), up = Math.sin(time * 0.05) > 0.93; her({ x: up ? near[0] : e[0], y: up ? near[1] : e[1], hx: F.x - e[0], hy: F.y - e[1] }, up ? 'stand' : 'sit', up ? { hold: 'stick' } : { hold: Math.sin(time * 0.3) > 0.4 ? 'mug' : null }); }
+      out.fire = clamp((t - 150) / 240) * clamp((Tt - 60 - t) / 300);
+      const n = Math.min(st.friends || 3, FRIENDS.length);
+      for (let i = 0; i < n; i++) {
+        const car = n > 2 ? i % 2 : 0, fr = friendRoute(i, car), fd = fr.len / 1.25, ta = (12 + i * 6) * 60, tl = Tt - (15 - i * 3) * 60;
+        const base = { look: FRIENDS[i], t: walkT + i * 1.3, out: true, umb: CARS[i % 3] };
+        if (t > ta - 60 && t < tl + fd + 40 && !out.cars.some((k) => k.i === car)) out.cars.push({ i: car, y: carY(car), col: CARS[car] });
+        if (t < ta || t > tl + fd) continue;
+        if (t < ta + fd) { const q = fr.at((t - ta) * 1.25); out.people.push({ x: q.x, y: q.y, ...facing(q.hx, q.hy), pose: 'walk', ...base }); }
+        else if (t > tl) { const q = fr.at(fr.len - (t - tl) * 1.25); out.people.push({ x: q.x, y: q.y, ...facing(-q.hx, -q.hy), pose: 'walk', ...base }); }
+        else { const e = chairAt(i + 1); out.people.push({ x: e[0], y: e[1], ...facing(F.x - e[0], F.y - e[1]), pose: 'sit', ...base, hold: Math.sin(time * 0.21 + i * 2) > 0.2 ? 'mug' : null }); }
+      }
+    }
+    return out;
+  }
+
+  // ---------- the view ----------
+  let Wc = 800, Hc = 450, dpr = 1, zoom = +Q.get('z') || 1, fit = 1, panX = +(Q.get('pan') || '').split(',')[0] || 0, panY = +(Q.get('pan') || '').split(',')[1] || 0;
+  function extent() { const b = lot.base, pts = [P(b[0], b[1]), P(b[2], b[1]), P(b[2], b[3]), P(b[0], b[3])]; const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys) - 15 * ZP, y1: Math.max(...ys) + 1.6 * ZP }; }
+  function resize() {
+    const r = canvas.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1); Wc = Math.max(50, r.width); Hc = Math.max(50, r.height);
+    canvas.width = Math.round(Wc * dpr); canvas.height = Math.round(Hc * dpr);
+    const e = extent(); fit = Math.min(Wc / (e.x1 - e.x0 + 30), Hc / (e.y1 - e.y0 + 30));
+  }
+  new ResizeObserver(resize).observe(canvas); resize();
+  const clampView = () => { zoom = clamp(zoom, 0.8, 7); const e = extent(), s = fit * zoom, mx = Math.max(0, (e.x1 - e.x0) * s / 2), my = Math.max(0, (e.y1 - e.y0) * s / 2); panX = clamp(panX, -mx, mx); panY = clamp(panY, -my, my); };
+  function zoomAt(k, px = Wc / 2, py = Hc / 2) { const z0 = zoom; zoom = clamp(zoom * k, 0.8, 7); const r = zoom / z0; panX = (panX - (px - Wc / 2)) * r + (px - Wc / 2); panY = (panY - (py - Hc / 2)) * r + (py - Hc / 2); clampView(); }
+  const ptrs = new Map(); let pinch = 0;
+  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); pinch = 0; });
+  canvas.addEventListener('pointermove', (e) => { const p = ptrs.get(e.pointerId); if (!p) return;
+    if (ptrs.size === 1) { panX += e.clientX - p[0]; panY += e.clientY - p[1]; clampView(); }
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) { const r = canvas.getBoundingClientRect(); zoomAt(d / pinch, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top); } pinch = d; } });
+  const up = (e) => { ptrs.delete(e.pointerId); pinch = 0; }; canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  canvas.addEventListener('keydown', (e) => { const k = e.key; if (k === '+' || k === '=') zoomAt(1.3); else if (k === '-') zoomAt(1 / 1.3); else if (k === 'r' || k === 'R') api.rotate(); else if (k.startsWith('Arrow')) { panX += k === 'ArrowLeft' ? 60 : k === 'ArrowRight' ? -60 : 0; panY += k === 'ArrowUp' ? 60 : k === 'ArrowDown' ? -60 : 0; clampView(); } else return; e.preventDefault(); });
+
+  // ---------- draw order ----------
+  // Everything that stands up has a box on the ground. A thing is drawn before another when it lies wholly behind it
+  // along either ground axis as seen from this corner; only pairs that can overlap on screen are compared.
+  function sortObjs(objs) {
+    for (const o of objs) { const c = [uv(o.x0, o.y0), uv(o.x1, o.y0), uv(o.x1, o.y1), uv(o.x0, o.y1)]; o.u0 = Math.min(...c.map((p) => p[0])); o.u1 = Math.max(...c.map((p) => p[0])); o.v0 = Math.min(...c.map((p) => p[1])); o.v1 = Math.max(...c.map((p) => p[1]));
+      const pad = o.pad || 0; o.sx0 = (o.u0 - o.v1) * TW - pad; o.sx1 = (o.u1 - o.v0) * TW + pad; o.sy0 = (o.u0 + o.v0) * TH - (o.h || 0) * ZP - pad; o.sy1 = (o.u1 + o.v1) * TH + 2; o.n = 0; o.after = []; }
+    const E = 0.01;
+    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++) {
+      const a = objs[i], b = objs[j]; if (a.sx1 < b.sx0 || b.sx1 < a.sx0 || a.sy1 < b.sy0 || b.sy1 < a.sy0) continue;
+      const ab = a.u1 <= b.u0 + E || a.v1 <= b.v0 + E, ba = b.u1 <= a.u0 + E || b.v1 <= a.v0 + E;
+      let first = ab && !ba ? a : ba && !ab ? b : null;
+      if (!first && !ab && !ba) first = a.u0 + a.v0 + a.u1 + a.v1 <= b.u0 + b.v0 + b.u1 + b.v1 ? a : b; // overlapping footprints: nearer middle last
+      if (!first) continue; const second = first === a ? b : a; first.after.push(second); second.n++;
+    }
+    const out = [], ready = objs.filter((o) => !o.n), left = new Set(objs);
+    const key = (o) => o.u0 + o.v0 + o.u1 + o.v1;
+    while (left.size) {
+      if (!ready.length) { let m = null; for (const o of left) if (!m || key(o) < key(m)) m = o; m.n = 0; ready.push(m); }
+      ready.sort((a, b) => key(b) - key(a)); const o = ready.pop(); if (!left.has(o)) continue; left.delete(o); out.push(o);
+      for (const k of o.after) if (--k.n === 0 && left.has(k)) ready.push(k);
+    }
+    return out;
+  }
+
+  // the parts that never move
+  const fixed = [];
+  const obj = (x0, y0, x1, y1, h, draw, pad = 0) => fixed.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1), h, draw, pad });
+  obj(...H.main, 8, drawMain); obj(...H.wing, 6, drawWing);
+  { const s = H.stoop; obj(s[0], s[1], s[2], s[3], s[4], () => { box([s[0], s[1], s[2] + 0.35, s[3]], 0, s[4] / 2, C.stone); box([s[0], s[1], s[2], s[3]], 0, s[4], C.stone); }); }
+  { const s = lot.shed, b = s.box; obj(...b, s.h + 1, () => { box(b, 0, s.h, s.wall);
+    const cx = (b[0] + b[2]) / 2, e = s.h, zr = e + 0.7, o = 0.15; const A = [cx, b[1] - o, zr], B = [cx, b[3] + o, zr];
+    for (const f of VIS()) if (f === 'S' || f === 'N') { const y = f === 'S' ? b[3] : b[1]; poly([P(b[0], y, e), P(b[2], y, e), P(cx, y, zr)], shade(s.wall, FACE[f])); if (f === 'S') poly(faceQuad('S', b, 0, 1.9, cx - 0.5, cx + 0.5).map(P3), shade(C.woodD, FACE.S)); }
+    const fw = [[b[0] - o, b[3] + o, e], [b[0] - o, b[1] - o, e], A, B], fe = [[b[2] + o, b[1] - o, e], [b[2] + o, b[3] + o, e], B, A];
+    if (VIS().includes('W')) { roofFace(...fe, 'E'); roofFace(...fw, 'W'); } else { roofFace(...fw, 'W'); roofFace(...fe, 'E'); } }); }
+  for (const f of lot.fences) { const L = Math.hypot(f[2] - f[0], f[3] - f[1]), n = Math.ceil(L / 1.5);
+    for (let i = 0; i < n; i++) { const a = [f[0] + (f[2] - f[0]) * i / n, f[1] + (f[3] - f[1]) * i / n], b = [f[0] + (f[2] - f[0]) * (i + 1) / n, f[1] + (f[3] - f[1]) * (i + 1) / n];
+      const r = [Math.min(a[0], b[0]) - 0.05, Math.min(a[1], b[1]) - 0.05, Math.max(a[0], b[0]) + 0.05, Math.max(a[1], b[1]) + 0.05];
+      obj(...r, 1.7, () => { box(r, 0, 1.6, i % 2 ? C.wood : mix(C.wood, C.woodD, 0.35)); box([a[0] - 0.09, a[1] - 0.09, a[0] + 0.09, a[1] + 0.09], 0, 1.75, C.woodD); }); } }
+  for (const g of lot.gatePosts) obj(g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1, 1.8, () => box([g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1], 0, 1.75, C.woodD));
+  lot.trees.forEach((t, i) => fixed.push({ x0: t.x - 0.4, y0: t.y - 0.4, x1: t.x + 0.4, y1: t.y + 0.4, h: t.h, pad: t.r * TW * 1.3, tree: t, draw: (time) => drawTree(t, i, time) }));
+  lot.shrubs.forEach((s, i) => obj(s[0] - s[2], s[1] - s[2], s[0] + s[2], s[1] + s[2], s[2] * 1.4, () => drawShrub(s, i), 4));
+  function drawChair(x, y, col, fx, fy) { // a low wooden chair turned toward (fx, fy)
+    const d = Math.hypot(fx - x, fy - y) || 1, bx = x - (fx - x) / d * 0.38, by = y - (fy - y) / d * 0.38;
+    box([x - 0.33, y - 0.33, x + 0.33, y + 0.33], 0.25, 0.42, col); for (const [a, b] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) line(P(x + a, y + b, 0), P(x + a, y + b, 0.3), T(mix(col, C.plum, 0.4)), 1);
+    box([bx - 0.3, by - 0.3, bx + 0.3, by + 0.3].map((v, i) => (Math.abs(fx - x) > Math.abs(fy - y) ? (i % 2 ? v : (i ? bx + 0.07 : bx - 0.07)) : (i % 2 ? (i > 1 ? by + 0.07 : by - 0.07) : v))), 0.3, 1.05, col);
+  }
+  lot.chairs.forEach((ch, i) => { const [x, y] = chairAt(i); obj(x - 0.4, y - 0.4, x + 0.4, y + 0.4, 1.1, () => drawChair(x, y, ch.c, F.x, F.y)); });
+  { const [x, y] = lot.patioChair; obj(x - 0.4, y - 0.4, x + 0.4, y + 0.4, 1.1, () => drawChair(x, y, '#f4ecda', x - 3, y + 0.5)); obj(x - 1.5, y + 0.9, x - 0.7, y + 1.7, 0.6, () => { box([x - 1.5, y + 0.9, x - 0.7, y + 1.7], 0.5, 0.58, '#f4ecda'); line(P(x - 1.1, y + 1.3, 0), P(x - 1.1, y + 1.3, 0.5), T(C.stone), 1.4); }); }
+  let FIRE = 0;
+  obj(F.x - 0.6, F.y - 0.6, F.x + 0.6, F.y + 0.6, 1.4, (time) => {
+    disc(F.x, F.y, 0, 0.62, T(mix(C.stone, C.plum, 0.35))); disc(F.x, F.y, 0.32, 0.62, T(C.stone)); disc(F.x, F.y, 0.32, 0.46, FIRE > 0.05 ? mix('#3a2a26', '#ff7426', FIRE * 0.6) : T('#3a2a26'));
+    for (const a of [0.3, 1.9, 3.6]) line(P(F.x + Math.cos(a) * 0.34, F.y + Math.sin(a) * 0.34, 0.36), P(F.x - Math.cos(a) * 0.3, F.y - Math.sin(a) * 0.3, 0.52), FIRE > 0.05 ? mix('#5a4030', '#ff9a3c', FIRE * 0.5) : T('#5a4030'), 2);
+    if (FIRE <= 0.02) return;
+    const p = P(F.x, F.y, 0.45);
+    for (const [k, col, w, hh] of [[0, '#ff7426', 5.2, 15], [1, '#ffb13c', 3.6, 11], [2, '#ffe9a8', 1.9, 6.5]]) {
+      const fl = (0.75 + 0.25 * Math.sin(time * (7 + k * 2.3) + k) + 0.12 * Math.sin(time * 17.3 + k * 4)) * FIRE, sx = Math.sin(time * (3.1 + k)) * 1.6;
+      ctx.beginPath(); ctx.moveTo(p[0] - w, p[1]); ctx.quadraticCurveTo(p[0] - w * 0.9, p[1] - hh * fl * 0.5, p[0] + sx, p[1] - hh * fl); ctx.quadraticCurveTo(p[0] + w * 0.9, p[1] - hh * fl * 0.5, p[0] + w, p[1]); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+    }
+  }, 14);
+  // the wood pile by the shed
+  { const b = lot.shed.box; obj(b[2] + 0.1, b[1] + 0.3, b[2] + 0.6, b[1] + 1.9, 0.8, () => { box([b[2] + 0.1, b[1] + 0.3, b[2] + 0.6, b[1] + 1.9], 0, 0.75, '#8a6a4a', '#b08a62'); }); }
+
+  // ---------- one frame ----------
+  let lastSay = '', lastKey = '';
+  function frame(now) {
+    const time = now / 1000, c = clock(), st = nowDoing(c, wx(), sunT, FORCED);
+    SUN = sunPos(dateOf(c)); NIGHT = clamp((5 - SUN.alt) / 13);
+    const overcast = wet() || wx().sky === 'cloudy';
+    const who = cast(c, st, time); FIRE = who.fire;
+    if (DBG) window.__who = { ...who, min: c.min, kind: st.kind };
+    const dark = NIGHT > 0.35, home = !who.away;
+    const litSet = st.kind === 'asleep' ? 0 : !dark ? 0 : st.kind === 'inside' ? 0.62 : home ? 0.3 : 0.12;
+    LIT = (i) => litSet > 0 && hash(i * 3.7, c.d) < litSet;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const skyTop = mix(overcast ? '#9aa6b5' : '#8ec3e6', '#141233', NIGHT), skyLow = mix(mix(overcast ? '#c5ccd3' : '#f3e2c0', '#f0965a', clamp(1 - Math.abs(SUN.alt - 2) / 9) * (overcast ? 0.2 : 0.7)), '#2c2147', NIGHT);
+    const g = ctx.createLinearGradient(0, 0, 0, canvas.height); g.addColorStop(0, skyTop); g.addColorStop(1, skyLow); ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (NIGHT > 0.5 && !overcast) { ctx.fillStyle = `rgba(255,246,228,${(NIGHT - 0.5) * 1.4})`; for (let i = 0; i < 70; i++) ctx.fillRect(hash(i, 11) * canvas.width, hash(i, 12) * canvas.height * 0.6, hash(i, 13) > 0.8 ? 2 * dpr : dpr, hash(i, 13) > 0.8 ? 2 * dpr : dpr); }
+    const e = extent(), s = fit * zoom * dpr;
+    ctx.setTransform(s, 0, 0, s, canvas.width / 2 + panX * dpr - (e.x0 + e.x1) / 2 * s, canvas.height / 2 + panY * dpr - (e.y0 + e.y1) / 2 * s);
+    ctx.lineJoin = 'round';
+
+    // the model's base and the ground
+    const b = lot.base; box(b, -1.3, 0, C.clay, mix(C.rough, lawnCol, 0.4));
+    for (const r of lot.lawns) ground(r, T(lawnCol));
+    // stripes where the mower has been
+    let mown = who.mown, fade = 1;
+    if (mown == null && growing) { const since = c.day === 5 ? (c.min > 655 ? 0 : 7) : (c.day + 2) % 7; if (since <= 3 && (c.day !== 5 || c.min > 655)) { mown = 1e9; fade = [1, 0.75, 0.5, 0.28][since]; } }
+    if (mown != null && mown > 0) for (const sp of MOW.stripes) {
+      if (mown <= sp.d0) continue; const k = clamp((mown - sp.d0) / Math.max(0.01, sp.d1 - sp.d0)), yb = sp.ya + (sp.yb - sp.ya) * k;
+      ctx.globalAlpha = fade; ground([sp.x - MOW.W / 2, Math.min(sp.ya, yb), sp.x + MOW.W / 2, Math.max(sp.ya, yb)], T(mix(lawnCol, sp.par ? '#2f7a3a' : '#c9f08a', 0.28))); ctx.globalAlpha = 1;
+    }
+    for (const r of lot.beds) ground(r, T(C.mulch));
+    for (const r of lot.paths) ground(r, T(C.gravel));
+    ground(lot.patio, T(C.paver)); ctx.globalAlpha = 0.18; for (let x = lot.patio[0] + 0.8; x < lot.patio[2]; x += 0.8) line(P(x, lot.patio[1]), P(x, lot.patio[3]), T(C.plum), 0.5); for (let y = lot.patio[1] + 0.8; y < lot.patio[3]; y += 0.8) line(P(lot.patio[0], y), P(lot.patio[2], y), T(C.plum), 0.5); ctx.globalAlpha = 1;
+    disc(F.x, F.y, 0, F.r, T(C.gravel)); disc(F.x, F.y, 0, F.r - 0.25, T(mix(C.gravel, '#b8a888', 0.5)));
+    // fallen leaves in autumn
+    if (doy > 285 && doy < 350) for (let i = 0; i < 90; i++) { const t = lot.trees[i % lot.trees.length]; if (t.k === 'pine') continue; const a = hash(i, 1) * 7, r = t.r * 1.3 * Math.sqrt(hash(i, 2)), x = t.x + Math.cos(a) * r, y = t.y + Math.sin(a) * r; if (x < b[0] || x > lot.street[0] || y < b[1] || y > b[3]) continue; const p = P(x, y); ctx.fillStyle = T(leafCol(t.k, i)); ctx.fillRect(p[0], p[1], 1.6, 1); }
+    // the street
+    ground([lot.street[0], b[1], b[2], b[3]], T(wet() ? '#434862' : C.asphalt)); ground([lot.street[0] - 0.25, b[1], lot.street[0], b[3]], T(C.mortar));
+    // shadows from the real sun
+    if (SUN.alt > 3) {
+      const L = Math.min(3.2, 1 / Math.tan(SUN.alt * rad)), az = (SUN.az + 180) * rad, sx = Math.sin(az) * L, sy = -Math.cos(az) * L;
+      ctx.save(); ctx.beginPath(); for (const q of [P(b[0], b[1]), P(b[2], b[1]), P(b[2], b[3]), P(b[0], b[3])]) ctx.lineTo(q[0], q[1]); ctx.clip(); // shadows stay on the model
+      ctx.fillStyle = `rgba(44,33,71,${overcast ? 0.1 : 0.24})`;
+      const cast2 = (r, h) => { const pts = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]; const all = [...pts, ...pts.map((p) => [p[0] + sx * h, p[1] + sy * h])].map((p) => P(p[0], p[1])); poly(hull(all), ctx.fillStyle); };
+      cast2(H.main, H.eave + 1.4); cast2(H.wing, H.eave + 0.6); cast2(lot.shed.box, lot.shed.h + 0.3);
+      for (const f of lot.fences) cast2([Math.min(f[0], f[2]), Math.min(f[1], f[3]), Math.max(f[0], f[2]) + 0.05, Math.max(f[1], f[3]) + 0.05], 1.6);
+      for (const t of lot.trees) { const k = t.k === 'pine' ? 1 : 0.3 + 0.7 * leafAmt; ctx.globalAlpha = k; const p = P(t.x + sx * t.h * 0.75, t.y + sy * t.h * 0.75); ctx.beginPath(); ctx.ellipse(p[0], p[1], t.r * TW * 1.2, t.r * TH * 1.2, 0, 0, 7); ctx.fill(); line(P(t.x, t.y), p, ctx.fillStyle, 2); ctx.globalAlpha = 1; }
+      ctx.restore();
+    }
+
+    // everything standing, back to front
+    const objs = fixed.slice();
+    for (const car of who.cars) { const x = lot.street[0] + 1.5, y = car.y; objs.push({ x0: x - 0.9, y0: y - 2.2, x1: x + 0.9, y1: y + 2.2, h: 1.6, draw: () => {
+      box([x - 0.9, y - 2.2, x + 0.9, y + 2.2], 0.25, 0.95, car.col); box([x - 0.8, y - 1.1, x + 0.8, y + 1.3], 0.95, 1.5, mix(C.glass, C.plum, 0.35), mix(car.col, C.hi, 0.15));
+      for (const yy of [y - 1.4, y + 1.4]) for (const xx of [x - 0.9, x + 0.9]) disc(xx, yy, 0.2, 0.22, T('#26232e')); } }); }
+    if (who.mower) { const m = who.mower; objs.push({ x0: m.x - 0.3, y0: m.y - 0.3, x1: m.x + 0.3, y1: m.y + 0.3, h: 0.5, draw: () => {
+      box([m.x - 0.28, m.y - 0.28, m.x + 0.28, m.y + 0.28], 0.08, 0.32, '#c0321f'); box([m.x - 0.13, m.y - 0.13, m.x + 0.13, m.y + 0.13], 0.32, 0.46, '#2a2630');
+      line(P(m.x - m.hx * 0.25, m.y - m.hy * 0.25, 0.3), P(m.x - m.hx * 0.72, m.y - m.hy * 0.72, 0.95), T('#2a2630'), 1.2);
+      if (m.on) for (let i = 0; i < 5; i++) { const a = (time * 3 + i / 5) % 1, q = P(m.x - m.hy * (0.3 + a * 0.6), m.y + m.hx * (0.3 + a * 0.6), 0.1 + Math.sin(a * 3.1) * 0.3); ctx.fillStyle = T('#8ad05a'); ctx.fillRect(q[0], q[1], 1.2, 1.2); } } }); }
+    for (const p of who.people) objs.push({ x0: p.x - 0.25, y0: p.y - 0.25, x1: p.x + 0.25, y1: p.y + 0.25, h: 1.8, pad: 8, draw: () => { const q = P(p.x, p.y, p.pose === 'sit' && !p.kneel ? 0.0 : 0); figure(q[0], q[1], p); } });
+    const night0 = NIGHT;
+    for (const o of sortObjs(objs)) { // things round the fire are lit by it
+      const d = Math.hypot((o.x0 + o.x1) / 2 - F.x, (o.y0 + o.y1) / 2 - F.y); NIGHT = d < 3.4 && !o.tree ? night0 * (1 - 0.7 * FIRE * (1 - d / 5)) : night0;
+      o.draw(time);
+    }
+    NIGHT = night0;
+
+    // smoke, sparks and the warm light, over everything
+    if (FIRE > 0.02) {
+      const wind = clamp((wx().windMph ?? 4) / 14, 0.1, 1.4);
+      for (let i = 0; i < 9; i++) { const a = (time * 0.11 + i / 9) % 1, p = P(F.x + a * a * 3.4 * wind + Math.sin(time * 0.7 + i) * 0.2, F.y - a * 1.2 * wind, 1 + a * 6.5); ctx.beginPath(); ctx.arc(p[0], p[1], 3 + a * 11, 0, 7); ctx.fillStyle = `rgba(${NIGHT > 0.5 ? '170,160,190' : '235,230,225'},${(1 - a) * 0.2 * FIRE})`; ctx.fill(); }
+      for (let i = 0; i < 7; i++) { const a = (time * 0.6 + hash(i, 7)) % 1, p = P(F.x + Math.sin(i * 2.4 + a * 5) * 0.4 * (0.5 + a), F.y, 0.8 + a * 3.2); ctx.fillStyle = `rgba(255,${180 + (i * 9) % 60},90,${(1 - a) * FIRE})`; ctx.fillRect(p[0], p[1], 1.1, 1.1); }
+      const p = P(F.x, F.y, 0.6), R = (95 + 8 * Math.sin(time * 9) + 5 * Math.sin(time * 23)) * (0.5 + 0.5 * FIRE); const gl = ctx.createRadialGradient(p[0], p[1], 2, p[0], p[1], R);
+      const k = (0.1 + 0.42 * NIGHT) * FIRE; gl.addColorStop(0, `rgba(255,170,70,${k})`); gl.addColorStop(0.4, `rgba(255,120,40,${k * 0.4})`); gl.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = gl; ctx.save(); ctx.translate(p[0], p[1]); ctx.scale(1, 0.62); ctx.translate(-p[0], -p[1]); ctx.beginPath(); ctx.arc(p[0], p[1], R, 0, 7); ctx.fill(); ctx.restore(); ctx.globalCompositeOperation = 'source-over';
+    }
+    // the porch light, and light spilling from lit windows
+    if (dark) { ctx.globalCompositeOperation = 'lighter';
+      const spill = (p, R, a) => { const gl = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], R); gl.addColorStop(0, `rgba(255,215,94,${a})`); gl.addColorStop(1, 'rgba(255,215,94,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(p[0], p[1], R, 0, 7); ctx.fill(); };
+      if (VIS().includes('E')) spill(P(H.main[2] + 0.1, D.front[1] - 0.9, 2.3), 30, 0.5 * NIGHT);
+      H.open.forEach((o, i) => { if (o.k === 'win' && LIT(i) && VIS().includes(o.f)) { const bx = H[o.b]; spill(P3(faceQuad(o.f, bx, 1.2, 1.2, o.a, o.a)[0]), 22, 0.2 * NIGHT); } });
+      ctx.globalCompositeOperation = 'source-over'; }
+    // rain
+    if (wet()) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.strokeStyle = wx().precip === 'snow' ? 'rgba(255,255,255,.8)' : 'rgba(200,215,240,.45)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let i = 0; i < 140; i++) { const x = hash(i, 3) * Wc, sp = wx().precip === 'snow' ? 60 : 620, y = (hash(i, 4) * Hc + time * sp * (0.7 + 0.6 * hash(i, 5))) % Hc; ctx.moveTo(x, y); ctx.lineTo(x - (wx().precip === 'snow' ? 1 : 3), y + (wx().precip === 'snow' ? 1.5 : 11)); } ctx.stroke(); }
+
+    const say = sayDoing(st, c, dark), key = say + '|' + Math.floor(c.min);
+    if (key !== lastKey) { lastKey = key; lastSay = say; onSay({ say, clock: c, state: st, night: NIGHT, away: who.away, next: st.next }); }
+    requestAnimationFrame(frame);
+  }
+  function hull(p) { p = p.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up2 = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up2.length >= 2 && cr(up2[up2.length - 2], up2[up2.length - 1], q) <= 0) up2.pop(); up2.push(q); }
+    up2.pop(); lo.pop(); return lo.concat(up2); }
+
+  const api = {
+    rotate() { rot = (rot + 1) & 3; panX = panY = 0; resize(); },
+    zoom(d) { zoomAt(d > 0 ? 1.35 : 1 / 1.35); },
+    home() { zoom = 1; panX = panY = 0; },
+    setWeather(w) { weather = w; },
+    plan: () => planDay(clock(), sunT),
+  };
+  requestAnimationFrame(frame);
+  void lastSay;
+  return api;
+}
