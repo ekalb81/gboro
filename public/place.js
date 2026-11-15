@@ -5,7 +5,8 @@
 // project straight onto it. Digest items only have a venue and an address, so they are placed by:
 //   1. a named model building that matches the venue (Carolina Theatre, Tanger Center, ...)
 //   2. a restaurant or bar from eats.json that matches the venue, or has the same street address
-//   3. the street address: between the two nearest known addresses on that street, or failing that
+//   3. a shop, office or venue mapped inside a model building (the building's "tn" list), or the building at that exact address ("ad")
+//   4. the street address: between the two nearest known addresses on that street, or failing that
 //      along the street by Greensboro's block numbering (100s per block out from Elm St and Market St).
 // Anything that can't be placed inside the model goes in the paper only.
 
@@ -56,6 +57,14 @@ export function makePlacer(model, eatsPlaces = []) {
   const named = model.B.filter((b) => b.n && norm(b.n).length >= 4).map((b) => {
     const p = pairs(b.p);
     return { id: b.id, n: norm(b.n), gx: p.reduce((s, q) => s + q[0], 0) / p.length, gy: p.reduce((s, q) => s + q[1], 0) / p.length };
+  });
+  // Who is inside each building, and each building's own street address (tools/model/names.py).
+  const centre = (b) => { const p = pairs(b.p); return { id: b.id, gx: p.reduce((s, q) => s + q[0], 0) / p.length, gy: p.reduce((s, q) => s + q[1], 0) / p.length }; };
+  const tenants = model.B.flatMap((b) => (b.tn || []).filter((t) => norm(t).length >= 4).map((t) => ({ ...centre(b), n: norm(t) })));
+  const addressed = model.B.flatMap((b) => {
+    const m = (b.ad || '').match(/^(\d+)[A-Za-z]?(?:-(\d+)[A-Za-z]?)?\s+(.+)$/);
+    const a = m && parseAddress(`1 ${m[3]}`);
+    return a ? [{ ...centre(b), lo: +m[1], hi: +(m[2] || m[1]), street: a.street }] : [];
   });
   // Known addresses with coordinates, from the restaurants and bars.
   const places = eatsPlaces.filter((p) => p.lat != null && p.lon != null).map((p) => {
@@ -124,8 +133,15 @@ export function makePlacer(model, eatsPlaces = []) {
     const p = matchName(v, places);
     if (p && inModel(model, p.gx, p.gy)) return { gx: p.gx, gy: p.gy, how: 'place', place: p };
     if (p) return null; // a known place, but outside downtown
+    const t = matchName(v, tenants);
+    if (t) return { gx: t.gx, gy: t.gy, how: 'building', buildingId: t.id };
     const a = parseAddress(item.address);
     if (!a) return null;
+    // The exact number first; then a range, which only covers its own side of the street (odd or even) when both ends agree.
+    const on = addressed.filter((x) => x.street === a.street);
+    const at = on.find((x) => x.lo === a.num || x.hi === a.num)
+      || on.find((x) => a.num > x.lo && a.num < x.hi && ((x.lo - x.hi) % 2 !== 0 || (a.num - x.lo) % 2 === 0));
+    if (at) return { gx: at.gx, gy: at.gy, how: 'building', buildingId: at.id };
     const g = byAddress(a);
     return g && inModel(model, g.gx, g.gy) ? g : null;
   }

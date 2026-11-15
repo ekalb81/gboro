@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GSO Village: how it works</title>
+<meta name="description" content="Documentation for GSO Village: what it is, where every piece of data comes from, how the downtown model is built, how the site is published and how to run it yourself.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,600..800,100&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,800&display=swap">
+<style>
+  /* Same paper and ink as the site (index.html), laid out as a page to read rather than a model to watch. */
+  :root {
+    --bg:#f4ead2; --card:#fffaf0; --ink:#2a2320; --muted:#6c5d4b; --rule:#e3d5b2; --red:#a63d2a; --edge:#3a2a20;
+    --code:#efe2c2; --gold:#c99a00; --green:#2b7448; --blue:#4a68b0;
+    --display:"Fraunces",Georgia,serif; --body:"Nunito Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1b231e; --card:#232d27; --ink:#efe6d2; --muted:#b5ad99; --rule:#3b473f; --red:#f08a6c; --edge:#5a6a60;
+      --code:#2e3a33; --gold:#ffd23f; --green:#7fd0a0; --blue:#9db4ee; color-scheme:dark; }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; scroll-padding-top:16px; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 var(--body); }
+  a { color:var(--red); text-underline-offset:2px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 20px 80px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:44px; }
+  header.top { max-width:1180px; margin:0 auto; padding:36px 20px 22px; }
+  header.top .back { font-weight:800; font-size:14px; text-decoration:none; }
+  header.top h1 { font:800 clamp(34px,6vw,52px)/1.05 var(--display); margin:14px 0 10px; letter-spacing:-.01em; }
+  header.top p { max-width:64ch; margin:0; color:var(--muted); font-size:18px; }
+  nav { position:sticky; top:16px; align-self:start; max-height:calc(100vh - 32px); overflow:auto; font-size:14px; padding-right:6px; }
+  nav b { display:block; font:800 12px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; }
+  nav ol { list-style:none; margin:0; padding:0; border-left:2px solid var(--rule); }
+  nav li a { display:block; padding:4px 0 4px 14px; margin-left:-2px; border-left:2px solid transparent; color:var(--ink); text-decoration:none; }
+  nav li a:hover { border-left-color:var(--red); color:var(--red); }
+  main { min-width:0; }
+  section { padding-top:8px; margin-bottom:44px; }
+  h2 { font:800 30px/1.15 var(--display); margin:0 0 12px; padding-top:22px; border-top:3px solid var(--edge); }
+  h3 { font:800 19px/1.3 var(--body); margin:30px 0 6px; }
+  h3 .src { font-weight:600; font-size:14px; color:var(--muted); margin-left:6px; }
+  p, ul, ol { margin:0 0 14px; max-width:74ch; }
+  li { margin-bottom:5px; }
+  code { font:13.5px/1.4 var(--mono); background:var(--code); padding:1px 5px; border-radius:4px; overflow-wrap:anywhere; }
+  pre { background:var(--code); padding:12px 14px; border-radius:8px; overflow-x:auto; margin:0 0 16px; max-width:100%; }
+  pre code { background:none; padding:0; overflow-wrap:normal; }
+  .tbl { overflow-x:auto; margin:0 0 18px; border:1px solid var(--rule); border-radius:10px; background:var(--card); }
+  table { border-collapse:collapse; width:100%; font-size:14.5px; }
+  th, td { text-align:left; vertical-align:top; padding:9px 12px; border-bottom:1px solid var(--rule); }
+  th { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  td:first-child { font-weight:800; }
+  .note { background:var(--card); border-left:4px solid var(--gold); padding:10px 14px; border-radius:0 8px 8px 0; margin:0 0 16px; max-width:74ch; }
+  .flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0 0 18px; }
+  .flow div { background:var(--card); border:1px solid var(--rule); border-radius:10px; padding:12px; font-size:14px; line-height:1.45; position:relative; }
+  .flow b { display:block; font:800 15px/1.3 var(--body); margin-bottom:4px; }
+  .flow small { display:block; color:var(--muted); font:12px/1.4 var(--mono); margin-top:6px; overflow-wrap:anywhere; }
+  .flow .n { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--red); color:var(--card); font:800 12px/1 var(--body); margin-bottom:8px; }
+  footer { color:var(--muted); font-size:13px; border-top:1px solid var(--rule); padding-top:14px; }
+  @media (max-width:860px) {
+    .wrap { grid-template-columns:minmax(0,1fr); gap:20px; padding:0 16px 60px; }
+    header.top { padding:24px 16px 16px; }
+    nav { position:static; max-height:none; background:var(--card); border:1px solid var(--rule); border-radius:10px; padding:14px; }
+    nav ol { columns:2; column-gap:18px; border-left:0; }
+    nav li a { padding-left:0; border-left:0; }
+    .flow { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+  @media (max-width:460px) { .flow { grid-template-columns:minmax(0,1fr); } nav ol { columns:1; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="back" href="./">&larr; Back to the village</a>
+  <h1>How GSO Village works</h1>
+  <p>A watch-only scale model of downtown Greensboro, North Carolina, lit and peopled by live local data. This page explains where every piece of it comes from, how it is built and published, and how to run it yourself.</p>
+</header>
+<div class="wrap">
+<nav aria-label="On this page">
+  <b>On this page</b>
+  <ol>
+    <li><a href="#what">What it is</a></li>
+    <li><a href="#flow">How it fits together</a></li>
+    <li><a href="#page">What is on the page</a></li>
+    <li><a href="#sources">Data sources</a></li>
+    <li><a href="#privacy">Privacy rules</a></li>
+    <li><a href="#model">The downtown model</a></li>
+    <li><a href="#publish">Publishing</a></li>
+    <li><a href="#secrets">Secrets and variables</a></li>
+    <li><a href="#local">Running it locally</a></li>
+    <li><a href="#add">Adding a data source</a></li>
+    <li><a href="#layout">Where things live</a></li>
+    <li><a href="#limits">Known limits</a></li>
+    <li><a href="#credits">Credits and licences</a></li>
+  </ol>
+</nav>
+<main>
+
+<section id="what">
+  <h2>What it is</h2>
+  <p>GSO Village is a small isometric model of downtown Greensboro, from Bellemeade Street to Gate City Boulevard, drawn in a browser. It is something you watch, not something you play. The town reacts to what is really happening: it rains on the model when it rains downtown, City Hall lights up on council nights, barrels block a street NCDOT has closed, and a bar's windows glow while it is open.</p>
+  <p>Beside the model sits "the paper" (The Gate City Almanac), which lists the same things in words: today's events, council meetings, road closures, places to eat and drink, items from elsewhere in the city, and crime counts.</p>
+  <p>Three rules shape everything:</p>
+  <ul>
+    <li><b>Information shows up as things in the world</b>, not as badges or a dashboard: lit windows, crowds, food trucks, cones.</li>
+    <li><b>Live information is never invented.</b> A crowd gathers only at a real event and a window lights only where something is really open or on. The everyday cars and walkers are set dressing, and say nothing about real traffic (see <a href="#limits">Known limits</a>).</li>
+    <li><b>Private people are not named</b>, and crime never appears on the map (see <a href="#privacy">Privacy rules</a>).</li>
+  </ul>
+  <p>It is a personal, non-commercial community project. The site is static files on GitHub Pages; there is no server, no database and no sign-in. The code is at <a href="https://github.com/ekalb81/gboro">github.com/ekalb81/gboro</a>.</p>
+</section>
+
+<section id="flow">
+  <h2>How it fits together</h2>
+  <div class="flow">
+    <div><span class="n">1</span><b>Collect</b>Seven collectors fetch from their sources. One failing never stops the others.<small>scripts/refresh.mjs, scripts/collectors.json</small></div>
+    <div><span class="n">2</span><b>Ingest and filter</b>Posts and news become one list of items, placed in town, with the privacy rules applied.<small>scripts/ingest.mjs, scripts/lib.mjs</small></div>
+    <div><span class="n">3</span><b>Publish</b>Everything in <code>public/</code> is deployed as the whole site, every 30 minutes.<small>.github/workflows/publish.yml</small></div>
+    <div><span class="n">4</span><b>Draw</b>The page loads the model and the data files, and turns them into the scene and the paper.<small>public/app.js, public/model.js</small></div>
+  </div>
+  <p>The collectors write small JSON files into <code>public/data/</code>. The model itself, <code>public/model/downtown.json</code>, is built separately and rarely (see <a href="#model">The downtown model</a>). There is no build step for the page: it is plain JavaScript modules and one canvas, with no packages to install.</p>
+  <div class="tbl"><table>
+    <tr><th>File the page reads</th><th>Written by</th><th>Holds</th></tr>
+    <tr><td><code>data/items.json</code></td><td>ingest</td><td>Events, news and posts from the digests, news feeds and Bluesky, after the privacy rules</td></tr>
+    <tr><td><code>data/weather.json</code></td><td>weather collector</td><td>Latest observation, wind and active alerts</td></tr>
+    <tr><td><code>data/civic.json</code></td><td>council collector</td><td>Council and subcommittee meetings, "Watch" links, the City's weekly events video</td></tr>
+    <tr><td><code>data/roads.json</code></td><td>roads collector</td><td>Closures, roadwork and crashes in Greensboro</td></tr>
+    <tr><td><code>data/eats.json</code></td><td>restaurants and bars collector</td><td>Independent restaurants, bars, cafes and breweries with opening hours</td></tr>
+    <tr><td><code>data/crime.json</code></td><td>crime collector</td><td>Citywide monthly counts, and counts per police division when available</td></tr>
+    <tr><td><code>model/downtown.json</code>, <code>model/trees.json</code></td><td>the model tools</td><td>Buildings, streets, ground, parking, signals and trees</td></tr>
+  </table></div>
+  <p>While the page is open it re-reads the items every minute and the weather and road closures every 5 minutes, so it stays current without a reload. Opening hours and the council state are rechecked against the clock every 30 seconds.</p>
+</section>
+
+<section id="page">
+  <h2>What is on the page</h2>
+  <h3>The model</h3>
+  <p>The model fills the window. Drag to look around, scroll or pinch to zoom, and tap a building to read about it. The buttons zoom, return to the Lincoln Financial tower, name the landmarks, and fold the paper away. The camera never moves on its own.</p>
+  <div class="tbl"><table>
+    <tr><th>Data</th><th>What it does on the model</th></tr>
+    <tr><td>Weather</td><td>Rain, snow, storms with lightning, fog and cloud. The sun, the shadows and the street lamps follow the real sun for Greensboro. The bulb sign on the Lincoln Financial tower alternates the real time and temperature. Trees lean with the wind, leaves and petals blow, and the flags at the Tanger Center fly.</td></tr>
+    <tr><td>Weather alerts</td><td>Small chips at the top left; tap one to read it.</td></tr>
+    <tr><td>Council meetings</td><td>The Melvin Municipal Office Building lights up from an hour before a meeting until it ends, with people walking in.</td></tr>
+    <tr><td>Events and posts downtown</td><td>Placed by venue or street address. While an event is on: string lights, lit windows and a crowd. Pop-up food gets a food truck. Organizations' posts can show a chatter bubble.</td></tr>
+    <tr><td>Restaurants and bars</td><td>Storefronts are lit while open; open bars have a few people outside after dark.</td></tr>
+    <tr><td>Road closures</td><td>Barrels, cones or a stopped car on the real street. Traffic stops at full closures.</td></tr>
+    <tr><td>The seasons</td><td>Each tree follows a calendar for its kind: bloom, leaf-out, fall colour, bare branches.</td></tr>
+    <tr><td>Crime</td><td>Nothing. It is in the paper only.</td></tr>
+  </table></div>
+  <h3>The paper</h3>
+  <p>The paper has sections for Downtown, City Hall, On the roads, Food and drink, Around town and About. Items marked with a pin are on the model: point at one to see where, tap it to go there. Things outside downtown are listed under "Around town" by area, and signposts at the edge of the model point toward each area (UNCG, NC A&amp;T, the Coliseum and so on) with a count of what is on there.</p>
+  <h3>Previews</h3>
+  <p>Add these to the address to see a state without waiting for it. They can be combined with <code>&amp;</code>.</p>
+  <div class="tbl"><table>
+    <tr><th>Parameter</th><th>Values</th><th>Shows</th></tr>
+    <tr><td><code>?weather=</code></td><td><code>rain</code>, <code>snow</code>, <code>storm</code>, <code>fog</code>, <code>cloudy</code>, <code>clear</code></td><td>That sky</td></tr>
+    <tr><td><code>?time=</code></td><td><code>dawn</code>, <code>day</code>, <code>dusk</code>, <code>night</code></td><td>That light</td></tr>
+    <tr><td><code>?date=</code></td><td>A date such as <code>2026-04-05</code></td><td>The trees on that day of the year</td></tr>
+    <tr><td><code>?wind=</code></td><td>Such as <code>18-30@230</code></td><td>An 18 mph wind gusting 30, from 230 degrees</td></tr>
+    <tr><td><code>?council=</code></td><td><code>tonight</code>, <code>session</code></td><td>City Hall before and during a meeting</td></tr>
+    <tr><td><code>?roads=</code></td><td><code>demo</code></td><td>One of every kind of road event</td></tr>
+    <tr><td><code>?at=</code> and <code>&amp;z=</code></td><td>Grid position such as <code>50,60</code>, zoom <code>0.25</code> to <code>6</code></td><td>Opens on that view</td></tr>
+  </table></div>
+  <h3>The first citywide map</h3>
+  <p>The project's first version, a hand-placed sketch map of the whole city on a 96 by 60 tile grid, is still served at <a href="classic.html">classic.html</a>. Its layout is <code>public/data/map.json</code> and it is drawn by <code>public/village.js</code>. Some collectors still compute a position on that map as well.</p>
+</section>
+
+<section id="sources">
+  <h2>Data sources</h2>
+  <p>Every source is automatic and runs on GitHub. Nothing needs a home computer or a step done by hand on a schedule. Each collector keeps its last good output when a fetch fails.</p>
+  <div class="tbl"><table>
+    <tr><th>What</th><th>Source</th><th>Key needed</th><th>Command</th><th>Fetched</th></tr>
+    <tr><td>Social posts and events</td><td>Meta Muse digests, read from Gmail</td><td>Three Gmail values</td><td><code>npm run fetch</code></td><td>Every run, last 14 days</td></tr>
+    <tr><td>Local news, Bluesky</td><td>RSS feeds and public Bluesky accounts</td><td>None</td><td><code>npm run feeds</code></td><td>Every run, last 7 days</td></tr>
+    <tr><td>Weather and alerts</td><td>National Weather Service</td><td>None</td><td><code>npm run weather</code></td><td>Every run</td></tr>
+    <tr><td>Road closures</td><td>NCDOT DriveNC</td><td>Optional</td><td><code>npm run roads</code></td><td>Every run</td></tr>
+    <tr><td>Council meetings, city events</td><td>The City's schedule, its YouTube feed, news</td><td>None</td><td><code>npm run civic</code></td><td>Every run</td></tr>
+    <tr><td>Crime counts</td><td>FBI Crime Data Explorer, City open data</td><td>FBI part only</td><td><code>npm run crime</code></td><td>Every run</td></tr>
+    <tr><td>Restaurants and bars</td><td>OpenStreetMap</td><td>None</td><td><code>npm run eats</code></td><td>About once a day</td></tr>
+  </table></div>
+
+  <h3>Social posts and events <span class="src">Muse digests in Gmail</span></h3>
+  <p>Instagram, Facebook and Threads have no free way to read public local posts, so a Meta Muse job does the reading. Every 30 minutes it emails a "Greensboro update" digest to a Gmail inbox. The job collects broadly, anything Greensboro-related, and labels each item with one machine-readable line:</p>
+  <pre><code>ITEM | category | title | venue | address | start | end | url | account | accountType | posted | verified</code></pre>
+  <p>Blank fields are written <code>n/a</code>. All filtering happens later in this project's code, not in the Muse prompt.</p>
+  <p><code>scripts/fetch-digests.mjs</code> searches Gmail for <code>subject:"Greensboro update" newer_than:14d</code> (override with <code>DIGEST_QUERY</code>), using Gmail's REST API with read-only access, and saves each email's text to <code>data/raw/</code>. It waits and retries when Gmail's per-minute quota is used up. The one-time Google setup (an OAuth client and a refresh token with only the <code>gmail.readonly</code> scope) is written out step by step in the <a href="https://github.com/ekalb81/gboro#fetching-digests-automatically">README</a>.</p>
+  <p>X and TikTok are not covered. A Muse job can also stall while it waits for an approval in Muse, in which case digests stop arriving until it is approved.</p>
+
+  <h3>Local news and Bluesky <span class="src">RSS and the public Bluesky API</span></h3>
+  <p><code>scripts/fetch-feeds.mjs</code> reads the feeds listed in <code>data/sources.json</code>: The Rhino Times, the News &amp; Record, FOX8 and WXII. Regional outlets carry a <code>mustMatch</code> pattern so only Greensboro stories come through. It writes each story as an <code>ITEM</code> line into <code>data/raw/</code>, so news goes through the same ingest, placement and privacy rules as everything else. News from these outlets counts as verified.</p>
+  <p>Bluesky accounts can be listed in the same file and are read through the public <code>getAuthorFeed</code> endpoint, with no login. Only organizations should be listed. The list is empty today.</p>
+
+  <h3>Weather and alerts <span class="src">National Weather Service</span></h3>
+  <p><code>scripts/fetch-weather.mjs</code> reads the latest observation from the Piedmont Triad airport station (KGSO) and the active alerts for a point downtown, from <code>api.weather.gov</code>. It is free and needs no key. The file keeps the conditions, temperature, wind direction and gusts. The whole model shares that one station's reading.</p>
+
+  <h3>Road closures <span class="src">NCDOT DriveNC</span></h3>
+  <p><code>scripts/fetch-roads.mjs</code> reads NCDOT's traffic events and keeps those inside Greensboro (Guilford County, inside a box around the city, so High Point and the rural county are left out). With <code>DRIVENC_KEY</code> set it uses DriveNC's documented <a href="https://www.drivenc.gov/help/endpoint/event">Events API</a>. Without a key it reads the same events from the feeds behind the public DriveNC site, which works but is not a published API and could change.</p>
+  <p>Each event is a closure, roadwork, a crash or a street closed for an event. There is no free feed of traffic speed or congestion for city streets, so crashes are the only sign of live traffic.</p>
+
+  <h3>Council meetings and city events <span class="src">the City's schedule, YouTube and news</span></h3>
+  <p>No official feed of council meetings exists that a script can read, so <code>scripts/civic.mjs</code> combines several sources:</p>
+  <ul>
+    <li><b>The City's published yearly schedule</b> of council and subcommittee meetings is the baseline. Its dates are copied into <code>data/civic-config.json</code>. For a year with no schedule yet, the usual first and third Tuesday rule fills in, labelled as such.</li>
+    <li><b>Changes during the year</b> are picked up from the City's own posts and verified local news: a cancellation removes a meeting, a special meeting adds one, and a report on the day confirms the start time. Posts by individuals never change the schedule.</li>
+    <li><b>The City's YouTube feed</b> supplies a "Watch" link for each recorded meeting, cross-checks the schedule (a recording on an unscheduled day adds a meeting, and no recording three days after a scheduled one raises a warning), and supplies the weekly "On the Town" events video.</li>
+  </ul>
+  <p>Disagreements between sources appear as warnings in the publish run's summary. The one yearly chore is copying next year's dates into the config when the City posts them; the run reminds you in December. The full detail is in <a href="https://github.com/ekalb81/gboro/blob/main/docs/civic.md">docs/civic.md</a>.</p>
+  <p>The City's own website calendar is not used. It sits behind a browser check that scripts cannot pass without defeating it, and it does not list regular council meetings anyway. The City's Legistar feed stopped in June 2021.</p>
+
+  <h3>Crime counts <span class="src">FBI and City open data</span></h3>
+  <p><code>scripts/fetch-crime.mjs</code> has two independent parts:</p>
+  <ul>
+    <li><b>By month, citywide.</b> Violent and property offences for the newest complete month next to the month before, from the FBI Crime Data Explorer for the Greensboro Police Department (agency code <code>NC0410200</code>). It needs a free <a href="https://api.data.gov/signup/">api.data.gov</a> key in <code>FBI_API_KEY</code>, and runs about six weeks behind.</li>
+    <li><b>By week, per police division.</b> From the City's open data layer "GPD - Crime", with no key. The City's feed stopped on October 6, 2025, so this table is hidden for now and comes back on its own when the feed is current again.</li>
+  </ul>
+  <p>Only totals are ever requested or stored. The City fetcher asks for four fields (incident id, division, offence code, report date) and never for addresses, coordinates or anything about victims; a test checks this.</p>
+
+  <h3>Restaurants and bars <span class="src">OpenStreetMap</span></h3>
+  <p><code>scripts/fetch-eats.mjs</code> asks OpenStreetMap for named restaurants, bars, pubs, nightclubs, cafes, takeout and breweries around Greensboro. Chains (anything with a <code>brand</code> tag) are left out. It tries the Overpass API first and, because Overpass is often busy, falls back to about 40 small requests to the main OpenStreetMap API. Places change slowly, so the publish run only refetches when its copy is more than 20 hours old.</p>
+  <p>Opening hours come from OSM's <code>opening_hours</code> tag for the common shapes. Where hours are missing or too unusual to parse, the site uses typical hours for that kind of place and says it is a guess.</p>
+</section>
+
+<section id="privacy">
+  <h2>Privacy rules</h2>
+  <p>The Muse digest collects broadly, so the rules for a public site live in code, in <code>applyRules</code> in <code>scripts/lib.mjs</code>, and are covered by tests.</p>
+  <ul>
+    <li><b>Individuals are never named.</b> An item from a private person's account is shown without the account name.</li>
+    <li><b>Personal posts from individuals are held back</b> (the "community" and "other" categories).</li>
+    <li><b>Unverified news is held back.</b></li>
+    <li><b>Each item shows a short summary and a link</b> to the original public post, not a copy of it.</li>
+    <li><b>Crime is totals only</b>, in the paper only, never drawn on the model.</li>
+  </ul>
+  <p>Raw digests and held items name private people, so they never reach git or the site. <code>data/raw/</code>, <code>data/held.json</code> and <code>public/data/items.json</code> are git-ignored. Each publish run starts from a clean checkout and refetches, raw text lives only for the length of that run, and the run refuses to deploy if a held file or any raw text file is found in <code>public/</code>. Raw data is deliberately not kept in an Actions cache either, because pull requests from forks of a public repository can read caches.</p>
+  <p>The site sets no tracking cookies and collects nothing about visitors. The full policy, including the Google API terms, is in <a href="https://github.com/ekalb81/gboro/blob/main/PRIVACY.md">PRIVACY.md</a>. To ask for an item to be removed, <a href="https://github.com/ekalb81/gboro/issues">open an issue</a>.</p>
+</section>
+
+<section id="model">
+  <h2>The downtown model</h2>
+  <p>The model covers the box from 36.0768 to 36.0676 north and 79.7954 to 79.7856 west, at 9 metres per tile (about 98 by 113 tiles). The file records that box, so anything with a latitude and longitude lands in the right place. It holds 272 buildings, 438 street segments, 77 signals and stop signs, 633 trees and about 7,200 parking stalls.</p>
+  <h3>What each layer is built from</h3>
+  <div class="tbl"><table>
+    <tr><th>Layer</th><th>Source</th><th>As of</th></tr>
+    <tr><td>Building outlines, streets, parks, parking lots, rail, footpaths, signals and stop signs</td><td>OpenStreetMap</td><td>The extract used at the last rebuild</td></tr>
+    <tr><td>Building heights and stepped roofs</td><td>NC Floodplain Mapping Phase III lidar, public on NOAA's Digital Coast</td><td>Flown February 2015</td></tr>
+    <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the lidar, each checked against the aerial</td><td>2015 and 2024</td></tr>
+    <tr><td>Roof colours, lawns and planting, paving, painted parking rows</td><td>NC OneMap aerial imagery</td><td>Flown February 2024</td></tr>
+    <tr><td>Facade colours and floor counts</td><td>Mapillary street photos (about 50 buildings)</td><td>2018 and 2021</td></tr>
+    <tr><td>Landmark fronts (Kress, Carolina Theatre and others)</td><td>Photos on Wikimedia Commons, used as reference</td><td>Various</td></tr>
+    <tr><td>Lincoln Financial tower and Jefferson Standard Building</td><td>OpenStreetMap 3D building parts</td><td>Current</td></tr>
+    <tr><td>Trees: position, height, crown width, evergreen or not</td><td>The 2015 lidar, the 2024 aerial, and OpenStreetMap for trees planted since</td><td>2015 to now</td></tr>
+  </table></div>
+  <p>Google Street View is not used: its terms forbid building a model from its imagery.</p>
+
+  <h3>Rebuilding the model</h3>
+  <p>Three Python tools in <code>tools/model/</code> build the model files. They are run by hand when the inputs change; the publish run does not rebuild the model.</p>
+  <div class="tbl"><table>
+    <tr><th>Tool</th><th>Writes</th><th>When to run it</th></tr>
+    <tr><td><code>ground.py</code></td><td><code>data/model/imagery/ground.json</code>: ground cover in 1.5 m cells and the direction of painted parking lines</td><td>Only after a new statewide aerial flight</td></tr>
+    <tr><td><code>trees.py lidar</code></td><td><code>data/model/osm/trees-lidar.json</code>: tree crowns from the lidar</td><td>Only after a new lidar survey</td></tr>
+    <tr><td><code>trees.py</code></td><td><code>public/model/trees.json</code></td><td>With each model rebuild</td></tr>
+    <tr><td><code>prep.py</code></td><td><code>public/model/downtown.json</code></td><td>When OpenStreetMap or a survey layer changes. Takes about 3 minutes.</td></tr>
+  </table></div>
+  <pre><code>py tools\model\prep.py downtown-osm.json path\to\survey-inputs public\model\downtown.json</code></pre>
+  <p>The tools need Python 3 with <code>numpy</code>, <code>pillow</code>, <code>scipy</code> and <code>shapely</code>. The large survey inputs (the aerial image, lidar-derived heights and shapes, roof and facade colours, the OpenStreetMap extract) are kept in the project's working files, not in git; only the two small derived files under <code>data/model/</code> are committed. Any input that is missing is skipped. A newer <code>downtown.json</code> drops in with no code change.</p>
+
+  <h3>The renderer</h3>
+  <p><code>public/model.js</code> draws everything on plain 2D canvases, with no libraries.</p>
+  <ul>
+    <li><b>Tiles.</b> The still parts of the model are drawn once into 512-pixel tiles at the current zoom, only where the camera looks, and kept until the light or the scene changes. Tiles just outside the view and at the next zoom levels are drawn ahead in spare frame time, so drags and zooms rarely wait.</li>
+    <li><b>Draw order.</b> Buildings are ordered back to front by line of sight, not by their centre points, so long and L-shaped buildings sort correctly.</li>
+    <li><b>What hides what.</b> Anything partly behind a building, tree, lamp or parked car is drawn on a small scratch card, the outlines in front are cut out of it, and the rest is laid onto the picture. Nothing in front is ever repainted.</li>
+    <li><b>Light.</b> Shadows are cast from the real position of the sun. The colour grade, lit windows, glow and a tilt-shift blur are laid on top each frame.</li>
+  </ul>
+
+  <h3>Trees, seasons and wind</h3>
+  <p><code>public/trees.js</code> gives each tree one of 15 species with a Greensboro calendar for bloom, leaf-out, fall colour and leaf drop. No public inventory of downtown's trees exists, so the species are inferred from what is known about each tree: evergreen or not, height, crown width, and whether it stands on a street or in a park. The positions and sizes are measured; the species are educated guesses.</p>
+
+  <h3>Cars, people and the train</h3>
+  <p>The moving cars, walkers and train are a simulation, there to make the town feel alive. Cars drive the real street network (one lane each way, one-way streets respected), follow the car ahead, stop at the real signals and stop signs from OpenStreetMap and yield on side streets. Signal timings are typical, not the real ones. Parked cars sit in the real stalls of each lot, about two thirds full. Only the road closures are live data.</p>
+
+  <h3>Performance</h3>
+  <p><code>npm run bench</code> opens the model in a headless browser across desktop, laptop and phone scenarios, including dragging and zooming, and prints frame times by phase. How to run it, how to read it and what has been done so far are in <a href="https://github.com/ekalb81/gboro/blob/main/docs/PERFORMANCE.md">docs/PERFORMANCE.md</a>.</p>
+</section>
+
+<section id="publish">
+  <h2>Publishing</h2>
+  <p>The site is live at <a href="https://ekalb81.github.io/gboro/">ekalb81.github.io/gboro</a>, on GitHub Pages. One workflow, <code>.github/workflows/publish.yml</code>, does everything. It runs every 30 minutes (at 7 and 37 past the hour), on every push to <code>main</code>, and on demand from the Actions tab.</p>
+  <ol>
+    <li>Run the tests (<code>npm test</code>).</li>
+    <li>Restore the last good copies of the weather, crime counts, restaurants and bars, and the City's YouTube feed from the Actions cache. These hold only public or aggregate data.</li>
+    <li>Run every collector, then ingest (<code>node scripts/refresh.mjs</code>). A collector whose script or key is missing is skipped, not failed. Only an ingest failure fails the run.</li>
+    <li>Save those four files back to the cache.</li>
+    <li>Check that the site has its files and that no private file is in <code>public/</code>.</li>
+    <li>Deploy <code>public/</code> to the host named in the <code>DEPLOY_TARGET</code> variable.</li>
+  </ol>
+  <p>Because every run starts clean and refetches, items from a source that is down for a run drop off the site until the next good run. The weather, crime, restaurants and council video keep their last copy instead.</p>
+  <p>Cloudflare Pages is wired up as an alternative host. Switching hosts, taking the site down and the reasons behind these choices are in <a href="https://github.com/ekalb81/gboro/blob/main/PUBLISHING.md">PUBLISHING.md</a>.</p>
+  <div class="note">GitHub often starts scheduled runs 5 to 15 minutes late, and pauses the schedule on a public repository after 60 days without a commit. If the site stops updating, re-enable the workflow under Actions.</div>
+</section>
+
+<section id="secrets">
+  <h2>Secrets and variables</h2>
+  <p>These are set in the repository under Settings, then Secrets and variables, then Actions. Only the names are listed here. Values are never written in the code, in this page or in chat.</p>
+  <div class="tbl"><table>
+    <tr><th>Name</th><th>Kind</th><th>Used by</th><th>Without it</th></tr>
+    <tr><td><code>DEPLOY_TARGET</code></td><td>Variable</td><td>The publish workflow. Set to <code>github-pages</code> (or <code>cloudflare</code>).</td><td>Nothing deploys and scheduled runs are skipped</td></tr>
+    <tr><td><code>GMAIL_CLIENT_ID</code><br><code>GMAIL_CLIENT_SECRET</code><br><code>GMAIL_REFRESH_TOKEN</code></td><td>Secrets</td><td>Muse digests collector</td><td>The collector is skipped; no social posts or events</td></tr>
+    <tr><td><code>FBI_API_KEY</code></td><td>Secret</td><td>Crime collector, monthly citywide part</td><td>That part is skipped</td></tr>
+    <tr><td><code>DRIVENC_KEY</code></td><td>Secret</td><td>Road closures collector</td><td>Falls back to the public DriveNC site's feeds</td></tr>
+    <tr><td><code>CLOUDFLARE_API_TOKEN</code><br><code>CLOUDFLARE_ACCOUNT_ID</code></td><td>Secrets</td><td>Only when deploying to Cloudflare Pages</td><td>Not needed on GitHub Pages</td></tr>
+    <tr><td><code>CLOUDFLARE_PROJECT</code></td><td>Variable</td><td>Cloudflare project name, if not <code>gso-village</code></td><td>Not needed on GitHub Pages</td></tr>
+  </table></div>
+  <p>Two optional settings exist for local use: <code>DIGEST_QUERY</code> changes the Gmail search, and <code>PORT</code> changes the local server's port.</p>
+</section>
+
+<section id="local">
+  <h2>Running it locally</h2>
+  <p>You need <a href="https://nodejs.org/">Node.js</a> 20 or newer and git. There are no packages to install. The commands below are for Windows Command Prompt.</p>
+  <pre><code>git clone https://github.com/ekalb81/gboro.git
+cd gboro
+npm test
+npm run ingest
+npm run weather
+npm run roads
+npm run serve</code></pre>
+  <p>Then open <code>http://localhost:8080</code>. With no keys you get the model, the weather and the road closures; the paper's other sections stay empty until their collectors have run.</p>
+  <div class="note"><code>npm run dev</code> chains those steps in one command, but it is written for a Unix shell. In Command Prompt it stops if the weather or roads fetch fails, so the separate commands above are the dependable way on Windows.</div>
+  <h3>Running the collectors with keys</h3>
+  <p>Create a file named <code>.env</code> in the repo folder (it is git-ignored) with one <code>NAME=value</code> line per secret from the table above, then:</p>
+  <pre><code>node --env-file=.env scripts\refresh.mjs
+npm run serve</code></pre>
+  <p>That runs every collector and the ingest, exactly as the publish run does. Useful variations:</p>
+  <div class="tbl"><table>
+    <tr><th>Command</th><th>Does</th></tr>
+    <tr><td><code>node scripts\refresh.mjs --list</code></td><td>Shows which collectors are ready and which are missing a key</td></tr>
+    <tr><td><code>node scripts\refresh.mjs --only=weather</code></td><td>Runs one collector, then ingest</td></tr>
+    <tr><td><code>npm run fetch -- --dry-run</code></td><td>Lists the digests it would save, changing nothing</td></tr>
+    <tr><td><code>npm run feeds -- --days=3</code></td><td>News from the last 3 days only</td></tr>
+    <tr><td><code>npm run civic</code>, <code>npm run crime</code>, <code>npm run eats</code></td><td>One collector on its own</td></tr>
+    <tr><td><code>node scripts\serve.mjs 9000</code></td><td>Serves on another port</td></tr>
+    <tr><td><code>npm run bench</code></td><td>The performance benchmark (needs Playwright; see docs/PERFORMANCE.md)</td></tr>
+  </table></div>
+  <p>To set a single key for one Command Prompt window without a file, use <code>set DRIVENC_KEY=your-key</code> and then run the command.</p>
+</section>
+
+<section id="add">
+  <h2>Adding a data source</h2>
+  <ol>
+    <li>Write the collector as <code>scripts/fetch-&lt;source&gt;.mjs</code>. It either writes its own JSON file into <code>public/data/</code>, as the weather does, or writes <code>ITEM</code> lines into <code>data/raw/</code> so ingest and the privacy rules handle it, as the news feeds do. It should exit with an error on failure and leave its last good output in place.</li>
+    <li>Add one entry to <code>scripts/collectors.json</code> with its <code>name</code> and <code>script</code>, and optionally <code>args</code>, <code>env</code> (the keys it needs) and <code>timeoutMinutes</code> (default 5).</li>
+    <li>If it needs a key, add the secret in the repository settings and pass it in the "Collect data and ingest" step of <code>publish.yml</code>.</li>
+    <li>Teach the page to show it: load the file in <code>public/app.js</code>, add it to the scene handed to the model, and write its lines into the paper.</li>
+    <li>Add tests under <code>test/</code>, with a saved sample of the source's response as a fixture.</li>
+  </ol>
+  <p>A source must be dependable and automatic. Anything that needs a file downloaded by hand each week, or a script running on someone's own computer, does not qualify.</p>
+</section>
+
+<section id="layout">
+  <h2>Where things live</h2>
+  <div class="tbl"><table>
+    <tr><th>Path</th><th>What it is</th></tr>
+    <tr><td><code>public/</code></td><td>The whole site. <code>index.html</code> and <code>app.js</code> (page, scene and the paper), <code>model.js</code> (renderer), <code>trees.js</code>, <code>place.js</code> (venue and address placement), <code>civic.js</code>, <code>crime.js</code>, <code>hours.js</code>, <code>docs.html</code> (this page), <code>classic.html</code> with <code>village.js</code>, <code>roads.js</code> and <code>eats.js</code> (the first citywide map)</td></tr>
+    <tr><td><code>public/data/</code></td><td>The collectors' output. Generated, git-ignored, apart from <code>map.json</code></td></tr>
+    <tr><td><code>public/model/</code></td><td>The built model: <code>downtown.json</code> and <code>trees.json</code></td></tr>
+    <tr><td><code>scripts/</code></td><td>Collectors (<code>fetch-*.mjs</code>, <code>civic.mjs</code>) and their libraries, <code>ingest.mjs</code> and <code>lib.mjs</code> (parsing, placement, privacy rules), <code>refresh.mjs</code> and <code>collectors.json</code> (the runner), <code>serve.mjs</code>, <code>bench.mjs</code></td></tr>
+    <tr><td><code>data/</code></td><td><code>sources.json</code> (news feeds and Bluesky accounts), <code>civic-config.json</code> (council schedule), <code>model/</code> (small committed model inputs). <code>raw/</code> and <code>held.json</code> are generated and git-ignored</td></tr>
+    <tr><td><code>tools/model/</code></td><td>The Python tools that build the model</td></tr>
+    <tr><td><code>test/</code></td><td>Tests for parsing, dates, placement, privacy rules and every collector, with saved fixtures. Run with <code>npm test</code></td></tr>
+    <tr><td><code>.github/workflows/publish.yml</code></td><td>The one workflow</td></tr>
+    <tr><td><code>README.md</code>, <code>PUBLISHING.md</code>, <code>PRIVACY.md</code>, <code>docs/</code></td><td>Deeper notes on single topics</td></tr>
+  </table></div>
+</section>
+
+<section id="limits">
+  <h2>Known limits</h2>
+  <ul>
+    <li><b>Downtown only on the model.</b> The rest of the city appears in the paper under "Around town" and on the edge signposts.</li>
+    <li><b>Traffic is simulated.</b> The moving cars and walkers do not reflect real traffic or real crowds. Only closures, roadwork and crashes are live, and signal timings are typical.</li>
+    <li><b>Building heights are from 2015.</b> A handful of buildings finished since then, such as the Tanger Center and Hyatt Place, have estimated heights. The county was flown again in 2024, and those heights have not been brought in yet.</li>
+    <li><b>The model is rebuilt by hand.</b> New buildings and street changes in OpenStreetMap appear only after a rebuild.</li>
+    <li><b>Tree species are inferred</b>, as described above.</li>
+    <li><b>One weather station.</b> The reading is from the airport, about nine miles west of downtown.</li>
+    <li><b>Crime is coarse and late.</b> Citywide monthly totals run about six weeks behind, and the per-division weekly table is waiting on the City's feed, which stopped in October 2025.</li>
+    <li><b>Social coverage depends on the Muse job.</b> If it stalls, events stop arriving, and events older than 14 days of digests drop off. X and TikTok are not covered.</li>
+    <li><b>Some news feeds refuse GitHub's servers at times.</b> The News &amp; Record feed has answered "too many requests" to the publish run. A feed that fails is skipped for that run.</li>
+    <li><b>Individuals' post links.</b> An individual's account name is hidden, but the link to their public post can still reveal who posted it.</li>
+    <li><b>Opening hours can be wrong or guessed</b> where OpenStreetMap has none. Guesses are labelled.</li>
+    <li><b>The council schedule needs one update a year</b>, when the City posts the next year's dates.</li>
+    <li><b>The keyless DriveNC route is unofficial</b> and could break; the keyed API is the one in use on the live site.</li>
+    <li><b>Performance varies by browser.</b> Benchmarks so far are in Chromium. The model has been seen to run slowly in Safari on high-resolution screens, and that work is ongoing.</li>
+    <li><b>Up to 30 minutes behind.</b> Data is as fresh as the last publish run, which GitHub may start late.</li>
+  </ul>
+</section>
+
+<section id="credits">
+  <h2>Credits and licences</h2>
+  <ul>
+    <li>Map data, restaurants and bars: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, under the Open Database License (ODbL).</li>
+    <li>Building heights and trees: NC Floodplain Mapping Program Phase III lidar (2015), distributed by NOAA's Office for Coastal Management.</li>
+    <li>Roof colours and ground cover: NC OneMap orthoimagery (2024), NC CGIA and the NC 911 Board.</li>
+    <li>Facades: Mapillary street photos, © Mapillary contributors, CC BY-SA 4.0.</li>
+    <li>Weather: the National Weather Service.</li>
+    <li>Road closures: NCDOT DriveNC.</li>
+    <li>Crime counts: the FBI Crime Data Explorer and the City of Greensboro's open data.</li>
+    <li>Council schedule and videos: the City of Greensboro.</li>
+    <li>News headlines link to their publishers. Posts link to their original public posts.</li>
+    <li>Type: Fraunces and Nunito Sans, from Google Fonts.</li>
+  </ul>
+  <footer>GSO Village is a personal, non-commercial community project and is not affiliated with the City of Greensboro or any organization shown. Questions and removal requests: <a href="https://github.com/ekalb81/gboro/issues">open an issue</a>.</footer>
+</section>
+
+</main>
+</div>
+</body>
+</html>

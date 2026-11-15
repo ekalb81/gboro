@@ -2,7 +2,7 @@
 the optional survey layers (lidar tiers and heights, roof colours, aerial vegetation, street-photo facades).
 
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
-inputs-dir holds osm/shapes.json, osm/downtown-raw.json, osm/roofs.json, osm/facades.json,
+inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
 osm/heights.json, imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
 painted parking lines read from the 2024 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
@@ -319,10 +319,18 @@ try:
 except FileNotFoundError: pass
 print('footpaths',len(FW),'areas',len(GA),'lots',len(PL),'stall rows',len(SR),'stalls',sum(r[4] for r in SR),'signals/stops',len(SIG))
 
+# names: the building's own, who is inside it, and its street address (tools/model/names.py)
+try:
+    sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
+    import names
+    try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
+    except FileNotFoundError: NOV={}
+    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV)
+    print('names',names.coverage(B))
+except FileNotFoundError: pass
+
 GEO={'north':N,'south':S,'west':Wl,'east':El,'mPerDegLon':round(k,3),'mPerDegLat':110574}
 out={'GEO':GEO,'X':X,'GX':round(GX,2),'GY':round(GY,2),'M':M,'B':B,'R':R,'RL':RL,'PK':PK,'PL':PL,'TR':traffic,'TRAIN':train,'PT':PT,'VG':VG,'FW':FW,'GA':GA,'SR':SR,'GC':GC,'SIG':SIG}
 s=json.dumps(out,separators=(',',':'))
 open(OUT,'w').write(s)
 print(len(B),len(R),len(RL),len(PK),len(PL),len(traffic),'train pts',len(train)//2,'trainlen',round(plen(rc[0]),1) if rc else 0,'bytes',len(s),'GX',GX,'GY',GY)
-named=[b['n'] for b in B if b['n']]
-print(len(named))
