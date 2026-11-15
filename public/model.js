@@ -647,8 +647,16 @@ function standInAt(tx,ty,any){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/V
     for(let y=a1;y<=b1&&ok;y++)for(let x=a0;x<=b0;x++)if(!tiles.has(s+'|'+x+'|'+y)){ok=false;break}
     if(ok){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bd=d}}
   return best}
+// No scale covers the whole square yet (a zoom in the first seconds, before the small whole-model copy is drawn): the
+// scale with the most of it already made, nearest first on a tie, so what can be shown is not left blank.
+function partStandIn(tx,ty){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,r3=(ty+1)*TILE/VS;let best=null,bn=0,bd=1e9;
+  for(const s of scales){const d=Math.abs(Math.log(s/VS)),nx=Math.ceil(BW*s/TILE)-1,ny=Math.ceil(BH*s/TILE)-1;
+    const a0=Math.max(0,Math.floor(r0*s/TILE)),a1=Math.max(0,Math.floor(r1*s/TILE)),b0=Math.min(nx,Math.ceil(r2*s/TILE)-1),b1=Math.min(ny,Math.ceil(r3*s/TILE)-1);let n=0,m=0;
+    for(let y=a1;y<=b1;y++)for(let x=a0;x<=b0;x++){m++;if(tiles.has(s+'|'+x+'|'+y))n++}
+    const f=m?n/m:0;if(f>bn||(f===bn&&f>0&&d<bd)){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bn=f;bd=d}}
+  return best}
 function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
-  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);
+  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);if(!t)continue;
     const i0=Math.max(r0,x*TILE/s),i1=Math.max(r1,y*TILE/s),i2=Math.min(r2,(x+1)*TILE/s),i3=Math.min(r3,(y+1)*TILE/s);if(i2<=i0||i3<=i1)continue;
     const dx=Math.round(i0*VS)-cx,dy=Math.round(i1*VS)-cy,dw=Math.round(i2*VS)-cx-dx,dh=Math.round(i3*VS)-cy-dy,sx=i0*s-x*TILE,sy=i1*s-y*TILE,sw=(i2-i0)*s,sh=(i3-i1)*s;
     w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}}
@@ -918,7 +926,7 @@ function frame(ts){const F0=performance.now();
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const X=tx*TILE-cx,Y=ty*TILE-cy,key=VS+'|'+tx+'|'+ty;let t,si;
     // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
     // a zoom on its way: every square from tiles already made, at whatever scale is nearest
-    if(zg){if(si=standInAt(tx,ty,true)){drawStandIn(si,cx,cy);if(BM)bmF.si=(bmF.si||0)+1}continue}
+    if(zg){if(si=standInAt(tx,ty,true)||partStandIn(tx,ty)){drawStandIn(si,cx,cy);if(BM)bmF.si=(bmF.si||0)+1}continue}
     if(!tiles.has(key)&&(si=standInAt(tx,ty))){const t0=performance.now();t=budget.left>0?work(key,tx,ty,VS,t0+budget.left):null;budget.left-=performance.now()-t0;
       if(!t){drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
     else t=getTile(tx,ty,budget);
