@@ -7,6 +7,7 @@ model's bounds) and writes <inputs-dir>/imagery/ground.json with
            0 light paving/concrete, 1 asphalt, 2 lawn, 3 planted/wooded ground, 4 bare earth or mulch, 5 water (unused downtown), 6 shade (only while building the grid)
   stripes: painted-line directions in 3 m cells (3 per model tile), for laying out parking stalls: per cell the
            dominant direction of thin bright lines in degrees (grid axes: x east, y south) and how clear it is (0-9).
+The aerial comes from tools/model/ortho.py (which see: the picture must cover exactly the model's bounds).
 Only the aerial is needed to rebuild this file; a new statewide flight (every few years) is the only reason to.
 """
 import json, math, sys, os
@@ -16,7 +17,7 @@ from scipy import ndimage as ndi
 Image.MAX_IMAGE_PIXELS = None
 INP = (sys.argv[1] if len(sys.argv) > 1 else '/mnt/project-files/village').rstrip('/') + '/'
 OUT = sys.argv[2] if len(sys.argv) > 2 else INP + 'imagery/ground.json'
-N, S, Wl, El = 36.0768, 36.0676, -79.7954, -79.7856; M = 9.0
+N, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856; M = 9.0
 k = math.cos(math.radians((N + S) / 2)) * 111320
 GX = (El - Wl) * k / M; GY = (N - S) * 110574 / M
 im = np.asarray(Image.open(INP + 'imagery/ortho-downtown-15cm.jpg').convert('RGB')).astype(np.float32) / 255

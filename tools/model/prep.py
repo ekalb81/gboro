@@ -5,6 +5,7 @@ Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
 osm/heights.json, imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
 painted parking lines read from the 2024 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
+Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
 """
 import json,math,sys,os
@@ -12,7 +13,7 @@ src=sys.argv[1]
 INP=(sys.argv[2] if len(sys.argv)>2 else '/mnt/project-files/village').rstrip('/')+'/'
 OUT=sys.argv[3] if len(sys.argv)>3 else os.path.join(os.path.dirname(__file__),'..','..','public','model','downtown.json')
 d=json.load(open(src))
-N,S,Wl,El=36.0768,36.0676,-79.7954,-79.7856
+N,S,Wl,El=36.0768,36.0660,-79.7954,-79.7856
 M=9.0
 lat0=N;lon0=Wl;k=math.cos(math.radians((N+S)/2))*111320
 def g(p): return ((p['lon']-lon0)*k/M,(lat0-p['lat'])*110574/M)
@@ -41,6 +42,7 @@ for e in d['elements']:
         if not any(inreg(x,y,3) for x,y in pts): continue
         area=t.get('area')=='yes' or (t['highway']=='pedestrian' and pts[0]==pts[-1])
         R.append({'c':rcls[t['highway']],'n':t.get('name',''),'p':flat(pts),'ar':1 if area else 0,'ow':1 if t.get('oneway')=='yes' else 0})
+        if t.get('bridge') in ('yes','viaduct') and not area: R[-1]['br']=1;R[-1]['ln']=t.get('lanes','')
     elif t.get('railway')=='rail':
         if not any(inreg(x,y,3) for x,y in pts): continue
         RL.append({'n':t.get('name',''),'p':flat(pts),'sv':1 if t.get('service') else 0})
@@ -92,15 +94,30 @@ X=[]
 for pt,ds in vx.items():
     if len(set(d[0] for d in ds))>=2 and len(ds)>=3 and inreg(pt[0],pt[1]):
         X.append([round(pt[0],2),round(pt[1],2),[[d[1],d[2],d[3]] for d in ds]])
-# lidar-derived shapes: stepped tiers inside footprints, and verified buildings OSM lacks
+# lidar-derived shapes: stepped tiers inside footprints, and verified buildings OSM lacks (outlines from the State's
+# 2022 building footprints where it has one, else from the lidar; 't' is set for the depot's platform canopies)
 try:
     SHP=json.load(open(INP+'osm/shapes.json'))
     for b in B:
         t=SHP['tiers'].get(str(b['id']))
         if t: b['tb']=t['base'];b['tr']=t['tiers']
     for n,nb in enumerate(SHP['new']):
-        B.append({'p':nb['p'],'l':None,'h':None,'lh':nb['h'],'t':'yes','n':'','id':9100000000+n,'a':'','mat':'','rs':'','lidar_new':1})
+        B.append({'p':nb['p'],'l':None,'h':None,'lh':nb['h'],'t':nb.get('t','yes'),'n':'','id':9100000000+n,'a':'','mat':'','rs':'','lidar_new':1})
 except FileNotFoundError: pass
+# a building that straddles the edge of the model is cut off at the edge, not left hanging over it
+try:
+    from shapely.geometry import Polygon as _Pg, box as _box
+    _brd=_box(0,0,GX,GY)
+    def _clip(p):
+        xs=p[0::2];ys=p[1::2]
+        if min(xs)>=0 and min(ys)>=0 and max(xs)<=GX and max(ys)<=GY: return p
+        q=_Pg(list(zip(xs,ys))).buffer(0).intersection(_brd)
+        if q.geom_type=='MultiPolygon': q=max(q.geoms,key=lambda g_:g_.area)
+        return flat(list(q.exterior.coords)[:-1]) if q.geom_type=='Polygon' and not q.is_empty and q.area>.02 else None
+    for b in B:
+        b['p']=_clip(b['p']) or b['p']
+        if b.get('tr'): b['tr']=[dict(t_,p=q) for t_ in b['tr'] for q in [_clip(t_['p'])] if q]
+except ImportError: pass
 # 3D building parts (from the unfiltered OSM extract)
 PT=[]
 try:
@@ -152,6 +169,18 @@ try:
         runs.append(n)
         rows.append(','.join(format(r,'x') for r in runs))
     VG={'r':RES,'w':gw,'h':gh,'rows':rows}
+    # roof colours for the buildings OpenStreetMap lacks (roofs.json only knows OSM ids): the sunlit roof's median colour
+    from PIL import ImageDraw
+    for b in B:
+        if b.get('rc') or not b.get('lidar_new'): continue
+        q=[(x*M/k/(El-Wl)*W_,y*M/110574/(N-S)*H_) for x,y in zip(b['p'][0::2],b['p'][1::2])]
+        x0,y0=int(min(p[0] for p in q)),int(min(p[1] for p in q));x1,y1=int(max(p[0] for p in q))+1,int(max(p[1] for p in q))+1
+        if x0<0 or y0<0 or x1>W_ or y1>H_ or x1-x0<3 or y1-y0<3: continue
+        mk_=Image.new('L',(x1-x0,y1-y0),0);ImageDraw.Draw(mk_).polygon([(a-x0,c-y0) for a,c in q],fill=255)
+        sel=im[y0:y1,x0:x1][np.asarray(mk_)>0]
+        if len(sel)<20: continue
+        lit=sel[sel.max(-1)>.28];med=np.median(lit if len(lit)>=.15*len(sel) else sel,axis=0)
+        b['rc']='#%02x%02x%02x'%tuple(int(round(v*255)) for v in med)
 except FileNotFoundError: pass
 
 # facade readings from Mapillary street photos (2018/2021)
@@ -317,6 +346,114 @@ try:
         GC=gd['gc']
     except (FileNotFoundError,NameError): pass
 except FileNotFoundError: pass
+# ---- bridges and railroad crossings (OpenStreetMap bridge=yes ways and railway=level_crossing nodes) ----
+# The model's ground is flat, so each bridge is a slab ("deck") the renderer stands on it:
+#   road over rail or road: the span is a slab on piers, and the road climbs to it on stepped ramps of fill
+#   rail over road: the tracks stay at ground level on a low girder plate and the road passes under it (DK 'dip'
+#     pieces are the road's last metres each side, shaded as the dip into the underpass)
+#   covered footbridges between buildings: a glazed box above the street
+# DK: {k:'road'|'rail'|'foot', p: outline, z0,z1: underside and top in metres, cl: centre line (road), w: road width,
+#      sp: 1 for a span, pr: piers, rl: the tracks on a rail deck, dip: [[line, road class], ...]}
+# LX: level crossings [ax,ay,bx,by,road class,gates]: where a street crosses the tracks at grade, from the first rail to the last
+DK=[];LX=[]
+try:
+    from shapely.geometry import Polygon,LineString,Point,MultiLineString
+    from shapely.ops import unary_union,substring,linemerge
+    RWm=[16,14,12,10,8,4.5,5];Mi=1/M;SPAN_TOP,SPAN_UNDER,STEP,RAMP=7.0,5.8,.7,110.0
+    def ring(g_):
+        if g_.geom_type!='Polygon': g_=max(g_.geoms,key=lambda q:q.area)
+        return flat(list(g_.exterior.coords)[:-1])
+    def lines(g_): return [m for m in (getattr(g_,'geoms',None) or [g_]) if m.geom_type=='LineString' and m.length>0]
+    rails=[LineString(list(zip(r['p'][0::2],r['p'][1::2]))) for r in RL]
+    roadl=[(LineString(list(zip(r['p'][0::2],r['p'][1::2]))),r) for r in R if not r['ar']]
+    board=Polygon([(0,0),(GX,0),(GX,GY),(0,GY)])
+    # road bridges
+    for ln,r in roadl:
+        if not r.get('br') or r['c']>4 or ln.length*M<12 or not ln.intersects(board): continue
+        try: lanes_=float(r.get('ln') or 0)
+        except ValueError: lanes_=0
+        wd=max(RWm[r['c']],lanes_*3.0);half=(wd/2+2.8)*Mi;hg=(RWm[r['c']]/2+2.8)*Mi
+        def edges(q,h_,lanes_w): return {'ed':[flat(list(m.coords)) for sd in (1,-1) for m in lines(q.offset_curve(sd*(h_-.9*Mi)))],'ln':[flat(list(m.coords)) for sd in (1,-1) for m in lines(q.offset_curve(sd*lanes_w/4*Mi))] if lanes_w>=17 else []}
+        # what the span crosses must clear it: keep piers away from tracks and from the streets underneath
+        under=[q for q in rails if q.distance(ln)<half]+[q.buffer((RWm[o['c']]/2)*Mi) for q,o in roadl if o is not r and not o.get('br') and o['c']<=5 and q.crosses(ln)]
+        piers=[];n_=max(1,round(ln.length*M/24))
+        for i in range(1,n_):
+            pt=ln.interpolate(i/n_,normalized=True);a_=ln.interpolate(max(0,i/n_-.01),normalized=True);dx,dy=pt.x-a_.x,pt.y-a_.y;L_=math.hypot(dx,dy) or 1;ux,uy=dx/L_,dy/L_
+            q=Polygon([(pt.x-uy*half*.62-ux*.07,pt.y+ux*half*.62-uy*.07),(pt.x+uy*half*.62-ux*.07,pt.y-ux*half*.62-uy*.07),(pt.x+uy*half*.62+ux*.07,pt.y-ux*half*.62+uy*.07),(pt.x-uy*half*.62+ux*.07,pt.y+ux*half*.62+uy*.07)])
+            if all(q.distance(u)>2.2*Mi for u in under): piers.append(ring(q))
+        span=ln.buffer(half,cap_style='flat',join_style='mitre').intersection(board)
+        if span.is_empty: continue
+        DK.append({'k':'road','p':ring(span),'z0':SPAN_UNDER,'z1':SPAN_TOP,'cl':r['p'],'w':wd,'sp':1,'pr':piers,'n':r['n'],**edges(ln,half,wd)})
+        # the approaches: along the same street away from each end, down to the ground before the next junction
+        same=[q for q,o in roadl if o is not r and o['n']==r['n'] and o['c']==r['c'] and not o.get('br')]
+        merged=lines(linemerge(MultiLineString([list(q.coords) for q in same]))) if same else []
+        junc=[Point(x[0],x[1]) for x in X]
+        for end in (Point(ln.coords[0]),Point(ln.coords[-1])):
+            ch=next((q for q in merged if Point(q.coords[0]).distance(end)<.02 or Point(q.coords[-1]).distance(end)<.02),None)
+            if ch is None: continue
+            if Point(q_:=ch.coords[-1]).distance(end)<.02: ch=LineString(list(ch.coords)[::-1])
+            run=min(RAMP*Mi,ch.length)
+            js=[ch.project(j) for j in junc if j.distance(ch)<.05 and ch.project(j)>3*Mi]
+            if js: run=min(run,max(30*Mi,min(js)-(RWm[r['c']]/2+9)*Mi))
+            n_=max(2,round(SPAN_TOP/STEP))
+            for i in range(n_):
+                a_,b_=run*i/n_,run*(i+1)/n_;piece=substring(ch,a_,b_);t_=(i+.5)/n_
+                if piece.length<=0: continue
+                h_=half+(hg-half)*t_;wd_=RWm[r['c']]+(wd-RWm[r['c']])*(1-t_);poly_=piece.buffer(h_,cap_style='flat',join_style='mitre').intersection(board)
+                if poly_.is_empty or poly_.area<.01: continue
+                DK.append({'k':'road','p':ring(poly_),'z0':0,'z1':round(SPAN_TOP*(1-(i+1)/(n_+1)),2),'cl':flat(list(piece.coords)),'w':round(wd_,1),**edges(piece,h_,wd_)})
+    # rail bridges: neighbouring tracks share one deck
+    rb=[];
+    for e in raw_el:
+        t=e.get('tags',{})
+        if e['type']=='way' and t.get('railway')=='rail' and t.get('bridge') in ('yes','viaduct'):
+            pts=[g(ndr[i]) for i in e['nodes'] if i in ndr]
+            if len(pts)>=2 and all(inreg(x,y,-.5) for x,y in pts): rb.append(LineString(pts))
+    groups=[]
+    for q in rb:
+        hit=[g_ for g_ in groups if any(q.distance(o)<14*Mi for o in g_)]
+        for g_ in hit: groups.remove(g_)
+        groups.append(sum(hit,[])+[q])
+    for g_ in groups:
+        deck=unary_union([q.buffer(2.7*Mi,cap_style='flat') for q in g_]).convex_hull
+        dips=[]
+        for q,o in roadl:
+            if o['c']>5 or not q.intersects(deck): continue
+            for far in (16,8):
+                for piece in lines(q.intersection(deck.buffer(far*Mi)).difference(deck)): dips.append([flat(list(piece.coords)),o['c']])
+        DK.append({'k':'rail','p':ring(deck),'z0':0,'z1':2.2,'rl':[flat(list(q.coords)) for q in g_],'dip':dips})
+    # covered footbridges between buildings
+    for e in raw_el:
+        t=e.get('tags',{})
+        if e['type']=='way' and t.get('highway')=='footway' and t.get('bridge')=='yes' and t.get('footway')!='sidewalk':
+            pts=[g(ndr[i]) for i in e['nodes'] if i in ndr]
+            if len(pts)<2 or not all(inreg(x,y,-.5) for x,y in pts): continue
+            q=LineString(pts)
+            if q.length*M<8: continue
+            DK.append({'k':'foot','p':ring(q.buffer(1.7*Mi,cap_style='flat')),'z0':5.5,'z1':8.6,'cv':1 if t.get('covered')=='yes' else 0})
+    # level crossings
+    lxn=[e for e in raw_el if e['type']=='node' and e.get('tags',{}).get('railway')=='level_crossing']
+    for q,o in roadl:
+        if o['c']>5 or o.get('br'): continue
+        on=sorted((q.project(Point(g(e))),e) for e in lxn if q.distance(Point(g(e)))<.01)
+        while on:
+            grp=[on.pop(0)]
+            while on and on[0][0]-grp[-1][0]<30*Mi: grp.append(on.pop(0))
+            a_,b_=q.interpolate(grp[0][0]),q.interpolate(grp[-1][0])
+            if not (inreg(a_.x,a_.y,-1.2) and inreg(b_.x,b_.y,-1.2)): continue
+            if a_.distance(b_)<1e-6:
+                p0,p1=q.interpolate(max(0,grp[0][0]-.1)),q.interpolate(min(q.length,grp[0][0]+.1));dx,dy=p1.x-p0.x,p1.y-p0.y;L_=math.hypot(dx,dy) or 1
+                a_,b_=Point(a_.x-dx/L_*.01,a_.y-dy/L_*.01),Point(a_.x+dx/L_*.01,a_.y+dy/L_*.01)
+            gates=1 if any(e['tags'].get('crossing:barrier') in ('full','half','double_half','yes') for _,e in grp) else 0
+            # the same crossing mapped on a second way of the street (split at a rail): keep one
+            near=next((l for l in LX if l[4]==o['c'] and min(math.hypot(l[i]-p_.x,l[i+1]-p_.y) for i in (0,2) for p_ in (a_,b_))<30*Mi),None)
+            if near:
+                ends=[(near[0],near[1]),(near[2],near[3]),(a_.x,a_.y),(b_.x,b_.y)];far=max(((u,v) for u in ends for v in ends),key=lambda e_:math.dist(*e_))
+                near[0:4]=[round(far[0][0],2),round(far[0][1],2),round(far[1][0],2),round(far[1][1],2)];near[5]=max(near[5],gates);continue
+            LX.append([round(a_.x,2),round(a_.y,2),round(b_.x,2),round(b_.y,2),o['c'],gates])
+except (ImportError,NameError) as ex: print('no bridges or crossings:',ex)
+for r in R: r.pop('ln',None)
+print('decks',[(d_['k'],d_['z1']) for d_ in DK if d_.get('sp') or d_['k']!='road'],'ramp steps',sum(1 for d_ in DK if d_['k']=='road' and not d_.get('sp')),'crossings',LX)
 print('footpaths',len(FW),'areas',len(GA),'lots',len(PL),'stall rows',len(SR),'stalls',sum(r[4] for r in SR),'signals/stops',len(SIG))
 
 # names: the building's own, who is inside it, and its street address (tools/model/names.py)
@@ -330,7 +467,7 @@ try:
 except FileNotFoundError: pass
 
 GEO={'north':N,'south':S,'west':Wl,'east':El,'mPerDegLon':round(k,3),'mPerDegLat':110574}
-out={'GEO':GEO,'X':X,'GX':round(GX,2),'GY':round(GY,2),'M':M,'B':B,'R':R,'RL':RL,'PK':PK,'PL':PL,'TR':traffic,'TRAIN':train,'PT':PT,'VG':VG,'FW':FW,'GA':GA,'SR':SR,'GC':GC,'SIG':SIG}
+out={'GEO':GEO,'X':X,'GX':round(GX,2),'GY':round(GY,2),'M':M,'B':B,'R':R,'RL':RL,'PK':PK,'PL':PL,'TR':traffic,'TRAIN':train,'PT':PT,'VG':VG,'FW':FW,'GA':GA,'SR':SR,'GC':GC,'SIG':SIG,'DK':DK,'LX':LX}
 s=json.dumps(out,separators=(',',':'))
 open(OUT,'w').write(s)
 print(len(B),len(R),len(RL),len(PK),len(PL),len(traffic),'train pts',len(train)//2,'trainlen',round(plen(rc[0]),1) if rc else 0,'bytes',len(s),'GX',GX,'GY',GY)
