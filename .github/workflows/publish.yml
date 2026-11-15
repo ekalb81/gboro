@@ -74,6 +74,14 @@ jobs:
           key: eats-${{ github.run_id }}
           restore-keys: eats-
 
+      # NCDOT's average daily traffic counts (public, yearly figures) are refreshed about once a week.
+      - name: Restore last traffic volumes
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data/traffic-volumes.json
+          key: traffic-volumes-${{ github.run_id }}
+          restore-keys: traffic-volumes-
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -110,6 +118,13 @@ jobs:
         with:
           path: public/data/eats.json
           key: eats-${{ github.run_id }}
+
+      - name: Save traffic volumes
+        if: hashFiles('public/data/traffic-volumes.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/data/traffic-volumes.json
+          key: traffic-volumes-${{ github.run_id }}
 
       - name: Check the site has its files
         run: |

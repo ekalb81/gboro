@@ -15,6 +15,7 @@
     "eats": "node scripts/fetch-eats.mjs",
     "feeds": "node scripts/fetch-feeds.mjs",
     "roads": "node scripts/fetch-roads.mjs",
+    "volumes": "node scripts/fetch-traffic-volumes.mjs",
     "dev": "node scripts/ingest.mjs && (node scripts/fetch-weather.mjs || true) && (node scripts/fetch-roads.mjs || true) && node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "crime": "node scripts/fetch-crime.mjs",

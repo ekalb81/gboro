@@ -95,7 +95,7 @@ What the live data does on the model, all from real data and nothing faked:
 | Weather (NWS) | Rain, snow, storms with lightning, fog and cloud; the Lincoln Financial bulb sign alternates the real time and temperature. The sun, shadows and street lamps follow the real sun. |
 | Council meetings | The Melvin Municipal Office Building lights up from an hour before, with people walking in. |
 | Digest items downtown | Placed by venue (a named building, a known restaurant or bar) or by street address. While an event is on: string lights, lit windows and a crowd; all day: a chatter bubble (organizations only). Pop-up food gets a food truck. |
-| Restaurants and bars | Storefronts lit while open; open bars have a few people outside after dark. |
+| Restaurants and bars | Storefronts lit while open, with people out front at each place's usual busy hours (an estimate). |
 | Road closures (DriveNC) | Barrels, cones or a stopped car on the real street; traffic stops at full closures. |
 | Crime | In the paper only, never on the model. |
 

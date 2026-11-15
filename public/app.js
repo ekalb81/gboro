@@ -10,6 +10,7 @@ import { startModel } from './model.js';
 import { makePlacer, toGrid, inModel, norm } from './place.js';
 import { loadCivic, councilState, councilLine } from './civic.js';
 import { GUESS, etNow, isOpen, openLine } from './hours.js';
+import { activity, clockOf, outside, parseClock } from './activity.js';
 
 const TZ = 'America/New_York';
 const Q = new URLSearchParams(location.search);
@@ -139,8 +140,15 @@ const SIGN_NAME = { 'college-hill': 'College Hill', uncg: 'UNCG', westside: 'Fri
 const FOOD_POPUP = /food truck|pop-?up|popup|tasting|cookout|food fest/i;
 const shortTitle = (t) => (t.length > 38 ? t.slice(0, 37).trimEnd() + '…' : t);
 
+// How busy downtown is (public/activity.js): an estimate from the clock, the weather and what is on.
+// ?clock=sat-21:30 (or fri-17:15, sun-10:30, holiday-12:00 ...) previews another time of the week.
+const CLOCKQ = parseClock(new URLSearchParams(location.search).get('clock'));
+const MOST_OUTSIDE = 70; // people drawn at places and events, however much is going on
+let volumes; // NCDOT count stations on the model, once loaded
+
 function buildScene() {
-  const now = etNow();
+  const clock = CLOCKQ || clockOf();
+  const now = CLOCKQ ? { day: clock.day, min: clock.min } : etNow();
   const wxKind = weather ? (weather.precip === 'storm' ? 'storm' : weather.precip === 'rain' ? 'rain' : weather.precip === 'snow' ? 'snow' : 'clear') : 'clear';
   const scene = {
     wx: wxKind, intensity: weather?.intensity, cloudy: weather?.sky === 'cloudy', fog: !!weather?.fog, windMph: weather?.windMph || 0, windGustMph: weather?.windGustMph || 0, windFromDeg: weather?.windFromDeg ?? null, tempF: weather?.tempF ?? null,
@@ -148,13 +156,19 @@ function buildScene() {
     lit: new Map(), strings: new Set(), crowds: [], trucks: [], bubbles: [], focus: [],
     roads: liveRoads().filter((e) => e.onModel && !e.upcoming).map((e) => ({ gx: e.gx, gy: e.gy, kind: e.kind, full: !!e.full })),
   };
-  // Open restaurants and bars light their storefronts; open bars after dark get a few people out front.
+  // Open restaurants and bars light their storefronts and have people out front at their busy hours.
   const openB = new Set(), shutB = new Set();
+  const wxNow = { wx: wxKind, intensity: weather?.intensity, tempF: weather?.tempF ?? null };
+  const draws = []; // places that fill the parking around them: { gx, gy, r (model units), occ (share of stalls) }
+  let eventsOn = 0;
   for (const p of places) {
     if (p.bid == null) continue;
     if (isOpen(p.week, now)) {
       openB.add(p.bid);
-      if (BARS.has(p.kind)) scene.crowds.push({ id: p.bid, n: 1 + (p.id.length % 3), evening: true });
+      // a few of its customers are outside: more at its busy hours, fewer in rain or cold
+      const n = outside(p.kind, clock, wxNow, p.id.length * 7 + p.gx);
+      if (n > 0) scene.crowds.push({ id: p.bid, n });
+      if (n > 0) draws.push({ gx: p.gx, gy: p.gy, r: 7, occ: Math.min(0.85, 0.35 + 0.15 * n) });
     } else shutB.add(p.bid);
   }
   for (const id of openB) scene.lit.set(id, 0.9);
@@ -169,12 +183,24 @@ function buildScene() {
     if (s.bid != null) scene.focus.push(s.bid);
     if (!on || it.category !== 'event') continue;
     if (FOOD_POPUP.test(it.title) && (s.bid == null || !model.building(s.bid)?.name)) { scene.trucks.push({ gx: s.gx, gy: s.gy }); continue; }
-    if (s.bid != null) { scene.lit.set(s.bid, 1); scene.strings.add(s.bid); scene.crowds.push({ id: s.bid, n: 8 }); }
-    else scene.crowds.push({ gx: s.gx, gy: s.gy, n: 6 });
+    eventsOn++;
+    draws.push({ gx: s.gx, gy: s.gy, r: 16, occ: 0.9 });
+    if (s.bid != null) { scene.lit.set(s.bid, 1); scene.strings.add(s.bid); scene.crowds.push({ id: s.bid, n: 8, event: true }); }
+    else scene.crowds.push({ gx: s.gx, gy: s.gy, n: 6, event: true });
   }
   scene.focus = [...new Set(scene.focus)].slice(0, 6);
   scene.signs = AREAS.map(([id, lat, lon]) => ({ id, lat, lon, name: SIGN_NAME[id], n: items.filter((it) => it.district === id && !isDowntown(it) && !isOver(it)).length }));
   scene.bubbles = scene.bubbles.slice(0, 12);
+  // Never more people at places than the model can draw smoothly: events keep theirs, the rest thin out evenly.
+  const total = scene.crowds.reduce((a, c) => a + c.n, 0);
+  if (total > MOST_OUTSIDE) {
+    const fixed = scene.crowds.filter((c) => c.event).reduce((a, c) => a + c.n, 0);
+    const k = Math.max(0, MOST_OUTSIDE - fixed) / Math.max(1, total - fixed);
+    scene.crowds = scene.crowds.map((c) => (c.event ? c : { ...c, n: Math.round(c.n * k) })).filter((c) => c.n > 0);
+  }
+  if (council.inSession) eventsOn++;
+  scene.act = { ...activity(clock, wxNow, eventsOn), draws };
+  if (volumes) scene.volumes = volumes;
   return scene;
 }
 
@@ -350,7 +376,7 @@ function renderEats() {
   const open = places.filter((p) => isOpen(p.week, now));
   const bars = open.filter((p) => BARS.has(p.kind));
   box.replaceChildren(
-    el('div', { className: 'stat' }, tile('beer', '#c99a00'), el('div', { textContent: `${open.length} of ${places.length} local places downtown are open now, ${bars.length} of them bars. Open ones have their storefronts lit; open bars have a few people out front after dark.` })),
+    el('div', { className: 'stat' }, tile('beer', '#c99a00'), el('div', { textContent: `${open.length} of ${places.length} local places downtown are open now, ${bars.length} of them bars. Open ones have their storefronts lit, with people out front at their busy hours.` })),
     el('details', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, now)))));
 }
 
@@ -449,6 +475,13 @@ $('village').addEventListener('pointerdown', dropHint, { once: true });
 setTimeout(dropHint, 12e3);
 placeOnModel();
 await Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
+// Average daily traffic at NCDOT's count stations (scripts/fetch-traffic-volumes.mjs). Without the file the model
+// uses a figure typical of each street's class.
+loadJSON('data/traffic-volumes.json').then((v) => {
+  if (!v?.stations?.length) return;
+  volumes = v.stations.map((s) => { const [gx, gy] = toGrid(mapInfo, s.lat, s.lon); return { gx, gy, aadt: s.aadt }; }).filter((s) => inModel(mapInfo, s.gx, s.gy));
+  refreshScene();
+});
 refreshScene();
 renderPaper();
 
