@@ -61,16 +61,17 @@ export function mowRoute(lot, W = 0.9) {
     for (let i = 0; i < n; i++) {
       const x = x0 + W * (i + 0.5), down = i % 2 === 0, s = down ? 1 : -1; let ya = down ? y0 : y1; const yb = down ? y1 : y0;
       let from = pts.length; pts.push([x, ya]);
-      const hit = obst.filter((o) => Math.abs(x - o.x) < o.r && o.y - o.r > y0 && o.y + o.r < y1).sort((p, q) => s * (p.y - q.y));
+      const hit = obst.filter((o) => Math.abs(x - o.x) < o.r && o.y + o.r > y0 && o.y - o.r < y1).sort((p, q) => s * (p.y - q.y));
       for (const o of hit) { // up to it, round it on the nearer side, and on
-        const dx = x - o.x, hc = Math.sqrt(o.r * o.r - dx * dx), side = dx >= 0 ? 1 : -1;
-        pts.push([x, o.y - s * hc]); stripes.push({ x, ya, yb: o.y - s * hc, par: i % 2, mi, from, to: pts.length - 1 });
+        const dx = x - o.x, hc = Math.sqrt(o.r * o.r - dx * dx), side = dx >= 0 ? 1 : -1, yin = o.y - s * hc;
+        // one standing at the patch's edge: the stripe starts on its ring
+        if (s * (yin - ya) > 0) { pts.push([x, yin]); stripes.push({ x, ya, yb: yin, par: i % 2, mi, from, to: pts.length - 1 }); } else pts[pts.length - 1] = [x, yin];
         const a0 = Math.atan2(-s * hc, dx); let da = Math.atan2(s * hc, dx) - a0;
         if (side * s > 0 && da < 0) da += 2 * Math.PI; if (side * s < 0 && da > 0) da -= 2 * Math.PI;
         for (let k = 1; k < 6; k++) pts.push([o.x + o.r * Math.cos(a0 + da * k / 6), o.y + o.r * Math.sin(a0 + da * k / 6)]);
         ya = o.y + s * hc; from = pts.length; pts.push([x, ya]);
       }
-      pts.push([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from, to: pts.length - 1 });
+      if (s * (yb - ya) > 0) { pts.push([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from, to: pts.length - 1 }); }
     }
   });
   const route = makeRoute(pts);

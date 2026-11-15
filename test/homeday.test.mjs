@@ -70,3 +70,15 @@ test('the house files give no address, street name or position', () => {
     if (f.endsWith('.json')) assert.ok(!/3[56]\.\d{3,}|-79\.\d{3,}/.test(s), f + ' has coordinates');
   }
 });
+
+test('the mowing round keeps clear of every trunk and the fire ring', async () => {
+  const { mowRoute } = await import('../public/house.js');
+  const lot = JSON.parse(readFileSync(new URL('../public/model/house.json', import.meta.url)));
+  const { route, stripes } = mowRoute(lot);
+  assert.ok(stripes.length > 20 && stripes.every((s) => s.d1 >= s.d0));
+  const keep = [...lot.trees.map((t) => ({ x: t.x, y: t.y, r: 0.8 })), { x: lot.fire.x, y: lot.fire.y, r: lot.fire.r }];
+  for (let d = 0; d <= route.len; d += 0.1) {
+    const q = route.at(d);
+    for (const o of keep) assert.ok(Math.hypot(q.x - o.x, q.y - o.y) >= o.r, `too close to (${o.x}, ${o.y}) at ${d.toFixed(1)} m`);
+  }
+});
