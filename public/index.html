@@ -64,6 +64,8 @@
   .tools .grp { display:flex; flex-direction:column; background:var(--paper); border-radius:12px; box-shadow:0 3px 0 var(--edge), 0 8px 20px rgba(0,0,0,.25); overflow:hidden; }
   .tools button { width:42px; height:42px; display:grid; place-items:center; border:0; background:none; color:var(--ink); cursor:pointer; font-size:20px; }
   .tools button + button { border-top:1px solid #e3d5b2; }
+  .tools a.btn { width:42px; height:42px; display:grid; place-items:center; color:var(--ink); font-size:20px; }
+  .tools a.btn:hover { background:var(--paper-2); }
   .tools button:hover { background:var(--paper-2); }
   .tools button:disabled { opacity:.35; cursor:default; }
   .tools button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
@@ -122,7 +124,7 @@
     .chip { font-size:12px; padding:3px 10px 3px 4px; }
     .chip .badge { width:22px; height:22px; font-size:14px; }
     .tools { right:10px; bottom:10px; }
-    .tools button { width:38px; height:38px; }
+    .tools button, .tools a.btn { width:38px; height:38px; }
     .hint { left:10px; bottom:10px; font-size:12px; }
   }
   @media (prefers-reduced-motion:reduce) { .chip.severe .badge { animation:none; } }
@@ -165,6 +167,7 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></symbol>
+  <symbol id="i-house" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M10 20v-5.5h4V20"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V3h9l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
   <symbol id="i-paper" viewBox="0 0 24 24"><path d="M15 4h5v16h-5M4 4h8v16H4zM7 8h2M7 12h2M7 16h2"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
@@ -183,6 +186,9 @@
         <button id="home" title="Back to the Lincoln Financial tower" aria-label="Back to the middle of downtown"><svg class="ico"><use href="#i-home"/></svg></button>
         <button id="labels" title="Name the buildings" aria-label="Name the buildings" aria-pressed="false"><svg class="ico"><use href="#i-tag"/></svg></button>
         <button id="fold" class="fold" title="Fold the paper away" aria-label="Fold the paper away" aria-pressed="false"><svg class="ico"><use href="#i-paper"/></svg></button>
+      </div>
+      <div class="grp">
+        <a class="btn" href="house.html" title="A house up the street" aria-label="A house up the street: a close-up model of one house north of downtown"><svg class="ico"><use href="#i-house"/></svg></a>
       </div>
     </div>
     <div class="float hint" id="hint">Drag to look around · scroll to zoom · tap a building</div>
