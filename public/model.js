@@ -7,7 +7,8 @@
 //   model.zoomIn() / zoomOut() / canZoom(±1) / pan(fx, fy) / home() / lookAt(b) / highlight(b)
 //
 // The canvas fills whatever box the page gives it. The camera only moves when someone drags, zooms or picks
-// something; it never wanders off on its own.
+// something; it never wanders off on its own. A zoom glides to the next level in a fraction of a second (it jumps
+// with prefers-reduced-motion).
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
@@ -85,21 +86,37 @@ let LYWHY='';const LY=(()=>{const par=cv.parentElement,sup=(k,v)=>!!(window.CSS&
 // the model canvas is drawn at half or a third of that when zoomed in, which made small type chunky. It sits above every layer.
 const lc=document.createElement('canvas');lc.setAttribute('aria-hidden','true');lc.style.pointerEvents='none';(LY?LY.o:cv).after(lc);const lx=lc.getContext('2d');let LSO=2;
 let Wc,Ec,Gc,Tc,w,E,GL,tc,oc;
-function makeLayers(){
-  if(LY){for(const c of [cv,LY.e,LY.o].concat(LY.gOn?[LY.g]:[]))if(c.width!==W||c.height!==H){c.width=W;c.height=H}
+// ?bench / ?fps: what happened since the last frame (a zoom step, a canvas resized, a style changed) and the time spent
+// in input handlers and in laying out the layers, for the readout and the benchmark. Off, these do nothing.
+const DIAG=QS.has('bench')||QS.has('fps'),evs=[],ev=s=>{if(DIAG&&evs.length<24)evs.push(s)},tm={inp:0,fit:0,ml:0,pl:0};
+// Where the canvas sits and how big it is, measured once and again only when its box or the screen's pixel ratio changes:
+// asking the browser on every zoom step (after sizes and styles were just written) made it lay the page out on the spot.
+let GEO=null;const geo=()=>{const dpr=window.devicePixelRatio||1;if(GEO&&GEO.dpr===dpr)return GEO;const r=cv.getBoundingClientRect(),g={r,dpr,dw:Math.round(r.width*dpr),dh:Math.round(r.height*dpr),x:cv.offsetLeft,y:cv.offsetTop,cw:cv.offsetWidth,ch:cv.offsetHeight};if(r.width&&r.height)GEO=g;return g};
+function makeLayers(){const T0=DIAG?performance.now():0;makeLayers0();if(DIAG)tm.ml+=performance.now()-T0}
+function makeLayers0(){
+  if(LY){for(const c of [cv,LY.e,LY.o].concat(LY.gOn?[LY.g]:[]))if(c.width!==W||c.height!==H){c.width=W;c.height=H;if(c===cv)ev('canvas '+W+'x'+H)}
     if(!w){w=ctx;E=LY.e.getContext('2d');GL=LY.g.getContext('2d');oc=LY.o.getContext('2d')}return}
   if(Wc&&Wc.width===W&&Wc.height===H&&cv.width===W&&cv.height===H)return; // a zoom step at the same canvas size keeps them
-  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H;oc=ctx}
-// layers mode: the stacked elements sit exactly on the canvas; the blur and the vignette are sized in CSS pixels
-function placeLayers(){if(!LY)return;const x=cv.offsetLeft,y=cv.offsetTop,cw=cv.offsetWidth,ch=cv.offsetHeight,k=[x,y,cw,ch,W,H,VS].join();if(k===LY.placed||!cw)return;LY.placed=k;
-  const s=cw/W,box=(e,t,h)=>{e.style.left=x+'px';e.style.top=y+t+'px';e.style.width=cw+'px';e.style.height=h+'px'};
-  for(const e of LY.all)box(e,0,ch);box(LY.bt,0,ch*.3);box(LY.bb,ch*.68,ch-ch*.68);
-  const bl=`blur(${(1.6*Math.max(.6,VS)*.8*s).toFixed(2)}px)`;LY.bt.style[LY.bf]=bl;LY.bb.style[LY.bf]=bl;
+  Wc=mk(W,H);Ec=mk(W,H);Gc=mk(W,H);Tc=mk(W,H);w=Wc.getContext('2d');E=Ec.getContext('2d');GL=Gc.getContext('2d');tc=Tc.getContext('2d');cv.width=W;cv.height=H;oc=ctx;ev('canvas '+W+'x'+H)}
+// layers mode: the stacked elements sit exactly on the canvas; the blur and the vignette are sized in CSS pixels.
+// Each style is written only when its value changes: a zoom step at the same canvas size moves nothing and only the
+// blur radius differs. R gives the size and scale to style for when they are not the current ones (a zoom on its way).
+function placeLayers(R,boxOnly){if(!LY)return;const T0=DIAG?performance.now():0;placeLayers0(R||{W,H,vs:VS},boxOnly);if(DIAG)tm.pl+=performance.now()-T0}
+function placeLayers0(R,boxOnly){const{x,y,cw,ch}=geo();if(!cw)return;const gk=[x,y,cw,ch].join();
+  if(gk!==LY.gk){LY.gk=gk;const box=(e,t,h)=>{e.style.left=x+'px';e.style.top=y+t+'px';e.style.width=cw+'px';e.style.height=h+'px'};
+    for(const e of LY.all)box(e,0,ch);box(LY.bt,0,ch*.3);box(LY.bb,ch*.68,ch-ch*.68);ev('layers moved')}
+  if(boxOnly)return;
+  const s=cw/R.W,bl=`blur(${(1.6*Math.max(.6,R.vs)*.8*s).toFixed(2)}px)`;if(bl!==LY.bl){LY.bl=bl;LY.bt.style[LY.bf]=bl;LY.bb.style[LY.bf]=bl;ev(bl)}
   // the same as the canvas gradient from radius .45 H (clear) to .62 W (dark); on a tall view the second is the smaller, and it runs the other way
-  const r0=H*.45*s,r1=W*.62*s,c0='rgba(20,10,30,0)',c1='rgba(20,10,30,.22)';
-  LY.vig.style.background=`radial-gradient(circle at 50% 50%,${r0<r1?c0:c1} ${Math.min(r0,r1).toFixed(1)}px,${r0<r1?c1:c0} ${Math.max(r0,r1).toFixed(1)}px)`}
+  const r0=R.H*.45*s,r1=R.W*.62*s,c0='rgba(20,10,30,0)',c1='rgba(20,10,30,.22)';
+  const vg=`radial-gradient(circle at 50% 50%,${r0<r1?c0:c1} ${Math.min(r0,r1).toFixed(1)}px,${r0<r1?c1:c0} ${Math.max(r0,r1).toFixed(1)}px)`;if(vg!==LY.vg){LY.vg=vg;LY.vig.style.background=vg;ev('vignette')}}
 // the glow canvas is only there while something glows (lamps on, or a tile with glow on it)
-function useGlow(on){if(!LY||LY.gOn===on)return;LY.gOn=on;LY.g.style.display=on?'':'none';if(on){if(LY.g.width!==W||LY.g.height!==H){LY.g.width=W;LY.g.height=H}}else LY.g.width=LY.g.height=1}
+// (it keeps its size for ten seconds after the last glow, so a zoom or a drag that brings one lit thing in and out of
+// view does not allocate a canvas each time; it is always blank while hidden)
+function useGlow(on){if(!LY)return;
+  if(on){LY.gIdle=0;if(!LY.gOn){LY.gOn=true;LY.g.style.display='';ev('glow on');if(LY.g.width!==W||LY.g.height!==H){LY.g.width=W;LY.g.height=H}}}
+  else if(LY.gOn){LY.gOn=false;LY.gIdle=0;LY.g.style.display='none';ev('glow off')}
+  else if(LY.g.width>1&&++LY.gIdle>600)LY.g.width=LY.g.height=1}
 const layerCss=(e,k,v)=>{if(LY.css[k]===v)return;LY.css[k]=v;e.style.display=v?'':'none';if(v)e.style.background=v};
 makeLayers();
 let TGT={c:null,e:null,g:null};
@@ -586,7 +603,9 @@ function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx
 // ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
 // ?fps: the same timings shown in a small box on the page (see fpsBox), for checking a browser by eye.
 const FPS=QS.has('fps'),CARD=QS.get('cut')==='card'||(SOFT&&QS.get('cut')!=='clip');
-const BM=QS.has('bench')||FPS?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:QS.get('bench')==='flush'}):null;let bmT=0,bmF=null;
+const BM=DIAG?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:QS.get('bench')==='flush'}):null;let bmT=0,bmF=null;
+// an input handler, timed for the readout
+const timed=f=>DIAG?(...a)=>{const t=performance.now();try{return f(...a)}finally{tm.inp+=performance.now()-t}}:f;
 const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
@@ -608,7 +627,7 @@ function* tileSteps(tx,ty,t,vs){scales.add(vs);
   t.de=tg.de;t.dg=tg.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
   t.vs=vs;t.sw=scr[0].canvas.width;t.sh=scr[0].canvas.height;return t}
 function tileDone(t,ms,tx,ty,inFrame=true){if(BM){if(BM.flush){const T0=performance.now();for(const k of ['c','e','g'])t[k].getImageData(0,0,1,1);ms+=performance.now()-T0} // software canvases draw lazily: count the drawing here
-    BM.tiles++;BM.tileMs+=ms;if(bmF&&inFrame){bmF.nt=(bmF.nt||0)+1;bmF.tt=(bmF.tt||0)+ms;(bmF.tl||(bmF.tl=[])).push(+ms.toFixed(1))}}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(ms)+'ms')}
+    BM.tiles++;BM.tileMs+=ms;if(bmF)bmF.td=(bmF.td||0)+1;if(bmF&&inFrame){bmF.nt=(bmF.nt||0)+1;bmF.tt=(bmF.tt||0)+ms;(bmF.tl||(bmF.tl=[])).push(+ms.toFixed(1))}}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(ms)+'ms')}
 function renderTile(tx,ty,t,vs=VS){const T0=performance.now(),ver=stver;const g=tileSteps(tx,ty,t,vs);let r;while(!(r=g.next()).done);t=r.value;t.ver=ver;tileDone(t,performance.now()-T0,tx,ty);return t}
 // tiles part drawn, by key; a step at a time until `until` (performance.now()), then they wait for the next frame
 const jobs=new Map();
@@ -622,31 +641,46 @@ function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
 // While a drag or a zoom brings in tiles that are not drawn yet, a frame draws them within its budget and, until each
 // is done, stands in for it with the same ground at another scale already drawn (a zoom step's previous scale, or the
 // next zoom level drawn ahead), stretched to fit. With nothing to stand in, the tile is drawn at once, as before.
-function standInAt(tx,ty){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,r3=(ty+1)*TILE/VS;let best=null,bd=1e9;
-  for(const s of scales){if(s===VS)continue;const d=Math.abs(Math.log(s/VS));if(d>=bd)continue;const nx=Math.ceil(BW*s/TILE)-1,ny=Math.ceil(BH*s/TILE)-1;
+function standInAt(tx,ty,any){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,r3=(ty+1)*TILE/VS;let best=null,bd=1e9;
+  for(const s of scales){if(s===VS&&!any)continue;const d=Math.abs(Math.log(s/VS));if(d>=bd)continue;const nx=Math.ceil(BW*s/TILE)-1,ny=Math.ceil(BH*s/TILE)-1;
     const a0=Math.max(0,Math.floor(r0*s/TILE)),a1=Math.max(0,Math.floor(r1*s/TILE)),b0=Math.min(nx,Math.ceil(r2*s/TILE)-1),b1=Math.min(ny,Math.ceil(r3*s/TILE)-1);let ok=true;
     for(let y=a1;y<=b1&&ok;y++)for(let x=a0;x<=b0;x++)if(!tiles.has(s+'|'+x+'|'+y)){ok=false;break}
     if(ok){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bd=d}}
   return best}
+// No scale covers the whole square yet (a zoom in the first seconds, before the small whole-model copy is drawn): the
+// scale with the most of it already made, nearest first on a tie, so what can be shown is not left blank.
+function partStandIn(tx,ty){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,r3=(ty+1)*TILE/VS;let best=null,bn=0,bd=1e9;
+  for(const s of scales){const d=Math.abs(Math.log(s/VS)),nx=Math.ceil(BW*s/TILE)-1,ny=Math.ceil(BH*s/TILE)-1;
+    const a0=Math.max(0,Math.floor(r0*s/TILE)),a1=Math.max(0,Math.floor(r1*s/TILE)),b0=Math.min(nx,Math.ceil(r2*s/TILE)-1),b1=Math.min(ny,Math.ceil(r3*s/TILE)-1);let n=0,m=0;
+    for(let y=a1;y<=b1;y++)for(let x=a0;x<=b0;x++){m++;if(tiles.has(s+'|'+x+'|'+y))n++}
+    const f=m?n/m:0;if(f>bn||(f===bn&&f>0&&d<bd)){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bn=f;bd=d}}
+  return best}
 function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
-  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);
+  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);if(!t)continue;
     const i0=Math.max(r0,x*TILE/s),i1=Math.max(r1,y*TILE/s),i2=Math.min(r2,(x+1)*TILE/s),i3=Math.min(r3,(y+1)*TILE/s);if(i2<=i0||i3<=i1)continue;
     const dx=Math.round(i0*VS)-cx,dy=Math.round(i1*VS)-cy,dw=Math.round(i2*VS)-cx-dx,dh=Math.round(i3*VS)-cy-dy,sx=i0*s-x*TILE,sy=i1*s-y*TILE,sw=(i2-i0)*s,sh=(i3-i1)*s;
     w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}}
 // What is worth drawing ahead: the whole model at a small scale (once), the ring of tiles just outside the view, then
-// the view at the next zoom out and in. A little of it is drawn at the end of each frame (what is left of ~10 ms, at
-// least 2), so a drag or a zoom step usually finds its tiles ready, and otherwise has something to stand in.
-let keepN=24,nVis=12;const OV=.5;
-function aheadList(){const out=[];const{dw,dh}=dev();const mx=camX+VWm()/2,my=camY+VHm()/2;
+// the view at the next zoom out and in (after a zoom step: the next level the same way first). A little of it is drawn
+// at the end of each frame (what is left of the frame's tile allowance, see tileBudget; at least 2 ms), so a drag or a
+// zoom step usually finds its tiles ready, and otherwise has something to stand in.
+let keepN=24,nVis=12,zdir=0;const OV=.5;
+function aheadList(){const out=[];const{dw,dh}=dev();
+  // while a zoom is on its way, "the view" is where it will land: those tiles come first, so it lands sharp
+  const R=ZG?ZG.rest:null,VS_=R?R.vs:VS,W_=R?R.W:W,H_=R?R.H:H,cX=R?R.camX:camX,cY=R?R.camY:camY;const mx=cX+W_/VS_/2,my=cY+H_/VS_/2;
   const add=(vs,x0,y0,x1,y1,skip)=>{const nx=Math.ceil(BW*vs/TILE)-1,ny=Math.ceil(BH*vs/TILE)-1;for(let y=Math.max(0,y0);y<=Math.min(ny,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(nx,x1);x++)if(!skip||!skip(x,y))out.push([x,y,vs])};
-  const cx=Math.round(camX*VS),cy=Math.round(camY*VS),tx0=Math.floor(cx/TILE),ty0=Math.floor(cy/TILE),tx1=Math.floor((cx+W-1)/TILE),ty1=Math.floor((cy+H-1)/TILE);
-  add(VS,tx0-1,ty0-1,tx1+1,ty1+1,(x,y)=>x>=tx0&&x<=tx1&&y>=ty0&&y<=ty1);
-  for(const d of [-1,1]){if(!zoomAllowed(zi+d,dw,dh))continue;const{vs}=planFor(ZL[zi+d],dw,dh);if(vs===VS)continue;const hw=dw/ZL[zi+d]/2,hh=dh/ZL[zi+d]/2;
-    add(vs,Math.floor((mx-hw)*vs/TILE),Math.floor((my-hh)*vs/TILE),Math.floor((mx+hw)*vs/TILE),Math.floor((my+hh)*vs/TILE))}
+  const cx=Math.round(cX*VS_),cy=Math.round(cY*VS_),tx0=Math.floor(cx/TILE),ty0=Math.floor(cy/TILE),tx1=Math.floor((cx+W_-1)/TILE),ty1=Math.floor((cy+H_-1)/TILE);
+  if(R)add(VS_,tx0,ty0,tx1,ty1);
+  const ring=()=>add(VS_,tx0-1,ty0-1,tx1+1,ty1+1,(x,y)=>x>=tx0&&x<=tx1&&y>=ty0&&y<=ty1);
+  const level=d=>{if(!zoomAllowed(zi+d,dw,dh))return;const{vs}=planFor(ZL[zi+d],dw,dh);if(vs===VS_)return;const hw=dw/ZL[zi+d]/2,hh=dh/ZL[zi+d]/2;
+    add(vs,Math.floor((mx-hw)*vs/TILE),Math.floor((my-hh)*vs/TILE),Math.floor((mx+hw)*vs/TILE),Math.floor((my+hh)*vs/TILE))};
+  // after a zoom step the next level the same way comes before the ring (another step is the likeliest thing next);
+  // after a drag, or at first, the ring comes first
+  if(zdir){level(zdir);ring();level(-zdir)}else{ring();level(-1);level(1)}
   // first the whole model at a small scale (OV), kept for good: then there is always something to stand in
   // ...as far as the memory allows: a tile is one canvas by day and up to three once windows are lit and lamps glow
   const fit_=Math.floor(TILE_MB*262144/(TILE*TILE*(lampsOn()||FT.de?3:1.2))),nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1,nOv=(nx+1)*(ny+1)<=fit_/4?(nx+1)*(ny+1):0;
-  const ov=[];if(VS!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
+  const ov=[];if(VS_!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
   return ov.concat(out.slice(0,Math.max(0,Math.min(keepN,fit_-nOv)-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
 // Drawing ahead uses scratch canvases of its own: how big the shared ones have grown decides some edge antialiasing,
 // so leaving them as they are keeps every frame drawn exactly as before.
@@ -664,7 +698,7 @@ const TILE_MB=+QS.get('tilemb')||(window.matchMedia&&matchMedia('(pointer:coarse
 const tilePx=t=>t.c.canvas.width*t.c.canvas.height+t.e.canvas.width*t.e.canvas.height+t.g.canvas.width*t.g.canvas.height;
 function trimTiles(keep){let n=0,px=0;for(const t of tiles.values()){px+=tilePx(t);if(t.vs!==OV)n++}const cap=TILE_MB*262144;if(n<=keep&&px<=cap)return;
   for(const[k,t]of tiles){if(t.vs===OV)continue;if(n<=nVis)break;px-=tilePx(t);tiles.delete(k);for(const c of [t.c,t.e,t.g])c.canvas.width=c.canvas.height=0;if(--n<=keep&&px<=cap)break}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY)}};
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
 function renderStatic(){const T0=performance.now();
   SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
@@ -763,13 +797,16 @@ const clampX=v=>BW<=VWm()?(BW-VWm())/2:Math.max(0,Math.min(BW-VWm(),v)),clampY=v
 const AT=(()=>{const q=new URLSearchParams(location.search).get('at');if(!q)return null;const[a,b]=q.split(',').map(Number);return isFinite(a)&&isFinite(b)?{cx:a,cy:b,hpx:0}:null})();
 [camX,camY]=camFor(AT||byId.tower||blds[0]);if(!AT)camY-=40;camX=clampX(camX);camY=clampY(camY);tgtX=camX;tgtY=camY;
 cv.style.cursor='grab';cv.style.touchAction='none';
-const touches=new Map();let pinch0=0;
-cv.addEventListener('pointerdown',e=>{touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2){const[a,b]=[...touches.values()];pinch0=Math.hypot(a[0]-b[0],a[1]-b[1]);drag=null;return}if(touches.size>2)return;drag={x:e.clientX,y:e.clientY,cx:camX,cy:camY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'});
-cv.addEventListener('pointermove',e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;if(reduce)requestAnimationFrame(frame)});
+const touches=new Map();let pinch0=0,pinchZ=0;
+cv.addEventListener('pointerdown',timed(e=>{touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2){const[a,b]=[...touches.values()];pinch0=Math.hypot(a[0]-b[0],a[1]-b[1]);pinchZ=zNow();drag=null;return}if(touches.size>2)return;if(ZG)land();drag={x:e.clientX,y:e.clientY,cx:camX,cy:camY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'}));
+// two fingers: the zoom follows the spread of the fingers and settles on the nearest level when they lift (with reduced
+// motion it steps a level at a time, as before)
+cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);
+  if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
 function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
-const endDrag=e=>{if(e)touches.delete(e.pointerId);if(touches.size<2)pinch0=0;if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}drag=null;cv.style.cursor='grab'};cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
-cv.addEventListener('mousemove',e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}});cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
+const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+cv.addEventListener('mousemove',timed(e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}}));cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
 
 // ---------- light grading from the sun ----------
 const GD={dawn:{m:[1.03,.9,.92],a:[18,4,16],d:-.05},day:{m:[1.02,1.01,1],a:[0,0,0],d:-.12},dusk:{m:[1.04,.82,.76],a:[16,0,18],d:-.05},night:{m:[.40,.45,.70],a:[6,8,24],d:.2}};
@@ -818,18 +855,37 @@ const LFONT='800 6.5px "Nunito Sans", system-ui, sans-serif',LFONT2='600 6px "Nu
 
 // ?fps: a small box in the corner with the frame rate, the time between frames, the time in each part of frame()
 // (averages over the last half second or so) and what it is running on. Canvas drawing that the browser defers to its
-// graphics process is not in the per-part times, only in the time between frames.
-let fpsEl=null,fpsN=0,fpsT=0;
-function fpsBox(){const fr_=BM.frames,now=performance.now();if(now-fpsT<500)return;const fs=fr_.slice(fpsN);if(fs.length<2)return;fpsN=fr_.length>3000?(fr_.length=0):fr_.length;fpsT=now;
+// graphics process is not in the per-part times, only in the time between frames: "outside" is the part of the time
+// between frames that was not spent in frame() (the browser's own work, input handlers, and idling until the next frame).
+// Below that, the longest frame of the last five seconds, taken apart: the time in frame() by part, in input handlers
+// (and, of that, in fit(): sizing the canvases "layers" and styling the stacked elements "place"), the rest, and what
+// happened in it (a zoom step, a canvas resized, a blur restyled, tiles drawn, squares shown stretched, a zoom gliding).
+// And the last zoom: how many frames the glide had and its longest, how long the frame that landed took, and the
+// longest frame in the 0.6 s after it (when the tiles of the new level and the blur's new radius come in).
+let fpsEl=null,fpsN=0,fpsT=0,fpsW=null,fpsZ=null;
+const fpsWhat=(A,B)=>{const what=[...(A.ev||[]),...(A.evF||[]),...(B.ev||[])];if(A.zg)what.push('gliding at '+A.zg);if(A.nt)what.push(A.nt+' tile'+(A.nt>1?'s':'')+' drawn whole ('+(A.tt||0).toFixed(1)+' ms)');if(A.tw)what.push('tile work '+A.tw.toFixed(1)+' ms');if(A.td)what.push(A.td+' finished');if(A.si)what.push(A.si+' squares stretched');return what.length?what.join(', '):'nothing special'};const PH=['zoom','tiles','sim','dyn','blow','grade','tilt','sign','labels','ahead'];
+function fpsBox(){const fr_=BM.frames,now=performance.now(),n=fr_.length;
+  if(n>1){const B=fr_[n-1],A=fr_[n-2],iv=B.t-A.t;
+    const zs=(A.ev||[]).filter(e=>e.startsWith('zoom '));if(zs.length){if(!fpsZ||fpsZ.land!=null)fpsZ={what:zs[0].slice(5),t0:A.t,n:0,gmax:0,gms:0,land:reduce?iv:null,lin:A.end-A.t,lt:A.t,amax:0,aw:''};else fpsZ.what=fpsZ.what.split('>')[0]+'>'+zs[zs.length-1].split('>')[1]}
+    if(fpsZ){const z=fpsZ;if(A.zg){z.n++;z.gmax=Math.max(z.gmax,iv);z.gms=B.t-z.t0}if((A.evF||[]).includes('landed')){z.land=iv;z.lin=A.end-A.t;z.lt=A.t;z.amax=0}else if(z.land!=null&&A.t>z.lt&&A.t-z.lt<600&&iv>z.amax){z.amax=iv;z.aw=fpsWhat(A,B)}}
+    if(!fpsW||iv>=fpsW.iv)fpsW={iv,A,B};
+    else if(B.t-fpsW.B.t>5000){fpsW={iv,A,B};for(let i=n-2;i>0&&fr_[i].t>B.t-5000;i--)if(fr_[i].t-fr_[i-1].t>fpsW.iv)fpsW={iv:fr_[i].t-fr_[i-1].t,A:fr_[i-1],B:fr_[i]}}}
+  if(now-fpsT<500)return;const fs=fr_.slice(fpsN);if(fs.length<2)return;fpsN=fr_.length>3000?(fr_.length=0):fr_.length;fpsT=now;
   if(!fpsEl){fpsEl=document.createElement('pre');fpsEl.style.cssText='position:fixed;left:8px;bottom:8px;z-index:99;margin:0;padding:6px 8px;background:rgba(0,0,0,.8);color:#9f9;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;pointer-events:none;border-radius:6px;white-space:pre';document.body.appendChild(fpsEl)}
-  const iv=fs.slice(1).map((f,i)=>f.t-fs[i].t),span=fs[fs.length-1].t-fs[0].t,avg=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0)/fs.length,PH=['tiles','sim','dyn','blow','grade','tilt','sign','labels','ahead'];
+  const iv=fs.slice(1).map((f,i)=>f.t-fs[i].t),span=fs[fs.length-1].t-fs[0].t,avg=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0)/fs.length,sum=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0);
+  const out=fs.slice(1).map((f,i)=>f.t-fs[i].end),f1=v=>v.toFixed(1);
   const ua=navigator.userAgent,br=(/Edg\/([\d.]+)/.exec(ua)&&'Edge '+RegExp.$1)||(/Firefox\/([\d.]+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Chrome\/([\d.]+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Version\/([\d.]+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||ua.slice(0,40);
   let mb=0;for(const t of tiles.values())mb+=tilePx(t);
-  fpsEl.textContent=`${(1000*(fs.length-1)/span).toFixed(1)} fps   frame ${(span/(fs.length-1)).toFixed(1)} ms (max ${Math.max(...iv).toFixed(0)})   work ${PH.reduce((s_,k)=>s_+avg(k),0).toFixed(1)} ms\n`+
+  let wl='';if(fpsW){const{A,B}=fpsW,inF=A.end-A.t,ph=PH.filter(k=>A[k]>=.05).map(k=>k+' '+f1(A[k])).join(' '),fitH=B.fit||0,fitF=A.fitF||0;
+    wl=`worst frame of the last 5 s: ${f1(fpsW.iv)} ms, ${f1((now-B.t)/1000)} s ago = frame() ${f1(inF)} (${ph||'-'}) + handlers ${f1(B.inp||0)} + rest ${f1(Math.max(0,fpsW.iv-inF-(B.inp||0)))}\n`+
+      `  fit() in it: ${f1(fitH+fitF)} ms (layers ${f1((B.ml||0)+(A.mlF||0))}, place ${f1((B.pl||0)+(A.plF||0))})   what happened: ${fpsWhat(A,B)}\n`}
+  if(fpsZ){const z=fpsZ;wl+=`last zoom ${z.what}: `+(z.n?`glide ${z.n} frames in ${z.gms.toFixed(0)} ms (longest ${f1(z.gmax)})`:reduce?'a jump (reduced motion)':'no glide frame yet')+(z.land!=null?`, the frame that landed ${f1(z.land)} ms (frame() ${f1(z.lin)}), longest in the 0.6 s after ${f1(z.amax)}${z.amax>25?' ('+z.aw+')':''}`:'')+'\n'}
+  fpsEl.textContent=`${(1000*(fs.length-1)/span).toFixed(1)} fps   frame ${(span/(fs.length-1)).toFixed(1)} ms (max ${Math.max(...iv).toFixed(0)})   work ${PH.reduce((s_,k)=>s_+avg(k),0).toFixed(1)} ms   outside frame() ${f1(out.reduce((a,b)=>a+b,0)/out.length)} ms (max ${Math.max(...out).toFixed(0)})\n`+
     PH.map(k=>k+' '+avg(k).toFixed(1)).join('  ')+'\n'+
+    `input handlers ${f1(sum('inp'))} ms in this half second (longest ${f1(Math.max(...fs.map(f=>f.inp||0)))})   fit() ${f1(sum('fit')+sum('fitF'))} ms (layers ${f1(sum('ml')+sum('mlF'))}, place ${f1(sum('pl')+sum('plF'))})   tile allowance ${f1(TB)} ms, ${sum('late')} late frames\n`+wl+
     `moving things ${Math.round(avg('n'))}, cut out ${Math.round(avg('cut'))}   tiles ${tiles.size} (${(mb*4/1048576).toFixed(0)} MB of ${TILE_MB})   glow ${FT.dg?'on':'off'}\n`+
-    `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)}\n`+
-    `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}`}
+    `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)}   zoom ${+zNow().toFixed(2)}${ZG?' (on its way to '+ZL[zi]+')':''}\n`+
+    `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}${reduce?'   reduced motion: zoom jumps':''}`}
 // The buildings that could stand in front of something at grid box (x0,y0)-(x1,y1): a coarse grid over each building's
 // reach (its footprint plus how far its height carries up the screen), so a frame does not scan every building for
 // every moving thing. In the buildings' own order, each once.
@@ -841,12 +897,23 @@ function bldsNear(x0,y0,x1,y1){
   return bgOut.sort((a,b)=>a.bi-b.bi)}
 const bgOut0=[];
 let FT={de:1,dg:1};const glowOn=()=>{useGlow(true);FT.dg=1};
+// How long a frame may spend drawing tiles (in the frame, for the view; then ahead, with what is left). It was a fixed
+// 12 ms (10 ahead). Tile drawing costs more than the time measured here: the browser's graphics process does the
+// actual painting afterwards, and when it falls behind, the next frame is held up however little the page itself did.
+// So the allowance follows the wait between the end of one frame() and the start of the next: a wait of more than a
+// frame and a half (by the shortest time between frames lately) halves it, down to 3 ms; every frame that starts on
+// time gives a little back, up to 12. A machine that keeps up, or one that is slow in its own drawing, draws as before.
+let TB=12,tbLast=0,tbEnd=0,tbBase=16.7,tbMin=1e9,tbN=0;
+function tileBudget(now){const iv=now-tbLast,wait=now-tbEnd;tbLast=now;if(reduce||!(iv>0&&iv<1000))return TB; // (reduced motion draws frames only when asked, so their spacing says nothing)
+  if(iv<tbMin)tbMin=iv;if(++tbN>=90){tbBase=tbMin;tbMin=1e9;tbN=0} // the usual interval: the shortest of the last 90 frames
+  const late=wait>Math.min(tbBase,tbMin)*1.5+1;TB=late?Math.max(3,TB/2):Math.min(12,TB+.5);if(BM){bmF.tb=TB;if(late)bmF.late=1}return TB}
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){const F0=performance.now();
-  if(BM){bmT=performance.now();bmF={t:bmT,fit:BM.fitMs||0};BM.fitMs=0}
+  if(BM){bmT=performance.now();bmF={t:bmT,fit:tm.fit,inp:tm.inp,ml:tm.ml,pl:tm.pl,ev:evs.splice(0)};tm.fit=tm.inp=tm.ml=tm.pl=0}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
   if(S.time==='now'&&ts-lastCheck>30000){lastCheck=ts;SUN=sunPos(new Date());if(stateKey()!==renderedFor)renderStatic()}
   const D=sceneDate();
+  if(ZG)zoomFrame();const zg=!!ZG;if(LY&&LY.due&&!zg&&--LY.due===0)placeLayers();if(BM){bm('zoom');if(zg)bmF.zg=+ZG.z.toFixed(3)}
   if(glide&&!drag){camX+=(tgtX-camX)*Math.min(1,dt*2);camY+=(tgtY-camY)*Math.min(1,dt*2);if(Math.hypot(tgtX-camX,tgtY-camY)<1)glide=false}
   const cx=Math.round(camX*VS),cy=Math.round(camY*VS);
   // the still model: tiles at the current scale (missing ones now, stale ones a few per frame)
@@ -855,15 +922,17 @@ function frame(ts){const F0=performance.now();
   if(lampsOn())useGlow(true);
   for(const c of [w,E,GL])c.setTransform(1,0,0,1,0,0);if(FT.de)E.clearRect(0,0,W,H);if(FT.dg)GL.clearRect(0,0,W,H);w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
   FT={c:w,e:E,g:GL,de:0,dg:0,wide:CARD?1:0,ink:[]};
-  frame.stale=false;const budget={left:12},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
+  frame.stale=false;const budget={left:tileBudget(F0)},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const X=tx*TILE-cx,Y=ty*TILE-cy,key=VS+'|'+tx+'|'+ty;let t,si;
     // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
+    // a zoom on its way: every square from tiles already made, at whatever scale is nearest
+    if(zg){if(si=standInAt(tx,ty,true)||partStandIn(tx,ty)){drawStandIn(si,cx,cy);if(BM)bmF.si=(bmF.si||0)+1}continue}
     if(!tiles.has(key)&&(si=standInAt(tx,ty))){const t0=performance.now();t=budget.left>0?work(key,tx,ty,VS,t0+budget.left):null;budget.left-=performance.now()-t0;
       if(!t){drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
     else t=getTile(tx,ty,budget);
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
-  const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+8);trimTiles(keepN);
+  const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+2*(tx1-tx0+ty1-ty0)+16);trimTiles(keepN); // the view, the ring round it and the view at the next level each way
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT=FT;ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
@@ -1014,8 +1083,9 @@ function frame(ts){const F0=performance.now();
   ctx.setTransform(1,0,0,1,0,0)}
   if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
   // a little drawing ahead with what is left of the frame (at least 2 ms, so it gets done on a slow machine too)
-  if(!frame.stale)drawAhead(performance.now()+Math.max(2,10-(performance.now()-F0)));
-  if(BM){bm('ahead');if(FPS)fpsBox()}
+  if(!frame.stale){const a=zg?Math.min(TB,4):TB;drawAhead(performance.now()+Math.max(Math.min(2,a),a*.83-(performance.now()-F0)))} // (a third of it while a zoom glides)
+  if(BM){bm('ahead');bmF.fitF=tm.fit;bmF.mlF=tm.ml;bmF.plF=tm.pl;tm.fit=tm.ml=tm.pl=0;bmF.evF=evs.splice(0);bmF.end=performance.now();if(FPS)fpsBox()}
+  tbEnd=performance.now();
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
 }
 
@@ -1050,7 +1120,7 @@ const building=id=>byId[id]||null;
 /** Building whose footprint holds a grid point, or the nearest one within a tile or two. */
 function buildingAt(gx,gy,maxDist=2.2){let best=null,bd=maxDist;for(const b of blds){if(gx<b.minx-bd||gx>b.maxx+bd||gy<b.miny-bd||gy>b.maxy+bd)continue;if(pip(gx,gy,b.pts))return b;let d=Infinity;for(let k=0;k<b.pts.length;k++){const[a0,a1]=b.pts[k],[q0,q1]=b.pts[(k+1)%b.pts.length];const dx=q0-a0,dy=q1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((gx-a0)*dx+(gy-a1)*dy)/L2)):0;d=Math.min(d,Math.hypot(a0+dx*t-gx,a1+dy*t-gy))}if(d<bd){bd=d;best=b}}return best}
 /** Glide the camera to a building and hold it there for a while. */
-function lookAt(b){if(!b)return;[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
+function lookAt(b){if(!b)return;if(ZG)land();[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
 let started=false,glide=false;
 
 // ---------- view size and zoom ----------
@@ -1058,28 +1128,76 @@ let started=false,glide=false;
 // up to RESMAX canvas pixels per model pixel (VS) for sharp detail, and below 1 when zoomed far out, so the whole of
 // downtown fits; each canvas pixel is a whole number (k) of device pixels so edges stay crisp.
 const ZL=[.25,.35,.5,.7,1,1.5,2,3,4,6],MAXPX=2.6e6;let zi=-1,KPX=1;
-const dev=()=>{const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;return{r,dpr,dw:Math.round(r.width*dpr),dh:Math.round(r.height*dpr)}};
+const dev=geo;
 function planFor(z,dw,dh){let k=1;while(z/k>RESMAX+1e-9||(dw/k)*(dh/k)>MAXPX)k++;return{k,vs:z/k}}
 // zoom out until the whole model is in view, and in until about 160 model pixels fill the width
 const zoomAllowed=(i,dw,dh)=>i>=0&&i<ZL.length&&dw/ZL[i]>=160&&(i>=zi||BW*ZL[i+1]>dw*.92||BH*ZL[i+1]>dh*.92);
-function fit(force){const F0=BM?performance.now():0;fit0(force);if(BM)BM.fitMs=(BM.fitMs||0)+performance.now()-F0}
-function fit0(force){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;placeLayers();
+function fit(force,cam){const F0=DIAG?performance.now():0;fit0(force,cam);if(DIAG)tm.fit+=performance.now()-F0}
+function fit0(force,cam){const{r,dpr,dw,dh}=dev();if(!r.width||!r.height)return;placeLayers(null,!!(cam||ZG||LY&&LY.due));
   if(zi<0){const zq=+new URLSearchParams(location.search).get('z');const want=zq>0?zq:r.width<700?Math.max(1,dpr*.8):Math.max(1,Math.round(dw/1000));zi=ZL.reduce((bi,v,i)=>Math.abs(v-want)<Math.abs(ZL[bi]-want)?i:bi,0)}
   while(zi>0&&dw/ZL[zi]<160)zi--;
-  const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k);if(!force&&nW===W&&nH===H&&vs===VS)return;
-  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;{const j=Math.max(1,Math.ceil(Math.sqrt(dw*dh/6e6)));lc.width=Math.ceil(dw/j);lc.height=Math.ceil(dh/j);lc.style.imageRendering=j>1?'auto':'';LSO=Math.max(1,Math.round(dpr*2))/j}makeLayers();placeLayers();reseed();camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2);tgtX=camX;tgtY=camY;glide=false;
+  const{k,vs}=planFor(ZL[zi],dw,dh);const nW=Math.ceil(dw/k),nH=Math.ceil(dh/k),R=ZG?ZG.rest:{W,H,vs:VS};if(!force&&nW===R.W&&nH===R.H&&vs===R.vs)return;
+  ZG=null; // the box changed size while a zoom was on its way: it lands here
+  const mx=camX+VWm()/2,my=camY+VHm()/2;W=nW;H=nH;VS=vs;KPX=k;LS=Math.max(1,Math.round(dpr*2))/k;
+  // the label canvas is as big as the screen, so it only changes with the box, never with a zoom step
+  {const j=Math.max(1,Math.ceil(Math.sqrt(dw*dh/6e6))),lw=Math.ceil(dw/j),lh=Math.ceil(dh/j),ir=j>1?'auto':'';if(lc.width!==lw||lc.height!==lh){lc.width=lw;lc.height=lh;ev('labels '+lw+'x'+lh)}if(lc.style.imageRendering!==ir)lc.style.imageRendering=ir;LSO=Math.max(1,Math.round(dpr*2))/j}
+  // a zoom landing here restyles the blur and the vignette a few frames later (see frame()), not in the frame that lands
+  makeLayers();if(cam&&LY){placeLayers(null,true);LY.due=3}else placeLayers();reseed();if(cam){camX=cam[0];camY=cam[1]}else{camX=clampX(mx-VWm()/2);camY=clampY(my-VHm()/2)}tgtX=camX;tgtY=camY;glide=false;
   if(started&&reduce)requestAnimationFrame(frame)}
-function zoomBy(d){const{dw,dh}=dev();if(!zoomAllowed(zi+d,dw,dh))return false;zi+=d;fit(true);return true}
+// ---------- zooming ----------
+// The zoom rests on the levels in ZL, as ever, but gets from one to the next in a short glide (ZDUR ms, easing out)
+// about the middle of the view, rather than in one jump. While it glides the picture is drawn at the in-between scale
+// from tiles already made (the level it left, or the one it is going to if that was drawn ahead), stretched to fit, and
+// no tile is made at an in-between scale; cars, people, labels and the sign are drawn at that scale like any frame, so
+// everything stays in register. Drawing ahead works on the tiles it will land on. Nothing is resized or restyled when
+// a step starts or while it glides: a canvas changes size (when the level needs it) in the frame that lands, and the
+// tilt-shift blur takes the new level's radius three frames after that, so the costs never fall in the same frame. A pinch (two fingers, or a trackpad)
+// drives the scale directly and settles on the nearest level when it ends. With reduced motion it jumps, as before.
+// ZG while a zoom is on its way: z the scale now (device pixels per model pixel), c the middle of the view in model
+// pixels, rest where it lands (level, canvas size, scale, camera: worked out a level at a time exactly as a jump would).
+let ZG=null,pinchT=0;const ZDUR=180;
+const zNow=()=>ZG?ZG.z:ZL[zi];
+const clampIn=(v,B,vw)=>B<=vw?(B-vw)/2:Math.max(0,Math.min(B-vw,v));
+function restFor(i,from){const{dw,dh}=dev(),{k,vs}=planFor(ZL[i],dw,dh),nW=Math.ceil(dw/k),nH=Math.ceil(dh/k),vw=nW/vs,vh=nH/vs;
+  return{i,k,vs,W:nW,H:nH,vw,vh,camX:clampIn(from.camX+from.vw/2-vw/2,BW,vw),camY:clampIn(from.camY+from.vh/2-vh/2,BH,vh)}}
+function zoomStart(){if(!ZG){ZG={z:ZL[zi],live:false,rest:{i:zi,k:KPX,vs:VS,W,H,vw:VWm(),vh:VHm(),camX,camY},c:[camX+VWm()/2,camY+VHm()/2]};glide=false;if(drag){drag=null;cv.style.cursor='grab'}}return ZG}
+function zoomStep(g,i){ev('zoom '+ZL[zi]+'>'+ZL[i]);zdir=Math.sign(i-zi);g.rest=restFor(i,g.rest);zi=i}
+function zoomGlide(g){g.live=false;g.z0=g.z;g.z1=ZL[zi];g.c0=g.c;g.c1=[g.rest.camX+g.rest.vw/2,g.rest.camY+g.rest.vh/2];g.t0=performance.now()-8}
+function land(){const r=ZG.rest;ZG=null;ev('landed');fit(true,[r.camX,r.camY])}
+// each frame of a zoom on its way: the scale and the camera for this frame, or the landing
+function zoomFrame(){const g=ZG;
+  if(!g.live){const p=(performance.now()-g.t0)/ZDUR;if(p>=1)return land();const e=1-Math.pow(1-Math.max(0,p),3);g.z=g.z0*Math.pow(g.z1/g.z0,e);g.c=[g.c0[0]+(g.c1[0]-g.c0[0])*e,g.c0[1]+(g.c1[1]-g.c0[1])*e]}
+  VS=g.z/KPX;camX=clampX(g.c[0]-VWm()/2);camY=clampY(g.c[1]-VHm()/2);tgtX=camX;tgtY=camY}
+function zoomBy(d){const{dw,dh}=dev();if(!zoomAllowed(zi+d,dw,dh))return false;
+  if(reduce||!started){ev('zoom '+ZL[zi]+'>'+ZL[zi+d]);zdir=d;zi+=d;fit(true);return true}
+  const g=zoomStart();zoomStep(g,zi+d);zoomGlide(g);return true}
+// a pinch: the scale follows the fingers between the furthest levels allowed, and the level it will settle on (the nearest,
+// with a little stickiness so it does not flicker between two) is kept up to date for the buttons and for drawing ahead
+function zoomLive(z){const{dw,dh}=dev(),out=i=>i>=0&&dw/ZL[i]>=160&&(BW*ZL[i+1]>dw*.92||BH*ZL[i+1]>dh*.92);
+  let lo=zi,hi=zi;while(out(lo-1))lo--;while(hi+1<ZL.length&&dw/ZL[hi+1]>=160)hi++;
+  const g=zoomStart();g.live=true;g.z=Math.max(ZL[lo],Math.min(ZL[hi],z));const far=i=>Math.abs(Math.log(ZL[i]/g.z));
+  let n=zi;for(let i=lo;i<=hi;i++)if(far(i)<far(n)-(n===zi?.06:0))n=i;
+  if(n!==zi){while(zi!==n)zoomStep(g,zi+Math.sign(n-zi));onView()}} // (the blur is restyled once, when it settles)
+function zoomSettle(){clearTimeout(pinchT);pinchT=0;if(ZG&&ZG.live)zoomGlide(ZG)}
 const canZoom=d=>{const{dw,dh}=dev();return zoomAllowed(zi+d,dw,dh)};
-new ResizeObserver(()=>fit()).observe(cv);fit();
-cv.addEventListener('wheel',e=>{e.preventDefault();wheelAcc+=e.deltaY;if(Math.abs(wheelAcc)>=60){zoomBy(wheelAcc<0?1:-1);wheelAcc=0;onView()}},{passive:false});let wheelAcc=0;
-cv.addEventListener('keydown',e=>{const k=e.key,st=80/VS/KPX;let dx=0,dy=0;if(k==='ArrowLeft')dx=-st;else if(k==='ArrowRight')dx=st;else if(k==='ArrowUp')dy=-st;else if(k==='ArrowDown')dy=st;else if(k==='+'||k==='=')zoomBy(1),onView();else if(k==='-'||k==='_')zoomBy(-1),onView();else return;e.preventDefault();if(dx||dy){camX=clampX(camX+dx);camY=clampY(camY+dy);tgtX=camX;tgtY=camY;glide=false;if(reduce)requestAnimationFrame(frame)}});
+new ResizeObserver(timed(()=>{GEO=null;fit()})).observe(cv);fit();
+// The wheel steps a level for each notch (or 60 pixels of a two-finger scroll). A trackpad pinch arrives as small wheel
+// moves with ctrl held (Chrome, Firefox, Edge) or as gesture events (Safari): the zoom follows it, see zoomLive.
+let wheelAcc=0,gest0=0,gestZ=0;
+cv.addEventListener('wheel',timed(e=>{e.preventDefault();
+  if(e.ctrlKey&&!e.deltaMode&&Math.abs(e.deltaY)<40&&!reduce&&started){zoomLive(zNow()*Math.exp(-e.deltaY/100));clearTimeout(pinchT);pinchT=setTimeout(zoomSettle,140);return}
+  wheelAcc+=e.deltaY;if(Math.abs(wheelAcc)>=60){zoomBy(wheelAcc<0?1:-1);wheelAcc=0;onView()}}),{passive:false});
+cv.addEventListener('gesturestart',timed(e=>{e.preventDefault();gest0=touches.size>=2?0:e.scale||1;gestZ=zNow()}));
+cv.addEventListener('gesturechange',timed(e=>{e.preventDefault();if(!gest0||touches.size>=2||!(e.scale>0))return;const q=e.scale/gest0;
+  if(!reduce&&started)zoomLive(gestZ*q);else if(q>1.4||q<.7){zoomBy(q>1?1:-1);gest0=e.scale;onView()}}));
+cv.addEventListener('gestureend',timed(e=>{e.preventDefault();if(gest0){gest0=0;zoomSettle()}}));
+cv.addEventListener('keydown',timed(e=>{const k=e.key;if(ZG&&/^Arrow/.test(k))land();const st=80/VS/KPX;let dx=0,dy=0;if(k==='ArrowLeft')dx=-st;else if(k==='ArrowRight')dx=st;else if(k==='ArrowUp')dy=-st;else if(k==='ArrowDown')dy=st;else if(k==='+'||k==='=')zoomBy(1),onView();else if(k==='-'||k==='_')zoomBy(-1),onView();else return;e.preventDefault();if(dx||dy){zdir=0;camX=clampX(camX+dx);camY=clampY(camY+dy);tgtX=camX;tgtY=camY;glide=false;if(reduce)requestAnimationFrame(frame)}}));
 /** Pan by a fraction of the view (for on-screen buttons). */
-function pan(fx,fy){tgtX=clampX(camX+fx*VWm());tgtY=clampY(camY+fy*VHm());if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
+function pan(fx,fy){if(ZG)land();tgtX=clampX(camX+fx*VWm());tgtY=clampY(camY+fy*VHm());if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
 function home(){lookAt(byId.tower||blds[0])}
 // first paint: a loading card, then build the model
 ctx.fillStyle='#3a2c26';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff3d6';ctx.font=Math.round(10*LS)+'px Silkscreen, monospace';ctx.textAlign='center';ctx.fillText('building the model of downtown…',W/2,H/2);ctx.textAlign='start';
 setTimeout(()=>{renderStatic();started=true;(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(frame))},30);
 return{update,building,buildingAt,lookAt,sunTimes,fmtTime,ampm,setLabels:v=>{S.labels=!!v;if(reduce)requestAnimationFrame(frame)},
-  zoomIn:()=>zoomBy(1),zoomOut:()=>zoomBy(-1),canZoom,pan,home,highlight:b=>{hiB=b||null;if(reduce)requestAnimationFrame(frame)}};
+  zoomIn:timed(()=>zoomBy(1)),zoomOut:timed(()=>zoomBy(-1)),canZoom,pan:timed((fx,fy)=>pan(fx,fy)),home,highlight:b=>{hiB=b||null;if(reduce)requestAnimationFrame(frame)}};
 }

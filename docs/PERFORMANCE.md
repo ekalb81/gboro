@@ -26,6 +26,7 @@ npm run bench -- --secs 15                     measure longer
 npm run bench -- --json bench.json             also save the numbers
 npm run bench -- --profile profiles            save a CPU profile per scenario (open in Chrome DevTools > Performance)
 npm run bench -- --only interaction            only the drag / wheel / pinch scenarios ('steady' for the rest)
+npm run bench -- --swgpu --only zoom           zoom steps one at a time, each taken apart (see the zoom table below)
 npm run bench -- --warm                        interaction scenarios wait until the model has drawn ahead first
 npm run bench -- --query time=night            extra URL parameters for every scenario (they override the defaults)
 npm run bench -- --headed                      show the browser: uses your real graphics card
@@ -51,6 +52,8 @@ nothing is recorded.
 | trackpad | a trackpad pinch: 45 small ctrl+wheel steps 16 ms apart, in then out |
 | laptop-drag, laptop-wheel | drag and wheel at 1366x768 with the CPU slowed 4x |
 | phone-touch | one-finger drag, then a two-finger pinch out and in, at 390x844@3 with the CPU slowed 4x |
+| zoom-steps, zoom-steps-dpr1 | one zoom step at a time with 0.7 s after each: three wheel notches in, three out, the + and - keys, the + and - buttons; at the Retina size (starting from `z=1`) and at 1920x1080@1 |
+| zoom-pinch | a trackpad pinch in, a pause, and out again (30 small ctrl+wheel steps each way); very slow under `--swgpu` |
 
 Columns: **fps**; **frame p50/p95/max**, the time between frames (ms); **work p50/p95**, the time spent inside the
 model's `frame()` (ms); **long**, long tasks (over 50 ms); **tiles**, static tiles drawn while measuring; **heap MB**, JS
@@ -59,14 +62,16 @@ shadow mask); **load KB** as served locally (no compression) and **gzip KB** as 
 from navigation to the first drawn frame. The second table splits the work by phase of `frame()`: `tiles` (laying the
 static tiles on), `sim` (traffic, people, train and the list of moving things), `dyn` (drawing the moving things, with
 their cut-outs), `blow` (blowing leaves and petals), `grade` (weather, colour grade, lit windows and glow), `tilt`
-(tilt-shift blur), `sign` (the lantern clock and vignette), `labels`.
+(tilt-shift blur), `sign` (the lantern clock and vignette), `labels`, and `zoom` (the step of a zoom glide, and the
+landing: sizing the canvases for the new level).
 
 The third table covers only the frames while a gesture is going on (and 0.3 s after each): the frame interval
 p50/p95/p99/max and how many were over 50 and 100 ms; **tiles**, static tiles drawn whole inside one frame; **multi**,
 frames that drew two or more; **max/frame**; **ms/tile** and **tile max**, what one such tile cost; **tiles in 1 frame
 ms**, the most tile drawing done in a single frame (whole tiles plus tiles drawn a step at a time); **resize ms**, the
-longest canvas resize on a zoom step; **stand-in frames**, frames that showed a missing tile stretched from another
-scale, and **stand-in after ms**, how long after the end of a gesture the last of those was. In software (headless),
+longest canvas resize on a zoom step; **glide frames**, frames drawn at an in-between scale while a zoom was on its
+way; **stand-in frames**, frames at rest that showed a missing tile stretched from another scale, and **stand-in
+after ms**, how long after the end of a gesture the last of those was. In software (headless),
 tile drawing is lazy, so `?bench=flush` makes each new tile finish its drawing where it is counted.
 
 A fourth table counts canvas calls per frame that are cheap in Chromium but not everywhere (the benchmark wraps the
@@ -74,6 +79,16 @@ canvas methods; the model is not involved): **src**, `drawImage` with a canvas a
 source had been drawn on since it was last used as a source (the browser must finish drawing it, and WebKit often
 copies it, before it can be read); **full**, draws, fills and clears covering half or more of a model-sized canvas;
 **clip**, `clip()` calls; **filter**, draws with a canvas `filter` set.
+
+The zoom scenarios add a table with a row per zoom step, covering the 0.7 s after it: **p50**, the usual time between
+frames in that stretch; **worst**, the longest; **in frame()** and **outside**, how much of the worst one was the
+model's own `frame()` and how much was not (the browser's own work, input handlers, waiting for the next frame);
+**outside max**, the most time outside `frame()` between any two frames; **work max**, the longest `frame()`;
+**handlers** and **fit**, the total time in the model's input handlers and in `fit()`; **glide** and **glide ms**, the
+frames drawn at an in-between scale and how long they took; **landing** and **then**, the `frame()` time of the frame
+that lands on the new level and the time until the next frame; **tiles**, **stand-in**; and **what happened** (the
+zoom step, `landed`, a canvas resized, the blur restyled). The table works on older builds too (the columns they do
+not record show `-`), which is how the before and after below were measured.
 
 ## Checking a real browser: `?fps`
 
@@ -83,6 +98,24 @@ second), how many moving things are on screen and how many are cut out behind so
 browser, device pixel ratio, canvas size and which drawing path is in use. A screenshot of that box is all that is
 needed to compare browsers. The time between frames is the one that counts: canvas work that the browser hands to
 its graphics process (Safari does this) does not show in the per-part times. Without `?fps` none of it runs.
+
+Line by line:
+
+1. frames per second; the time between frames (and the longest); `work`, the time inside `frame()`; `outside
+   frame()`, the time from the end of one `frame()` to the start of the next (the browser's own work, input handlers,
+   and waiting): at 60 fps the two add up to 16.7 ms, and a long frame with little `work` shows up here.
+2. the parts of `frame()`.
+3. the time spent in the model's input handlers in the last half second (wheel, pointer, keys, the buttons, a
+   resize) and the longest; the time in `fit()` (of it, `layers`: sizing canvases, `place`: styling the stacked
+   elements); the tile allowance (how many ms a frame may spend drawing tiles just now, 3 to 12) and how many frames
+   started late.
+4. the worst frame of the last five seconds, taken apart: the `frame()` time by part, the handlers, the rest (time
+   that was nobody's on the page: the browser), `fit()`, and what happened in it: a zoom step (`zoom 1>1.5`), a
+   landing (`landed`), a canvas resized (`canvas 714x556`), the blur restyled (`blur(1.92px)`), tiles drawn or
+   finished, squares shown stretched, a glide in progress.
+5. the last zoom: how many frames its glide had, in how long, and the longest of them; how long the frame that landed
+   took; and the longest frame in the 0.6 s after the landing, with what happened in it.
+6. to 8. moving things, the tile cache, the browser, canvas size, scale and zoom, and the drawing path.
 
 Two more flags pick the drawing path, for comparing on the same machine:
 
@@ -362,6 +395,118 @@ there; the model falls back to the canvas path if the browser reports they are n
 `clip()` calls a frame are in Safari (the fallback `?cut=card` is there to compare); and Safari's canvas memory
 ceiling. Open the site with `?fps` in Safari, then with `?fps&compose=canvas&cut=card`, and compare the boxes.
 
+## Zooming (fourth pass)
+
+After the third pass Safari held 60 fps standing still and dragging (frame 16.7 ms, 1.4 to 3.2 ms of it in `frame()`),
+but each zoom step showed one or two long frames (76 to 101 ms) with almost none of that time inside `frame()`, and the
+picture jumped 1.4x to 1.5x in a single frame. No WebKit could be run here, so, as before, the Safari part works from
+what a zoom step did and `?fps` is there to check it.
+
+**What a zoom step did, and what it does now.** `zoomBy` called `fit(true)` at once, from the input handler:
+
+| At every zoom step, before | Now |
+| --- | --- |
+| the label canvas (as big as the screen in device pixels: 2140x1666 in the window recorded) was given its width and height again, which throws its backing store away and makes a new one, though its size never depends on the zoom | sized only when the box or the pixel ratio changes |
+| 47 style assignments on the nine stacked elements (position and size of each, though unchanged; the blur radius of both tilt-shift bands; the vignette) | none at the step and none while it glides; the blur radius (and the vignette, if the canvas changed shape) three frames after the landing; positions only when the box moves |
+| the canvas box was measured again after those writes (`offsetWidth` and friends, then `getBoundingClientRect` from the buttons' `canZoom`), so the browser laid the page out inside the handler; and once more every frame for drawing ahead | measured once and again only when the box or the pixel ratio changes (`geo()`): no layout read in a zoom step or in a frame |
+| the glow canvas was shrunk to 1x1 and made full size again whenever the last glowing thing left and re-entered the view | keeps its size for ten seconds after the last glow |
+| every tile in view was new (another scale): the view at the next level was mostly never drawn ahead, because the ring round the view came first and used up the allowance (at the recorded size: room for 3 of the ~18 tiles of the two neighbouring levels). So each step drew 6 to 12 tiles in the frames after it, 12 ms a frame in `frame()` and more in the browser's graphics process | the cache has room for the ring and the view at both neighbouring levels; after a zoom step the next level the same way is drawn before the ring; and while a zoom glides, the tiles it will land on come first |
+| tile drawing took up to 12 ms of every frame (10 ahead) whatever the browser's graphics process made of it | the allowance follows the frames: a frame that starts late (more than a frame and a half after the last one ended) halves it, down to 3 ms; each frame on time gives 0.5 ms back, up to 12 (`tileBudget`) |
+
+Measured in Chromium (layers path, 1335x805@2, counting calls for one wheel notch and the 0.9 s after it): canvas size
+assignments 2 → 0, layout reads 15 to 27 → 0 (one of them forced straight after writes → 0). In Chromium none of this
+was ever expensive: the handlers of a zoom step take 0.1 to 0.7 ms now (a wheel event that changed the level took
+0.2 ms when measured in the second pass) and `fit()` under 1 ms, before and after. Which of
+them cost Safari its 80 ms is **not known**; the label canvas (new on main since the third pass, reallocated at full
+screen resolution on every step) and the burst of new tiles are the likeliest, the blur restyle after that. They are
+now in different frames, so the `?fps` box will say which, if any is left: see "the last zoom" line.
+
+**The glide.** The zoom still rests only on the ten levels, but gets from one to the next in 180 ms, fast at first and
+easing out, about the middle of the view (the same anchor as the jump had). How it is done (`ZG`, `zoomBy`,
+`zoomFrame`, `land` in `public/model.js`): the scale and the camera are worked out for each frame, and the frame is
+drawn at that in-between scale like any other, except that the static picture is laid on from tiles already made at
+other scales, stretched to fit (`standInAt`): no tile is ever drawn at an in-between scale. Cars, people, the train,
+flags, leaves, the lit windows and glow, the lantern sign and the labels are drawn at the in-between scale directly,
+by the same code as at rest, so nothing can drift out of register. The frame that reaches the end lands: it switches
+to the level's own scale (and canvas size, where the level needs another), exactly where a jump would have put it.
+
+What it looks like:
+
+- *A wheel notch, a key, a button:* the model grows or shrinks smoothly for 180 ms (about 10 frames at 60 fps) and
+  stops. On the way in, the ground and buildings are the old level's tiles enlarged (slightly soft) until about
+  halfway, then the new level's tiles reduced (sharp), if those were drawn ahead, which they usually are; on the way
+  out, the old tiles reduced, with the rim of the view from the new level or, failing that, from the half-scale copy
+  of the whole model (softer). Moving things stay sharp throughout and keep moving.
+- *Labels and signposts* keep their size and slide with their buildings; names appear or drop out on the way as the
+  scale passes the points where they would at rest.
+- *The blurred bands and the vignette* stay where they are on screen. The blur keeps the old level's radius during
+  the glide and takes the new one 50 ms after landing: a small change in how soft the top and bottom bands are.
+- *Several notches in a row:* each one retargets the glide from where it is, 180 ms from the last notch, so a spin
+  of the wheel is one continuous movement.
+- *A pinch* (two fingers on a touch screen; on a trackpad, ctrl+wheel in Chrome, Firefox and Edge, gesture events in
+  Safari) drives the scale directly, between the furthest levels allowed, and when the fingers lift it glides to the
+  nearest level. It used to step a level each time the fingers had spread by 1.4x.
+- *Reduced motion* (`prefers-reduced-motion: reduce`): no glide, the zoom jumps as before.
+- *A slow machine:* the glide lasts 180 ms however long a frame takes, so with software drawing (60 to 110 ms a
+  frame here) it is one to three in-between frames.
+- Starting a drag, pressing an arrow key or using the pan and home buttons while a zoom glides lands it at once.
+  The camera still never moves without input: the only motion added is the 180 ms after a zoom input (140 ms more
+  after the last ctrl+wheel event of a trackpad pinch, which is how the end of one is known).
+
+**At rest the picture is the same as before.** Stepping frames by hand with a fixed clock and seeded random numbers
+(layers path), 19 views after wheel, key, button and drag sequences at pixel ratio 1, 2 and 3, day and night, with
+and without labels: 17 identical to main pixel for pixel, one (three quick notches out) different in 6 pixels by at
+most 2 levels (the order tiles were drawn in), and the November view with wind different only in where the blowing
+leaves are (their random numbers depend on which trees were on screen during the glide). With reduced motion (4
+views) and on the canvas path (5 views), identical. Two things other than the glide differ on purpose: rain, snow and pollen are
+re-scattered when a zoom lands rather than when it starts, and the cache keeps more tiles (at the recorded size, up to
+about 51 instead of 32, some 20 MB more by day; the megabyte cap is unchanged).
+
+**Numbers** (same container, before and after back to back; before = main at 22c2cbe run with the new benchmark):
+
+| | before | after |
+| --- | --- | --- |
+| `--swgpu` zoom-steps (Retina size): mean `tiles` part of `frame()` | 7.1 ms | 1.5 ms |
+| `--swgpu` zoom-steps: `frame()` p50 / p95 | 18.6 / 30.4 ms | 13.8 / 24.4 ms |
+| `--swgpu` zoom-steps: longest `frame()` in the 0.7 s after a step, median / max over the steps | 29 / 69 ms | 17 / 51 ms |
+| `--swgpu` zoom-steps-dpr1: mean `tiles` part, `frame()` p50 / p95 | 10.4 ms, 20.3 / 29.5 | 2.1 ms, 10.1 / 23.2 |
+| `--swgpu`: `fit()` per step, median / max | 0.4 / 1.0 ms | 0.25 / 0.9 ms |
+| `--swgpu`: frames after a step still showing a stretched square | 0 to 8 | 0 to 3 |
+| `--swgpu`: in-between frames per step | none | 1 to 5 |
+| software, wheel: interval p95 / max during the gesture | 107 / 168 ms | 105 / 189 ms |
+| software, wheel-dpr2 | 157 / 300 | 157 / 304 |
+| software, laptop-wheel (CPU slowed 4x) | 404 / 547 | 438 / 666 |
+| software, trackpad pinch: p50 / p95 / max | 31 / 132 / 233 | 69 / 123 / 205 |
+| software, phone-touch (CPU slowed 4x): p50 / p95 / max | 253 / 690 / 977 | 540 / 738 / 859 |
+| software, standing still: desktop, retina fps | 9.9, 15.5 | 9.4, 14.7 |
+
+Read them with the graphics card caveat in mind. Under `--swgpu` the time *between* frames is SwiftShader painting
+tiles, one to seven seconds at a time on both builds, so "worst frame per step" and "time outside `frame()`" are
+reported by the zoom table but mean nothing on this container (medians 3.8 s before, 2.6 s after); they are there
+for `--headed` on a real machine. The main-thread numbers are real: less tile drawing lands in the frames after a
+step, partly because the next level is ready more often and partly because the allowance backs off when frames come
+late, which under SwiftShader is always. In software the frame costs what the view costs, glide or no glide: the
+pinch p50 went up because a pinch now draws every frame at the scale the fingers are at (near the opening view,
+60 to 110 ms a frame here) where it used to jump to deep zoom, where frames are cheap; one frame at a given scale
+costs the same as before. The other differences are run-to-run noise.
+
+**Not verified** (no Safari here):
+
+- that the long frame at a zoom step is gone in Safari, and which of the causes above it was;
+- that drawing some twenty tiles stretched, every frame of a glide, is as cheap in Safari's canvas as it is in
+  Chromium's (it is the same call the model made before for a missing tile, on at most a few frames; now it is every
+  glide frame). If glide frames are long in Safari, "the last zoom" line shows it (`longest` during the glide);
+- trackpad pinch in Safari: it sends `gesturestart` / `gesturechange` / `gestureend` rather than ctrl+wheel. The
+  model now handles them (and stops Safari magnifying the page while the pointer is over the model); tested only
+  with made-up events in Chromium;
+- whether changing a `backdrop-filter` radius is expensive in Safari (it is now alone in its frame, three frames
+  after the landing, and shows as `blur(...)` in the readout if that frame is long);
+- real touch pinches on a phone (tested with synthetic touches at 390x844@3).
+
+To check in Safari: open the site with `?fps`, zoom a step, and screenshot the box. "the last zoom" gives the glide's
+frame count and longest frame, the landing frame, and the longest frame after it with what happened in it; "worst
+frame of the last 5 s" gives the same breakdown for whatever was longest.
+
 ## What is left, and whether to change engines
 
 - **Tilt-shift blur** is the biggest software cost (30+ ms a frame). On a graphics card it is cheap. Making it cheaper
@@ -377,6 +522,8 @@ ceiling. Open the site with `?fps` in Safari, then with `?fps&compose=canvas&cut
   `npm run bench -- --headed` first. If a mid-range laptop still shows `dyn` over 10 ms a frame there, a WebGL
   renderer (depth-sorted sprites with a depth test instead of cut-out cards) is the change that would remove it; a
   worker with OffscreenCanvas would only move the same work off the main thread.
+- **After the fourth pass** a zoom step no longer resizes or restyles anything it does not have to, and glides.
+  If Safari still shows a long frame at a step, the `?fps` box now says what was in it.
 - **After the third pass** the cut-out cards are gone: `dyn` is 7 ms where it was 30 on the graphics-card path, and
   most of what is left is the model's own arithmetic and a few hundred clipped fills.
 - **After the second pass**, dragging and zooming cost the same per frame as standing still, so a gesture is as

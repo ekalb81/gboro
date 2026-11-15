@@ -6,7 +6,7 @@
 // time to the first drawn frame. The view, date, time of day and wind are fixed so runs compare.
 //
 // Options:
-//   --only name,name   run only these scenarios (see SCENARIOS below); 'steady' and 'interaction' name the two groups
+//   --only name,name   run only these scenarios (see SCENARIOS below); 'steady', 'interaction' and 'zoom' name the groups
 //   --secs N           seconds to measure each scenario (default 8)
 //   --json file        also write the results as JSON
 //   --profile dir      also save a CPU profile (.cpuprofile, open in Chrome DevTools > Performance) per scenario
@@ -61,6 +61,11 @@ const SCENARIOS = [
   { name: 'laptop-drag', vw: 1366, vh: 768, dpr: 1, q: '', cpu: 4, gesture: 'drag' },
   { name: 'laptop-wheel', vw: 1366, vh: 768, dpr: 1, q: '', cpu: 4, gesture: 'wheel' },
   { name: 'phone-touch', vw: 390, vh: 844, dpr: 3, q: '', cpu: 4, mobile: true, gesture: 'touch' },
+  // zoom: one zoom step at a time (wheel, keys, the buttons) with a pause after each, and a trackpad pinch; the third
+  // table takes each step apart (worst frame, time outside frame(), handlers, the glide). Meant for --swgpu.
+  { name: 'zoom-steps', vw: 1335, vh: 805, dpr: 2, q: '&z=1', gesture: 'zoomsteps', zoom: true },
+  { name: 'zoom-steps-dpr1', vw: 1920, vh: 1080, dpr: 1, q: '&z=1', gesture: 'zoomsteps', zoom: true },
+  { name: 'zoom-pinch', vw: 1335, vh: 805, dpr: 2, q: '&z=1', gesture: 'pinch', zoom: true },
 ];
 const STEADY = ['desktop', 'desktop-dpr2', 'retina', 'retina-night', 'zoomed-in', 'zoomed-out', 'pan-zoom', 'laptop-4x', 'phone-4x'];
 
@@ -112,6 +117,14 @@ async function gesture(page, cdp, kind, secs) {
       for (const d of [-120, -120, -120, 120, 120, 120]) { await span(async () => { await page.mouse.wheel(0, d); await sleep(500); }); }
     } else if (kind === 'trackpad') { // a pinch on a trackpad: many small ctrl+wheel events
       for (const d of [-1, 1]) await span(async () => { for (let i = 0; i < 45; i++) { await ctrlWheel(d * 4); await sleep(16); } await sleep(300); });
+    } else if (kind === 'zoomsteps') { // one step at a time, each with 0.7 s to glide, land and settle
+      await page.mouse.move(cx, cy); await page.focus('#village');
+      const wheel = (d) => () => page.mouse.wheel(0, d), key = (k) => () => page.keyboard.press(k), click = (id) => async () => { await page.click(id); await page.mouse.move(cx, cy); };
+      const steps = [['wheel in', wheel(-120)], ['wheel in', wheel(-120)], ['wheel in', wheel(-120)], ['wheel out', wheel(120)], ['wheel out', wheel(120)], ['wheel out', wheel(120)],
+        ['key +', key('+')], ['key -', key('-')], ['button +', click('#zin')], ['button -', click('#zout')]];
+      for (const [label, fn] of steps) { const a = await now(); await fn(); await sleep(700); spans.push([a, await now(), label]); }
+    } else if (kind === 'pinch') { // a trackpad pinch in, a pause, and out again: about 2.5x each way
+      for (const d of [-1, 1]) { const a = await now(); for (let i = 0; i < 30; i++) { await ctrlWheel(d * 3); await sleep(16); } await sleep(700); spans.push([a, await now(), d < 0 ? 'pinch in' : 'pinch out']); }
     } else if (kind === 'touch') { // one-finger drags, then a two-finger pinch out and back in
       await span(async () => {
         await touch('touchStart', [[cx, cy]]);
@@ -140,7 +153,7 @@ async function gesture(page, cdp, kind, secs) {
   return spans;
 }
 
-const PHASES = ['tiles', 'sim', 'dyn', 'blow', 'grade', 'tilt', 'sign', 'labels', 'ahead'];
+const PHASES = ['zoom', 'tiles', 'sim', 'dyn', 'blow', 'grade', 'tilt', 'sign', 'labels', 'ahead'];
 
 async function run(browser, base, sc) {
   const ctx = await browser.newContext({ viewport: { width: sc.vw, height: sc.vh }, deviceScaleFactor: sc.dpr, isMobile: !!sc.mobile, hasTouch: !!sc.mobile });
@@ -223,14 +236,37 @@ async function run(browser, base, sc) {
       over50: ivi.filter((v) => v > 50).length, over100: ivi.filter((v) => v > 100).length,
       tiles: tl.reduce((s, f) => s + (f.nt || 0), 0), multi: tl.filter((f) => (f.nt || 0) >= 2).length, maxPerFrame: Math.max(0, ...tl.map((f) => f.nt || 0)),
       tileMean: +mean(per).toFixed(1), tileMax: +Math.max(0, ...per).toFixed(1), tileFrameMax: +Math.max(0, ...tl.map((f) => (f.tt || 0) + (f.tw || 0))).toFixed(1),
-      fitMs: +Math.max(0, ...tl.map((f) => f.fit || 0)).toFixed(1),
+      fitMs: +Math.max(0, ...fi.map((i) => (r.frames[i].fit || 0) + (r.frames[i - 1].fitF || 0))).toFixed(1),
       // frames that showed a missing tile stretched from another scale, and how long after a gesture's end the last one was
-      standIn: r.frames.filter((f) => f.si && spans.some(([a, b]) => f.t >= a && f.t <= b + 300)).length,
-      standInAfterMs: Math.round(Math.max(0, ...spans.map(([a, b], k) => { const e = k + 1 < spans.length ? spans[k + 1][0] : Infinity; const l = r.frames.filter((f) => f.si && f.t > b && f.t < e); return l.length ? l[l.length - 1].t - b : 0; }))),
+      glide: r.frames.filter((f) => f.zg && spans.some(([a, b]) => f.t >= a && f.t <= b + 300)).length,
+      standIn: r.frames.filter((f) => f.si && !f.zg && spans.some(([a, b]) => f.t >= a && f.t <= b + 300)).length,
+      standInAfterMs: Math.round(Math.max(0, ...spans.map(([a, b], k) => { const e = k + 1 < spans.length ? spans[k + 1][0] : Infinity; const l = r.frames.filter((f) => f.si && !f.zg && f.t > b && f.t < e); return l.length ? l[l.length - 1].t - b : 0; }))),
       warmS,
     };
   }
+  // each zoom step taken apart: the interval before frame i belongs to frame i-1's work plus whatever ran in between
+  let zoom = null;
+  if (sc.zoom) {
+    const inF = (f) => (f.end != null ? f.end - f.t : PHASES.reduce((s, k) => s + (f[k] || 0), 0));
+    const f1 = (v) => (Number.isFinite(v) ? +v.toFixed(1) : '-');
+    zoom = spans.map(([a, b, label]) => {
+      const fi = []; for (let i = 1; i < r.frames.length; i++) { const t = r.frames[i].t; if (t >= a && t <= b) fi.push(i); }
+      if (!fi.length) return { step: label, frames: 0, what: 'no frame in this step' };
+      const F = fi.map((i) => r.frames[i]), ivs = fi.map((i) => r.frames[i].t - r.frames[i - 1].t), outs = fi.map((i) => r.frames[i].t - r.frames[i - 1].t - inF(r.frames[i - 1]));
+      const wi = ivs.indexOf(Math.max(...ivs)), A = r.frames[fi[wi] - 1], G = F.filter((f) => f.zg), has = F.some((f) => f.inp != null);
+      const li = fi.findIndex((i) => (r.frames[i].evF || []).includes('landed')); // the frame that lands, and the interval after it
+      return {
+        step: label, frames: F.length, p50: f1(pct(sorted(ivs), 0.5)), worst: f1(ivs[wi]), worstIn: f1(inF(A)), worstOut: f1(outs[wi]), outMax: f1(Math.max(...outs)),
+        workMax: f1(Math.max(...F.map(inF))), handlers: has ? f1(F.reduce((s, f) => s + (f.inp || 0), 0)) : '-', fit: f1(F.reduce((s, f) => s + (f.fit || 0) + (f.fitF || 0), 0)),
+        glide: G.length, glideMs: G.length ? Math.round(G[G.length - 1].t - G[0].t) : 0,
+        landWork: li >= 0 ? f1(inF(r.frames[fi[li]])) : '-', landNext: li >= 0 && li + 1 < fi.length ? f1(ivs[li + 1]) : '-',
+        tiles: F.reduce((s, f) => s + (f.nt || 0), 0), standIn: F.filter((f) => f.si && !f.zg).length,
+        what: [...new Set(F.flatMap((f) => [...(f.ev || []), ...(f.evF || [])]))].join(', '),
+      };
+    });
+  }
   return {
+    zoom,
     name: sc.name, viewport: `${sc.vw}x${sc.vh}@${sc.dpr}${sc.cpu > 1 ? ` cpu/${sc.cpu}` : ''}`,
     fps: +(r.frames.length / secs).toFixed(1),
     frameP50: +pct(iv, 0.5).toFixed(1), frameP95: +pct(iv, 0.95).toFixed(1), frameMax: +pct(iv, 1).toFixed(1),
@@ -250,7 +286,7 @@ const browser = await chromium.launch({ headless: !HEADED, args: args.includes('
 const results = [];
 try {
   for (const sc of SCENARIOS) {
-    const want = ONLY.split(',').flatMap((n) => (n === 'steady' ? STEADY : n === 'interaction' ? SCENARIOS.filter((x) => x.gesture && x.name !== 'pan-zoom').map((x) => x.name) : [n]));
+    const want = ONLY.split(',').flatMap((n) => (n === 'steady' ? STEADY : n === 'interaction' ? SCENARIOS.filter((x) => x.gesture && !x.zoom && x.name !== 'pan-zoom').map((x) => x.name) : n === 'zoom' ? SCENARIOS.filter((x) => x.zoom).map((x) => x.name) : [n]));
     if (ONLY && !want.includes(sc.name)) continue;
     process.stderr.write(`running ${sc.name}...\n`);
     results.push(await run(browser, base, sc));
@@ -279,11 +315,25 @@ const IR = results.filter((r) => r.inter);
 if (IR.length) {
   console.log('\nduring gestures only (frame interval ms; tiles = static tiles drawn whole within a frame; multi = frames that drew 2 or more; stand-in = frames showing a missing tile stretched from another scale):');
   const ic = [['name', 'scenario'], ['viewport', 'viewport'], ['frames', 'frames'], ['p50', 'p50'], ['p95', 'p95'], ['p99', 'p99'], ['max', 'max'], ['over50', '>50ms'], ['over100', '>100ms'],
-    ['tiles', 'tiles'], ['multi', 'multi'], ['maxPerFrame', 'max/frame'], ['tileMean', 'ms/tile'], ['tileMax', 'tile max'], ['tileFrameMax', 'tiles in 1 frame ms'], ['fitMs', 'resize ms'], ['standIn', 'stand-in frames'], ['standInAfterMs', 'stand-in after ms']];
+    ['tiles', 'tiles'], ['multi', 'multi'], ['maxPerFrame', 'max/frame'], ['tileMean', 'ms/tile'], ['tileMax', 'tile max'], ['tileFrameMax', 'tiles in 1 frame ms'], ['fitMs', 'resize ms'], ['glide', 'glide frames'], ['standIn', 'stand-in frames'], ['standInAfterMs', 'stand-in after ms']];
   const get = (r, k) => (k === 'name' || k === 'viewport' ? r[k] : r.inter[k]);
   const iw = ic.map(([k, h]) => Math.max(h.length, ...IR.map((r) => String(get(r, k)).length)));
   console.log(ic.map(([, h], i) => h.padStart(iw[i])).join('  '));
   for (const r of IR) console.log(ic.map(([k], i) => String(get(r, k)).padStart(iw[i])).join('  '));
+}
+const ZR = results.filter((r) => r.zoom);
+if (ZR.length) {
+  console.log('\nzoom steps, one at a time (ms). worst = the longest time between two frames in the 0.7 s after the step; in frame() / outside = how');
+  console.log('much of that was the model\'s own frame() and how much was not (the browser, input handlers, waiting); outside max = the most time');
+  console.log('outside frame() between any two frames; work max = the longest frame(); handlers, fit = totals; glide = frames drawn at an in-between');
+  console.log('scale and how long that took; landing = frame() time of the frame that lands and the interval after it; stand-in = frames after the');
+  console.log('landing that still showed a stretched square. Compare worst with p50 (the usual interval on this machine):');
+  const zc = [['name', 'scenario'], ['step', 'step'], ['frames', 'frames'], ['p50', 'p50'], ['worst', 'worst'], ['worstIn', 'in frame()'], ['worstOut', 'outside'], ['outMax', 'outside max'], ['workMax', 'work max'],
+    ['handlers', 'handlers'], ['fit', 'fit'], ['glide', 'glide'], ['glideMs', 'glide ms'], ['landWork', 'landing'], ['landNext', 'then'], ['tiles', 'tiles'], ['standIn', 'stand-in'], ['what', 'what happened']];
+  const rows = ZR.flatMap((r) => r.zoom.map((z) => ({ name: r.name, ...z })));
+  const zw = zc.map(([k, h]) => Math.max(h.length, ...rows.map((z) => String(z[k] ?? '-').length)));
+  console.log(zc.map(([k, h], i) => (k === 'what' || k === 'step' || k === 'name' ? h.padEnd(zw[i]) : h.padStart(zw[i]))).join('  '));
+  for (const z of rows) console.log(zc.map(([k], i) => (k === 'what' || k === 'step' || k === 'name' ? String(z[k] ?? '-').padEnd(zw[i]) : String(z[k] ?? '-').padStart(zw[i]))).join('  '));
 }
 for (const r of results) if (r.errors.length) console.log(`\n${r.name} page errors:`, r.errors);
 console.log('\nframe = interval between frames (ms); work = time inside the model\'s frame() (ms); long = long tasks (>50 ms).');
