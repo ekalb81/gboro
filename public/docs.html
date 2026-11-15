@@ -90,6 +90,7 @@
     <li><a href="#local">Running it locally</a></li>
     <li><a href="#add">Adding a data source</a></li>
     <li><a href="#layout">Where things live</a></li>
+    <li><a href="#busy">How busy it looks</a></li>
     <li><a href="#limits">Known limits</a></li>
     <li><a href="#credits">Credits and licences</a></li>
   </ol>
@@ -125,6 +126,7 @@
     <tr><td><code>data/civic.json</code></td><td>council collector</td><td>Council and subcommittee meetings, "Watch" links, the City's weekly events video</td></tr>
     <tr><td><code>data/roads.json</code></td><td>roads collector</td><td>Closures, roadwork and crashes in Greensboro</td></tr>
     <tr><td><code>data/eats.json</code></td><td>restaurants and bars collector</td><td>Independent restaurants, bars, cafes and breweries with opening hours</td></tr>
+    <tr><td><code>data/traffic-volumes.json</code></td><td>traffic volumes collector</td><td>NCDOT's average daily traffic at its count stations downtown</td></tr>
     <tr><td><code>data/crime.json</code></td><td>crime collector</td><td>Citywide monthly counts, and counts per police division when available</td></tr>
     <tr><td><code>model/downtown.json</code>, <code>model/trees.json</code></td><td>the model tools</td><td>Buildings, streets, ground, parking, signals and trees</td></tr>
   </table></div>
@@ -141,7 +143,8 @@
     <tr><td>Weather alerts</td><td>Small chips at the top left; tap one to read it.</td></tr>
     <tr><td>Council meetings</td><td>The Melvin Municipal Office Building lights up from an hour before a meeting until it ends, with people walking in.</td></tr>
     <tr><td>Events and posts downtown</td><td>Placed by venue or street address. While an event is on: string lights, lit windows and a crowd. Pop-up food gets a food truck. Organizations' posts can show a chatter bubble.</td></tr>
-    <tr><td>Restaurants and bars</td><td>Storefronts are lit while open; open bars have a few people outside after dark.</td></tr>
+    <tr><td>Restaurants and bars</td><td>Storefronts are lit while open, with a few people outside at each kind of place's usual busy hours.</td></tr>
+    <tr><td>How busy it is</td><td>The number of moving cars, parked cars and people follows an estimate for this hour of this day. See <a href="#busy">How busy it looks</a>.</td></tr>
     <tr><td>Road closures</td><td>Barrels, cones or a stopped car on the real street. Traffic stops at full closures.</td></tr>
     <tr><td>The seasons</td><td>Each tree follows a calendar for its kind: bloom, leaf-out, fall colour, bare branches.</td></tr>
     <tr><td>Crime</td><td>Nothing. It is in the paper only.</td></tr>
@@ -176,6 +179,7 @@
     <tr><td>Council meetings, city events</td><td>The City's schedule, its YouTube feed, news</td><td>None</td><td><code>npm run civic</code></td><td>Every run</td></tr>
     <tr><td>Crime counts</td><td>FBI Crime Data Explorer, City open data</td><td>FBI part only</td><td><code>npm run crime</code></td><td>Every run</td></tr>
     <tr><td>Restaurants and bars</td><td>OpenStreetMap</td><td>None</td><td><code>npm run eats</code></td><td>About once a day</td></tr>
+    <tr><td>Traffic on each street</td><td>NCDOT average daily traffic counts</td><td>None</td><td><code>npm run volumes</code></td><td>About once a week</td></tr>
   </table></div>
 
   <h3>Social posts and events <span class="src">Muse digests in Gmail</span></h3>
@@ -358,7 +362,7 @@ npm run serve</code></pre>
   <h2>Where things live</h2>
   <div class="tbl"><table>
     <tr><th>Path</th><th>What it is</th></tr>
-    <tr><td><code>public/</code></td><td>The whole site. <code>index.html</code> and <code>app.js</code> (page, scene and the paper), <code>model.js</code> (renderer), <code>trees.js</code>, <code>place.js</code> (venue and address placement), <code>civic.js</code>, <code>crime.js</code>, <code>hours.js</code>, <code>docs.html</code> (this page), <code>classic.html</code> with <code>village.js</code>, <code>roads.js</code> and <code>eats.js</code> (the first citywide map)</td></tr>
+    <tr><td><code>public/</code></td><td>The whole site. <code>index.html</code> and <code>app.js</code> (page, scene and the paper), <code>model.js</code> (renderer), <code>trees.js</code>, <code>activity.js</code> (how busy it looks), <code>place.js</code> (venue and address placement), <code>civic.js</code>, <code>crime.js</code>, <code>hours.js</code>, <code>docs.html</code> (this page), <code>classic.html</code> with <code>village.js</code>, <code>roads.js</code> and <code>eats.js</code> (the first citywide map)</td></tr>
     <tr><td><code>public/data/</code></td><td>The collectors' output. Generated, git-ignored, apart from <code>map.json</code></td></tr>
     <tr><td><code>public/model/</code></td><td>The built model: <code>downtown.json</code> and <code>trees.json</code></td></tr>
     <tr><td><code>scripts/</code></td><td>Collectors (<code>fetch-*.mjs</code>, <code>civic.mjs</code>) and their libraries, <code>ingest.mjs</code> and <code>lib.mjs</code> (parsing, placement, privacy rules), <code>refresh.mjs</code> and <code>collectors.json</code> (the runner), <code>serve.mjs</code>, <code>bench.mjs</code></td></tr>
@@ -370,11 +374,28 @@ npm run serve</code></pre>
   </table></div>
 </section>
 
+<section id="busy">
+  <h2>How busy it looks</h2>
+  <p>The number of cars on the streets, cars in the lots and people on the sidewalks changes with the hour, the day of the week, the weather and what is on. This is an estimate, not a measurement: there is no free live feed of traffic, parking or foot traffic for downtown Greensboro. The rules are in <code>public/activity.js</code>.</p>
+  <div class="tbl"><table>
+    <tr><th>What you see</th><th>What sets it</th><th>Measured or typical</th></tr>
+    <tr><td>Moving cars on each street</td><td>NCDOT's average daily traffic for that street, spread over the day by a typical hourly curve for weekdays, Fridays, Saturdays and Sundays. Public holidays run like a Sunday.</td><td>The daily totals are NCDOT counts where a count station sits on the street, otherwise a figure typical of the street's size. The hourly curve is typical of a mid-sized US downtown.</td></tr>
+    <tr><td>Parked cars</td><td>Each row of stalls is filled by what stands around it: offices and courts on weekday days, shops and restaurants at lunch and in the evening, homes and hotels overnight, churches on Sunday morning. Lots near an event or a busy open place fill further.</td><td>Typical. The City's 2024 parking study found downtown parking underused, so no lot is ever drawn more than nine tenths full.</td></tr>
+    <tr><td>People walking</td><td>A typical curve that peaks at weekday lunch and on Friday and Saturday nights, with Elm Street busiest.</td><td>Typical</td></tr>
+    <tr><td>People outside a place</td><td>Only while it is open, by its kind: cafes in the morning, restaurants at lunch and dinner, bars and clubs late on Friday and Saturday.</td><td>Opening hours are live from OpenStreetMap. The busy hours are typical.</td></tr>
+    <tr><td>Weather</td><td>Rain, storms, snow, hard cold and heat thin out people a lot and traffic a little.</td><td>Live, from the National Weather Service</td></tr>
+    <tr><td>Events and closures</td><td>An event that is on draws a crowd, fills the parking around it and adds a little traffic. A full closure blocks its street.</td><td>Live</td></tr>
+  </table></div>
+  <p>The busiest hour never draws more moving cars and people than the model drew before this was added, so quiet hours are lighter on the browser and busy ones are no heavier. To preview another time of the week, add <code>?clock=sat-21:30</code> to the address (also <code>tue-8:15</code>, <code>sun-10:30</code>, <code>holiday-12:00</code>), with <code>&amp;time=night</code> for the light.</p>
+  <h3>Traffic on each street <span class="src">NCDOT</span></h3>
+  <p><code>scripts/fetch-traffic-volumes.mjs</code> reads NCDOT's public map service of annual average daily traffic and keeps the count stations inside the model's box. It needs no key, runs about once a week and keeps its last file when NCDOT does not answer. NCDOT counts Greensboro's streets every other year. If the file is missing, the model falls back to a typical figure for each street.</p>
+</section>
+
 <section id="limits">
   <h2>Known limits</h2>
   <ul>
     <li><b>Downtown only on the model.</b> The rest of the city appears in the paper under "Around town" and on the edge signposts.</li>
-    <li><b>Traffic is simulated.</b> The moving cars and walkers do not reflect real traffic or real crowds. Only closures, roadwork and crashes are live, and signal timings are typical.</li>
+    <li><b>How busy it looks is an estimate.</b> No one publishes live counts of cars, parked cars or people for downtown Greensboro. The numbers follow typical patterns adjusted by live weather, opening hours, events and closures, as described under <a href="#busy">How busy it looks</a>. Signal timings are typical too.</li>
     <li><b>Building heights are from 2015.</b> A handful of buildings finished since then, such as the Tanger Center and Hyatt Place, have estimated heights. The county was flown again in 2024, and those heights have not been brought in yet.</li>
     <li><b>The model is rebuilt by hand.</b> New buildings and street changes in OpenStreetMap appear only after a rebuild.</li>
     <li><b>Tree species are inferred</b>, as described above.</li>

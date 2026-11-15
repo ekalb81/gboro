@@ -389,7 +389,7 @@ function drawGround(c){
 }
 // Parking stalls: [x, y, stall axis (deg), aisle direction (deg), spacing along the aisle, depth (tiles), seed], from
 // the rows prep.py lays out (MAP.SR: start, step, count, angles, spacing, depth).
-const ST=[];(MAP.SR||[]).forEach((r,ri)=>{for(let k=0;k<r[4];k++)ST.push([r[0]+r[2]*k,r[1]+r[3]*k,r[5],r[6],r[7],r[8],ri*31+k])});
+const ST=[];(MAP.SR||[]).forEach((r,ri)=>{for(let k=0;k<r[4];k++)ST.push([r[0]+r[2]*k,r[1]+r[3]*k,r[5],r[6],r[7],r[8],ri*31+k,ri])});
 function stallFrame(s){const a=s[2]*rad,b=s[3]*rad;return[s[0],s[1],Math.cos(a),Math.sin(a),Math.cos(b),Math.sin(b)]}
 // cast shadows from the real sun
 // The shadow mask is built once per sun position; each tile then lays it down with the iso transform.
@@ -430,9 +430,11 @@ const pts0=[];
   // parked cars in surface lots
   const carCols=['#eeeef2','#eeeef2','#f6f4ee','#c4c8d0','#c4c8d0','#9aa0aa','#5c6270','#2c2c34','#2c2c34',C.Brick,C['Aggie blue'],'#6a7f96'];
   // Parked cars sit in the lots' real stalls (tools/model/prep.py lays them out along each lot's painted rows and
-  // stall angle, read from the 2024 aerial), nose in, about two thirds full. Without stalls, a plain grid.
-  if(ST.length)ST.forEach((st,i)=>{if(hash(i*.731+3,st[6])>.66)return;const[x,y,ux,uy]=stallFrame(st);const L=4.4/M,Wd=1.85/M,j=(hash(i,9)-.5)*.25/M;const cx=x+ux*j,cy=y+uy*j;
-    if(!at(bpx,cx,cy))return;pts0.push({kind:'car',gx:cx,gy:cy,r:rect(cx,cy,ux,uy,L,Wd),col:carCols[Math.floor(hash(i,st[6]+1)*carCols.length)]})});
+  // stall angle, read from the 2024 aerial), nose in, about two thirds full until the
+  // page says how busy it is (see "how busy it is" below: each car keeps a number u, and is shown while u is under
+  // its lot's share of stalls in use). Without stalls, a plain grid.
+  if(ST.length)ST.forEach((st,i)=>{const u=hash(i*.731+3,st[6]);if(u>.9)return;const[x,y,ux,uy]=stallFrame(st);const L=4.4/M,Wd=1.85/M,j=(hash(i,9)-.5)*.25/M;const cx=x+ux*j,cy=y+uy*j;
+    if(!at(bpx,cx,cy))return;pts0.push({kind:'car',gx:cx,gy:cy,r:rect(cx,cy,ux,uy,L,Wd),col:carCols[Math.floor(hash(i,st[6]+1)*carCols.length)],u,row:st[7]})});
   else MAP.PL.forEach((pl,li)=>{const q=pairs(pl);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const horiz=hash(li,5)<.5;const sx=(horiz?5.6:2.8)/M,sy=(horiz?2.8:5.6)/M;for(let y=Math.min(...ys)+sy;y<Math.max(...ys)-sy/2;y+=sy)for(let x=Math.min(...xs)+sx;x<Math.max(...xs)-sx/2;x+=sx){const ri=Math.round(((horiz?x-Math.min(...xs):y-Math.min(...ys)))/(5.6/M));if(ri%3===2)continue;if(!pip(x,y,q)||!at(bpx,x,y)||rnd()>.5)continue;const r=rect(x,y,horiz?1:0,horiz?0:1,4.3/M,1.9/M);pts0.push({kind:'car',gx:x,gy:y,r,col:carCols[Math.floor(rnd()*carCols.length)]})}});
   // landmarks
   const ccp=MAP.PK.find(p=>p.n==='Center City Park');if(ccp){const q=pairs(ccp.p);pts0.push({kind:'fountain',gx:q.reduce((a,p)=>a+p[0],0)/q.length,gy:q.reduce((a,p)=>a+p[1],0)/q.length})}
@@ -637,9 +639,10 @@ function addCar(l,s){const c={lane:l,s,v:.6,col:carCols[Math.floor(Math.random()
 function nextLane(c){const l=c.lane;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
   // mostly straight on, sometimes a turn
   const h=(q,a)=>{const p=q.ch.p;return a?Math.atan2(p[1][1]-p[0][1],p[1][0]-p[0][0]):Math.atan2(p[p.length-1][1]-p[p.length-2][1],p[p.length-1][0]-p[p.length-2][0])};const h0=h(l,false);
-  const w=opts.map(o=>{let d=Math.abs(h(o,true)-h0);d=Math.min(d,2*Math.PI-d);return d<.5?4:1});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<opts.length;i++){r-=w[i];if(r<=0)return opts[i]}return opts[0]}
+  const w=opts.map(o=>{let d=Math.abs(h(o,true)-h0);d=Math.min(d,2*Math.PI-d);return(d<.5?4:1)*(o.vol||1)});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<opts.length;i++){r-=w[i];if(r<=0)return opts[i]}return opts[0]}
 function boxBusy(n,me){for(const l of n.out)for(const c of l.cars)if(c!==me&&c.s<.55&&c.v>.05)return true;for(const l of n.inn)for(const c of l.cars)if(c!==me&&c.go&&l.L-c.s<.6)return true;return false}
 function stepTraffic(dt){
+  feedCars(dt);
   for(const l of TF.lanes){
     for(let i=0;i<l.cars.length;i++){const c=l.cars[i];if(!c.next)c.next=nextLane(c);
       // the gap to whatever is ahead: the car in front, or the last car on the lane we turn into
@@ -658,11 +661,72 @@ function stepTraffic(dt){
     // cars that reached the end move on (or leave the model)
     while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift();const nx=c.next;const[ox_,oy_]=lanePos(l,l.L);c.s-=l.L;c.wait=0;c.go=false;c.next=null;
       if(nx){c.lane=nx;nx.cars.push(c);const[px,py]=lanePos(nx,0);c.off=[ox_-px,oy_-py,.6]}
-      else{const e=TF.entries[Math.floor(Math.random()*TF.entries.length)];const tail=e.cars[e.cars.length-1];if(tail&&tail.s<CARL*2){c.lane=l;c.s=l.L-.01;c.v=0;l.cars.unshift(c);break}c.lane=e;c.s=0;c.v=.8;c.off=null;e.cars.push(c)}}}
+      else if(tcars.length>carTarget){tcars.splice(tcars.indexOf(c),1)}
+      else{const e=pickEntry();const tail=e.cars[e.cars.length-1];if(tail&&tail.s<CARL*2){c.lane=l;c.s=l.L-.01;c.v=0;l.cars.unshift(c);break}c.lane=e;c.s=0;c.v=.8;c.off=null;e.cars.push(c)}}}
 }
 function lanePos(l,s){const[gx,gy,ux,uy]=along(l.ch,s);const off=l.ow&&!l.rev?0:(RW[l.c]/4)/M;return[gx-uy*off,gy+ux*off,ux,uy]}
 const trainCh=clipLine(pairs(MAP.TRAIN),1.5).map(p=>mkChain(p,{})).sort((a,b)=>b.L-a.L)[0]||mkChain([[0,0],[0,0]],{});
 let trainD=-12,trainWait=4;
+
+// ---------- how busy it is ----------
+// The page (app.js, from public/activity.js) says how busy downtown is right now: an estimate from the hour, the day
+// of the week, the weather and what is on, not a measurement. Three things follow it.
+//
+// Moving cars. Each street carries its average daily traffic (NCDOT's count where a count station is on it, else a
+// figure typical of its class). The cars on a stretch at any moment are its hourly flow times its length over the
+// speed, plus a share for those waiting at lights; the total is never more than the model first seeded, so the
+// busiest hour costs no more to draw than before. Cars enter on a street in proportion to its traffic, and when
+// there are too many, those that drive off the model are not replaced.
+//
+// Parked cars. Every lot's rows are filled according to what stands around them (offices, shops and restaurants,
+// homes and hotels, churches), each with its own daily rhythm, and lots near an event or a busy place fill further.
+//
+// People. Each walker has a rank; the busier the sidewalks, the further down the ranks they are shown. Elm Street
+// comes first, then the main streets.
+const AADT_CLASS=[16000,16000,12000,6000,1500,600,600];const PEAK_SHARE=.084;
+let carTarget=1e9,walkLv=.5,ACT=null,volFor=null,entryW=null;
+for(const l of TF.lanes)l.aadt=AADT_CLASS[l.c]||1500;
+const laneVol=l=>l.aadt/(l.rev?2:1);
+function setLaneVols(){const top=Math.max(...TF.lanes.map(laneVol));for(const l of TF.lanes)l.vol=Math.max(.05,laneVol(l)/top);entryW=null}
+setLaneVols();
+/** NCDOT count stations ({gx,gy,aadt}): a station sets the traffic of the whole street it stands on. */
+function setVolumes(list){if(list===volFor)return;volFor=list;const by=new Map();
+  for(const l of TF.lanes)l.aadt=AADT_CLASS[l.c]||1500;
+  for(const st of list||[]){if(!(st.aadt>0))continue;let best=null,bd=3;for(const l of TF.lanes){if(!l.ch.n)continue;const ch=l.ch;for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((st.gx-a0)*dx+(st.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-st.gx,a1+dy*t-st.gy);if(d<bd){bd=d;best=l}}}
+    if(best){const k=best.ch.n;if(!by.has(k))by.set(k,[]);by.get(k).push(st.aadt)}}
+  for(const l of TF.lanes){const v=by.get(l.ch.n);if(v)l.aadt=v.reduce((a,b)=>a+b,0)/v.length}
+  setLaneVols();if(DBG)console.log('[dbg] street volumes',[...by].map(([k,v])=>k+' '+Math.round(v.reduce((a,b)=>a+b,0)/v.length)).join(', '))}
+/** The cars a lane should hold when `share` of the day's traffic passes in this hour. */
+const SEED=tcars.length;
+function laneCars(l,share){const kmh=(l.c<=2?1.5:1.15)*M*3.6;return laneVol(l)*share/kmh*(l.L*M/1000)*1.4}
+function pickEntry(){const E=TF.entries;if(!entryW){entryW=E.map(laneVol);entryW.sum=entryW.reduce((a,b)=>a+b,0)}let r=Math.random()*entryW.sum;for(let i=0;i<E.length;i++){r-=entryW[i];if(r<=0)return E[i]}return E[E.length-1]}
+function dropCar(c){const a=c.lane.cars,i=a.indexOf(c);if(i>=0)a.splice(i,1);const j=tcars.indexOf(c);if(j>=0)tcars.splice(j,1)}
+let feedAcc=0;
+function feedCars(dt){if(tcars.length>=carTarget){feedAcc=0;return}feedAcc+=dt*3;while(feedAcc>=1&&tcars.length<carTarget){feedAcc--;const e=pickEntry(),tail=e.cars[e.cars.length-1];if(!tail||tail.s>CARL*2.5){const c=addCar(e,0);c.v=.8}}}
+/** Thin the cars to a level at once (when the page opens, or comes back after a long sleep), lane by lane. */
+function trimCars(share){for(const l of TF.lanes){const want=laneCars(l,share);let n=Math.floor(want+Math.random());while(l.cars.length>n)dropCar(l.cars[Math.floor(Math.random()*l.cars.length)])}}
+function setTraffic(share,first){let n=0;for(const l of TF.lanes)n+=laneCars(l,share);const was=carTarget;carTarget=Math.max(2,Math.min(SEED,Math.round(n)));if(first||tcars.length>carTarget*1.6+6)trimCars(share);return was!==carTarget}
+
+// what each row of stalls serves: the buildings within about 120 m, nearer and larger ones counting for more
+const LOTKIND={apartments:'home',residential:'home',house:'home',detached:'home',dormitory:'home',hotel:'home',church:'church',retail:'retail',commercial:'retail',office:'office',government:'office',public:'office',university:'office',school:'office',industrial:'office',train_station:'office',yes:'mixed'};
+const rowMix=(MAP.SR||[]).map(r=>{const x=r[0]+r[2]*(r[4]-1)/2,y=r[1]+r[3]*(r[4]-1)/2;const m={office:0,retail:0,home:0,church:0};
+  for(const b of blds){const d=Math.hypot(b.cx-x,b.cy-y);if(d>13)continue;const k=LOTKIND[b.t];if(!k)continue;const w=Math.sqrt(b.area*Math.max(1,b.lv))/(1+(d/4)*(d/4));if(k==='mixed'){m.office+=w*.5;m.retail+=w*.5}else m[k]+=w}
+  const s=m.office+m.retail+m.home+m.church;if(!s)return{x,y,office:.6,retail:.4,home:0,church:0};for(const k in m)m[k]/=s;return{x,y,...m}});
+const lotCars=pts0.filter(o=>o.kind==='car'&&o.u!=null);const NOBOX=[1e9,1e9,1e9,1e9],NOPATH=new Path2D();
+/** Show or hide each parked car for the lots' shares in use. True when any car changed (the still tiles are stale). */
+function setParking(act){const occ=rowMix.map(m=>{if(!act)return .66;let o=m.office*act.park.office+m.retail*act.park.retail+m.home*act.park.home+m.church*act.park.church;
+    for(const d of act.draws||[]){const q=Math.hypot(d.gx-m.x,d.gy-m.y);if(q<d.r)o=Math.max(o,d.occ*(1-.5*q/d.r))}return Math.round(Math.min(.9,o)*25)/25});
+  let ch=false;for(const o of lotCars){const hid=!(o.u<occ[o.row]);if(hid===!!o.hid)continue;ch=true;o.hid=hid;
+    // a hidden car keeps its place in the lists but gets a box nothing meets and an empty outline: it is not drawn
+    // into the tiles and hides nothing that passes
+    if(hid){o.box1=o.box;o.cut1=[o.cut.p,o.cut.box];o.box=NOBOX;o.cut.p=NOPATH;o.cut.box=NOBOX}else{o.box=o.box1;o.cut.p=o.cut1[0];o.cut.box=o.cut1[1]}}
+  return ch}
+setParking(null);
+people.forEach((p,i)=>{p.rk=hash(i*.37+1,5)/(/Elm Street/.test(p.ch.n||'')?1:p.ch.c<=2?.75:.55)});
+/** Take the page's estimate (scene.act) and street counts (scene.volumes). True if the still tiles must be redrawn. */
+function setActivity(scene){if(scene.volumes!==undefined)setVolumes(scene.volumes);const a=scene.act;if(!a)return false;const first=!ACT;ACT=a;
+  walkLv=a.walk;setTraffic(a.hourShare,first);return setParking(a)}
+if(DBG)window.__busy=()=>({cars:tcars.length,carTarget,seed:SEED,walkers:people.filter(p=>p.rk<walkLv).length,walkersAll:people.length,parked:lotCars.filter(o=>!o.hid).length,stalls:ST.length,act:ACT});
 
 // ---------- camera ----------
 // camX,camY: the view's top-left corner in model pixels (static origin). The view is W/VS by H/VS model pixels.
@@ -756,7 +820,7 @@ function frame(ts){const F0=performance.now();
   // the lights themselves, and stop signs, at the stop line on the right of each approach
   for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;const s_=Math.max(0,l.L-stopBack(l)+.2);const[gx,gy,ux,uy]=along(l.ch,s_);const off=(RW[l.c]/2+1.2)/M;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
     dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
-  for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.ch.L||p.d<0){p.dir*=-1;p.d=Math.max(0,Math.min(p.ch.L,p.d))}}if(nt&&p.night)continue;
+  for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.ch.L||p.d<0){p.dir*=-1;p.d=Math.max(0,Math.min(p.ch.L,p.d))}}if(p.rk>=walkLv)continue;
     const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5)})}
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
   // crowds only where something is actually on: events at a venue, council in session, open bars after dark
@@ -891,7 +955,8 @@ function update(scene){
     if(best&&best.d<4){k.lanes.push({lane:best.l,s:best.s});if(best.l.rev)k.lanes.push({lane:best.l.rev,s:best.l.L-best.s});if(k.full)for(const q of k.lanes)q.lane.blocked=true}}
   if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
-  if(key!==prevKey||windKey(WIND)!==pw){L.version++;if(started)restatic()}
+  const busy=setActivity(scene);
+  if(key!==prevKey||windKey(WIND)!==pw||busy){L.version++;if(started)restatic()}
 }
 // Each area's signpost goes where a line from the middle of the model toward that area leaves the model,
 // a little inside the base, nudged off buildings and away from the other signs.
