@@ -100,7 +100,7 @@
 
 <section id="what">
   <h2>What it is</h2>
-  <p>GSO Village is a small isometric model of downtown Greensboro, from Bellemeade Street to Gate City Boulevard, drawn in a browser. It is something you watch, not something you play. The town reacts to what is really happening: it rains on the model when it rains downtown, City Hall lights up on council nights, barrels block a street NCDOT has closed, and a bar's windows glow while it is open.</p>
+  <p>GSO Village is a small isometric model of downtown Greensboro, from Bellemeade Street to the railroad crossings just south of Gate City Boulevard, drawn in a browser. It is something you watch, not something you play. The town reacts to what is really happening: it rains on the model when it rains downtown, City Hall lights up on council nights, barrels block a street NCDOT has closed, and a bar's windows glow while it is open.</p>
   <p>Beside the model sits "the paper" (The Gate City Almanac), which lists the same things in words: today's events, council meetings, road closures, places to eat and drink, items from elsewhere in the city, and crime counts.</p>
   <p>Three rules shape everything:</p>
   <ul>
@@ -240,13 +240,14 @@
 
 <section id="model">
   <h2>The downtown model</h2>
-  <p>The model covers the box from 36.0768 to 36.0676 north and 79.7954 to 79.7856 west, at 9 metres per tile (about 98 by 113 tiles). The file records that box, so anything with a latitude and longitude lands in the right place. It holds 272 buildings, 438 street segments, 77 signals and stop signs, 633 trees and about 7,200 parking stalls.</p>
+  <p>The model covers the box from 36.0768 to 36.0660 north and 79.7954 to 79.7856 west, at 9 metres per tile (about 98 by 133 tiles). The file records that box, so anything with a latitude and longitude lands in the right place. It holds 374 buildings, 496 street segments, 83 signals and stop signs, 731 trees and about 7,900 parking stalls, plus the Eugene Street bridge over the tracks, the railroad bridge over South Davie Street, two covered skywalks and three railroad crossings.</p>
   <h3>What each layer is built from</h3>
   <div class="tbl"><table>
     <tr><th>Layer</th><th>Source</th><th>As of</th></tr>
     <tr><td>Building outlines, streets, parks, parking lots, rail, footpaths, signals and stop signs</td><td>OpenStreetMap</td><td>The extract used at the last rebuild</td></tr>
     <tr><td>Building heights and stepped roofs</td><td>NC Floodplain Mapping Phase III lidar, public on NOAA's Digital Coast</td><td>Flown February 2015</td></tr>
-    <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the lidar, each checked against the aerial</td><td>2015 and 2024</td></tr>
+    <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the lidar, each checked against the aerial; outlines from NC Emergency Management's statewide building footprints where it has one</td><td>2015, 2022 and 2024</td></tr>
+    <tr><td>Bridges, the underpass, skywalks and railroad crossings</td><td>OpenStreetMap (bridge and crossing tags). Deck heights and ramp lengths are typical, not measured.</td><td>The extract used at the last rebuild</td></tr>
     <tr><td>Roof colours, lawns and planting, paving, painted parking rows</td><td>NC OneMap aerial imagery</td><td>Flown February 2024</td></tr>
     <tr><td>Facade colours and floor counts</td><td>Mapillary street photos (about 50 buildings)</td><td>2018 and 2021</td></tr>
     <tr><td>Landmark fronts (Kress, Carolina Theatre and others)</td><td>Photos on Wikimedia Commons, used as reference</td><td>Various</td></tr>
@@ -256,16 +257,17 @@
   <p>Google Street View is not used: its terms forbid building a model from its imagery.</p>
 
   <h3>Rebuilding the model</h3>
-  <p>Three Python tools in <code>tools/model/</code> build the model files. They are run by hand when the inputs change; the publish run does not rebuild the model.</p>
+  <p>Four Python tools in <code>tools/model/</code> build the model files. They are run by hand when the inputs change; the publish run does not rebuild the model.</p>
   <div class="tbl"><table>
     <tr><th>Tool</th><th>Writes</th><th>When to run it</th></tr>
+    <tr><td><code>ortho.py</code></td><td>The aerial photo for the model's box, from NC OneMap. It asks for tiles shaped to the box in degrees and checks the area the server says it sent, because the server quietly widens a request whose shape does not match.</td><td>Only after a new statewide aerial flight</td></tr>
     <tr><td><code>ground.py</code></td><td><code>data/model/imagery/ground.json</code>: ground cover in 1.5 m cells and the direction of painted parking lines</td><td>Only after a new statewide aerial flight</td></tr>
     <tr><td><code>trees.py lidar</code></td><td><code>data/model/osm/trees-lidar.json</code>: tree crowns from the lidar</td><td>Only after a new lidar survey</td></tr>
     <tr><td><code>trees.py</code></td><td><code>public/model/trees.json</code></td><td>With each model rebuild</td></tr>
     <tr><td><code>prep.py</code></td><td><code>public/model/downtown.json</code></td><td>When OpenStreetMap or a survey layer changes. Takes about 3 minutes.</td></tr>
   </table></div>
   <pre><code>py tools\model\prep.py downtown-osm.json path\to\survey-inputs public\model\downtown.json</code></pre>
-  <p>The tools need Python 3 with <code>numpy</code>, <code>pillow</code>, <code>scipy</code> and <code>shapely</code>. The large survey inputs (the aerial image, lidar-derived heights and shapes, roof and facade colours, the OpenStreetMap extract) are kept in the project's working files, not in git; only the two small derived files under <code>data/model/</code> are committed. Any input that is missing is skipped. A newer <code>downtown.json</code> drops in with no code change.</p>
+  <p>The tools need Python 3 with <code>numpy</code>, <code>pillow</code>, <code>scipy</code> and <code>shapely</code> (<code>trees.py lidar</code> also needs <code>laspy</code> and <code>pyproj</code>). The large survey inputs (the aerial image, lidar-derived heights and shapes, roof and facade colours, the OpenStreetMap extract) are kept in the project's working files, not in git; only the two small derived files under <code>data/model/</code> are committed. Any input that is missing is skipped. A newer <code>downtown.json</code> drops in with no code change.</p>
 
   <h3>The renderer</h3>
   <p><code>public/model.js</code> draws everything on plain 2D canvases, with no libraries.</p>
@@ -280,7 +282,7 @@
   <p><code>public/trees.js</code> gives each tree one of 15 species with a Greensboro calendar for bloom, leaf-out, fall colour and leaf drop. No public inventory of downtown's trees exists, so the species are inferred from what is known about each tree: evergreen or not, height, crown width, and whether it stands on a street or in a park. The positions and sizes are measured; the species are educated guesses.</p>
 
   <h3>Cars, people and the train</h3>
-  <p>The moving cars, walkers and train are a simulation, there to make the town feel alive. Cars drive the real street network (one lane each way, one-way streets respected), follow the car ahead, stop at the real signals and stop signs from OpenStreetMap and yield on side streets. Signal timings are typical, not the real ones. Parked cars sit in the real stalls of each lot, about two thirds full. Only the road closures are live data.</p>
+  <p>The moving cars, walkers and train are a simulation, there to make the town feel alive. Cars drive the real street network (one lane each way, one-way streets respected), follow the car ahead, stop at the real signals and stop signs from OpenStreetMap and yield on side streets. Signal timings are typical, not the real ones. The train runs on a made-up timetable, not the real one; when it comes, the lights flash and the gates drop at the South Elm Street crossing, and cars wait. Parked cars sit in the real stalls of each lot, about two thirds full. Only the road closures are live data.</p>
 
   <h3>Performance</h3>
   <p><code>npm run bench</code> opens the model in a headless browser across desktop, laptop and phone scenarios, including dragging and zooming, and prints frame times by phase. How to run it, how to read it and what has been done so far are in <a href="https://github.com/ekalb81/gboro/blob/main/docs/PERFORMANCE.md">docs/PERFORMANCE.md</a>.</p>

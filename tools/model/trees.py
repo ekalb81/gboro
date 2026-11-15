@@ -32,7 +32,7 @@ else:
     OUT = sys.argv[2] if len(sys.argv) > 2 else __file__.rsplit('/', 3)[0] + '/public/model/trees.json'
     osm_raw = INP + 'osm/downtown-raw.json'
 
-N, S, Wl, El = 36.0768, 36.0676, -79.7954, -79.7856
+N, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856
 M = 9.0
 k = math.cos(math.radians((N + S) / 2)) * 111320
 GX = (El - Wl) * k / M; GY = (N - S) * 110574 / M
