@@ -29,6 +29,7 @@ npm run bench -- --only interaction            only the drag / wheel / pinch sce
 npm run bench -- --warm                        interaction scenarios wait until the model has drawn ahead first
 npm run bench -- --query time=night            extra URL parameters for every scenario (they override the defaults)
 npm run bench -- --headed                      show the browser: uses your real graphics card
+npm run bench -- --swgpu                       headless, canvases on the graphics-card path (see the caveat below)
 ```
 
 Every scenario opens `?date=2026-11-13&wind=18-30@230&time=day&bench`: fall colour with leaves coming down, an 18 mph
@@ -44,6 +45,7 @@ nothing is recorded.
 | pan-zoom | drags back and forth and zooms in and out with the wheel the whole time (new tiles get drawn) |
 | laptop-4x | 1366x768, CPU slowed 4x (a modest laptop) |
 | phone-4x | 390x844 at pixel ratio 3, touch, CPU slowed 4x |
+| retina, retina-night | a 1335x805 window at pixel ratio 2 (a Retina MacBook: the model about 1870x1610 device pixels), by day and at night |
 | drag, drag-dpr2 | the mouse held down and dragged in slow sweeps across the view, a move every 16 ms |
 | wheel, wheel-dpr2 | three mouse-wheel notches in, then three out, half a second apart |
 | trackpad | a trackpad pinch: 45 small ctrl+wheel steps 16 ms apart, in then out |
@@ -66,6 +68,31 @@ ms**, the most tile drawing done in a single frame (whole tiles plus tiles drawn
 longest canvas resize on a zoom step; **stand-in frames**, frames that showed a missing tile stretched from another
 scale, and **stand-in after ms**, how long after the end of a gesture the last of those was. In software (headless),
 tile drawing is lazy, so `?bench=flush` makes each new tile finish its drawing where it is counted.
+
+A fourth table counts canvas calls per frame that are cheap in Chromium but not everywhere (the benchmark wraps the
+canvas methods; the model is not involved): **src**, `drawImage` with a canvas as its source; **dirty**, those whose
+source had been drawn on since it was last used as a source (the browser must finish drawing it, and WebKit often
+copies it, before it can be read); **full**, draws, fills and clears covering half or more of a model-sized canvas;
+**clip**, `clip()` calls; **filter**, draws with a canvas `filter` set.
+
+## Checking a real browser: `?fps`
+
+Add `?fps` to the page address (the live site too) for a small box in the bottom-left corner: frames per second, the
+time between frames, the time inside the model's `frame()` in total and per part (averaged over the last half
+second), how many moving things are on screen and how many are cut out behind something, the tile cache, and the
+browser, device pixel ratio, canvas size and which drawing path is in use. A screenshot of that box is all that is
+needed to compare browsers. The time between frames is the one that counts: canvas work that the browser hands to
+its graphics process (Safari does this) does not show in the per-part times. Without `?fps` none of it runs.
+
+Two more flags pick the drawing path, for comparing on the same machine:
+
+| Address | What it does |
+| --- | --- |
+| `?fps` | the default path for the machine |
+| `?fps&compose=canvas` | grade, blur and stacking done in the canvas (the old way), cut-outs by clipping (new) |
+| `?fps&compose=canvas&cut=card` | all the old way: pixel for pixel what the model drew before the third pass |
+| `?fps&compose=layers&cut=clip` | all the new way, even where the model would not choose it (a software renderer) |
+| `?fps&tilemb=64` | tile cache capped at 64 MB (the default is 160, or 64 on touch devices) |
 
 ## The graphics card caveat
 
@@ -234,6 +261,107 @@ The cost is memory and a few seconds of background drawing after load: canvas me
 and the ring (desktop 45.7 → 50.7 MB; zoomed-in 7.8 → 29.8 MB, still less than the other views), and until drawing
 ahead is done each frame spends up to ~10 ms on it (at least 2 ms).
 
+## Safari, and less work per frame everywhere (third pass)
+
+A screen recording on a Retina Mac showed Safari updating the model 6 to 8 times a second all the time, standing still
+or dragging, while Chrome on the same machine was much smoother. The first two passes were measured in Chromium only.
+No WebKit could be run here, so this pass works from the calls a frame makes and from how WebKit is known to treat
+them; `?fps` (above) is there to check the result in Safari.
+
+**What a frame did** at the Retina size, counted by the benchmark (before → after, per frame):
+
+| | retina (day) | retina-night | desktop | zoomed-out |
+| --- | --- | --- | --- | --- |
+| `drawImage` from a canvas | 716 → 17 | 644 → 49 | 426 → 20 | 1864 → 21 |
+| ...from a canvas just drawn on | 269 → 11 | 315 → 12 | 153 → 8 | 677 → 9 |
+| full-canvas draws, fills, clears | 10 → 4 | 11 → 5 | 10 → 4 | 10 → 4 |
+| draws with a canvas filter | 3 → 0 | 3 → 0 | 3 → 0 | 3 → 0 |
+| `clip()` calls | 0 → 290 | 0 → 619 | 0 → 186 | 0 → 1118 |
+
+(The few canvas-source draws left are the static tiles laid on the picture; the "just drawn on" ones are tiles being
+drawn ahead during the measurement, and stop when that is done.)
+
+**The Safari costs, most likely first, and what was done:**
+
+1. *A scratch card per moving thing* (removed). Every car and person behind something was drawn on a small card,
+   the outlines in front were rubbed out of it, the card rubbed out the lit-window and glow layers, and it was copied
+   onto the picture: per thing, two to five `drawImage` calls whose source canvas had just been drawn on, about 270 a
+   frame at the Retina size. In WebKit a canvas that is drawn on and then read as an image has to be flushed and
+   usually copied each time. Now each thing is drawn straight onto the picture under a clip that is everything
+   except the outlines in front (`invOf`, `unionOutline` in `public/model.js`), so nothing is read back.
+2. *Reading the visible canvas back for the tilt-shift, and canvas filters* (removed where there is a graphics card).
+   The blur drew the visible canvas into another canvas through `filter: blur()` twice a frame, and the colour grade
+   drew the whole picture through `filter: saturate()`. Canvas filters are new in Safari and slow there; older Safari
+   has none, and showed no blur or saturation at all. Now the browser's compositor does both (see below).
+3. *Whole-canvas passes* (10 → 4 a frame). The picture was drawn on a hidden canvas and copied to the visible one,
+   with the lit-window and glow canvases copied on top (three whole-canvas `drawImage` calls from canvases just drawn
+   on), plus clears of all three and the blur passes. Now the picture is drawn on the visible canvas itself; the
+   lit-window and glow layers are visible canvases stacked on it; a blank layer is not cleared or laid on again.
+4. *Many canvases* (bounded). Each tile is up to three canvases. The tile cache is now capped in megabytes as well as
+   in count (160 MB, 64 MB on touch devices; `TILE_MB`), drawing ahead stops short of the cap, the half-scale copy
+   of the whole model is skipped when it would not fit in a quarter of it, and a dropped tile gives its memory back
+   at once (its canvases are set to zero size) instead of waiting for the garbage collector, which Safari needs.
+   The glow canvas exists only while something glows, and the four hidden full-size canvases are gone.
+5. *Rubbing out on blank layers* (removed). Every polygon of every moving thing was also rubbed out of the lit-window
+   and glow layers, which by day have nothing on them there: three fills per polygon became one.
+
+**How a frame is put together now** (`LY`, `makeLayers`, `placeLayers`, the end of `frame()`): the picture goes
+straight onto the visible canvas. On top of it, in order: a `mix-blend-mode: multiply` element and a
+`plus-lighter` element (the grade's multiply and add), the storm flash, the lit-window canvas, the glow canvas
+(`plus-lighter`), two elements with `backdrop-filter: blur()` under a fading `mask-image` (the tilt-shift), the
+vignette (a CSS radial gradient), and one more canvas for the lantern sign and the labels, so they stay sharp. The
+canvas itself has `filter: saturate()`. All of it is the compositor's work, on the graphics card; the frame only
+changes a style when its value changes.
+
+**Moving things:** a thing wholly behind one building is not drawn at all; outlines are tested exactly against the
+thing's box (`boxVsLoops`) before they are used, which more than halved the clips; the lit-window layer is clipped
+and rubbed out only when the thing paints there or something already painted there is under it; the scan for
+buildings in front uses a coarse grid (`bldsNear`) instead of every building for every thing.
+
+**Without a graphics card** (a software renderer, which the model detects from the WebGL renderer name) the
+compositor's blur and the clipping cost more than the old way did, so such a machine keeps the old way throughout,
+pixel for pixel as before. This is also what the headless benchmark runs by default; `--swgpu` forces the new path.
+
+**Chromium, graphics-card path** (`--swgpu`; time inside `frame()` per frame, p50 / p95 ms, and the `dyn` part):
+
+| Scenario | work before → after | dyn before → after |
+| --- | --- | --- |
+| retina (1870x1610 device px) | 32.0 / 46.1 → 12.9 / 23.3 | 34.2 → 6.6 |
+| retina-night | 25.6 / 36.8 → 10.6 / 15.1 | 25.7 → 6.7 |
+| desktop | 25.2 / 46.9 → 12.3 / 20.4 | 30.2 → 7.1 |
+| desktop-dpr2 | 28.7 / 41.9 → 12.2 / 19.1 | 29.0 → 6.9 |
+| zoomed-in | 5.6 / 10.6 → 10.0 / 12.8 | 4.3 → 0.8 |
+| zoomed-out | 45.2 / 67.0 → 20.6 / 20.6 | 53.2 → 15.8 |
+| pan-zoom | 19.0 / 32.8 → 10.2 / 21.6 | 15.7 → 3.4 |
+| laptop-4x | 138.3 / 233.9 → 26.4 / 49.8 | 144.5 → 22.1 |
+| phone-4x | 62.3 / 93.4 → 18.6 / 32.4 | 74.9 → 15.1 |
+
+The "after" work includes 2 to 7 ms a frame of drawing ahead, which was still going during the 8 seconds measured
+(zoomed-in is higher than before for that reason alone) and stops once it is done. On the same build, the retina
+scenario with the old path forced (`compose=canvas&cut=card`) measures 33.8 / 44.5 ms, and with only the cut-outs
+changed (`compose=canvas`) 14.5 / 24.4 ms. Software drawing (the default headless run) is unchanged, as it runs the
+old path: retina 14.2 → 14.0 fps, desktop 8.9 → 9.5, zoomed-out 7.4 → 8.5, zoomed-in 57.9 → 56.8.
+
+**The picture.** It no longer has to be identical, only the same to the eye. Against the original, the new path
+differs by under 1 level of 255 on average: about half the pixels change by one or two levels (the compositor's
+saturate and blur round differently), 0.03% to 0.7% of pixels by more than 8, and a hundred or two by more than 32
+(antialiased edges where a moving thing is cut out). Known differences:
+
+- The blur is done on the picture as shown rather than on the canvas pixels, so at high zoom the blurred bands are
+  smooth where they used to show blurred blocks.
+- The lantern sign sat under the vignette and now sits over it; it is given the vignette's share itself.
+- Browsers whose canvas has no `filter` (older Safari) now get the saturation and the tilt-shift they never had.
+- A wall of a car facing a certain way can show a different colour than before. That is an old bug, not a new one:
+  `mix()` makes an invalid colour for walls facing the light most directly (the shade factor goes below zero), the
+  canvas ignores it and the wall takes whatever colour was used last. Which colour that is has changed. Not fixed
+  here, because fixing it would also change those walls on buildings.
+
+**Not verified** (no Safari here): that Safari is in fact faster and by how much; that `backdrop-filter` under a
+mask, `plus-lighter` and `multiply` over canvases composite in Safari as they do in Chromium (they are all supported
+there; the model falls back to the canvas path if the browser reports they are not); how expensive several hundred
+`clip()` calls a frame are in Safari (the fallback `?cut=card` is there to compare); and Safari's canvas memory
+ceiling. Open the site with `?fps` in Safari, then with `?fps&compose=canvas&cut=card`, and compare the boxes.
+
 ## What is left, and whether to change engines
 
 - **Tilt-shift blur** is the biggest software cost (30+ ms a frame). On a graphics card it is cheap. Making it cheaper
@@ -249,6 +377,8 @@ ahead is done each frame spends up to ~10 ms on it (at least 2 ms).
   `npm run bench -- --headed` first. If a mid-range laptop still shows `dyn` over 10 ms a frame there, a WebGL
   renderer (depth-sorted sprites with a depth test instead of cut-out cards) is the change that would remove it; a
   worker with OffscreenCanvas would only move the same work off the main thread.
+- **After the third pass** the cut-out cards are gone: `dyn` is 7 ms where it was 30 on the graphics-card path, and
+  most of what is left is the model's own arithmetic and a few hundred clipped fills.
 - **After the second pass**, dragging and zooming cost the same per frame as standing still, so a gesture is as
   smooth as the steady frame rate. What remains per frame on a graphics card is the model's own JavaScript, mostly the
   cut-out cards (`dyn`, ~10-25 ms at 1920x1080 on the `--swgpu` path). WebGL would make that nearly free (the GPU
