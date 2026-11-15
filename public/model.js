@@ -852,7 +852,9 @@ const XING=(MAP.LX||[]).filter(l=>l[4]<=4).map(([ax,ay,bx,by,cl,gates])=>{const 
   const tp=projCh(trainCh,cx,cy);const x={cx,cy,ux,uy,cl,gates,td:tp.d<L/2+1?tp.s:null,down:0,on:false,lanes:[],
     // a post on the right of each approach: [x, y, which way the arm reaches (toward the street's middle)]
     posts:[[ax-ux*3/M-uy*side,ay-uy*3/M+ux*side,uy,-ux],[bx+ux*3/M+uy*side,by+uy*3/M-ux*side,-uy,ux]]};
-  for(const l of TF.lanes){const q=projCh(l.ch,cx,cy);if(q.d<.15&&q.s>.3)x.lanes.push({lane:l,s:Math.max(.05,q.s-back)})}
+  // each approach's stop line is found on whichever lane really holds it and heads for the tracks (a street is often
+  // split into two segments inside the crossing, so the lane through the middle is not always the one to stop on)
+  for(const[px,py,dx,dy] of [[cx-ux*back,cy-uy*back,ux,uy],[cx+ux*back,cy+uy*back,-ux,-uy]])for(const l of TF.lanes){const q=projCh(l.ch,px,py);if(q.d>.15)continue;const t=along(l.ch,q.s);if(t[2]*dx+t[3]*dy>.5)x.lanes.push({lane:l,s:q.s})}
   return x});
 function stepCrossings(dt){for(const x of XING){x.on=x.td!=null&&trainD>x.td-18&&trainD-7*2.3<x.td+2.5;x.down=Math.max(0,Math.min(1,x.down+(x.on?dt/1.6:-dt/1.2)))}}
 
