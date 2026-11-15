@@ -52,26 +52,25 @@ function makeRoute(pts) {
 
 /** The mowing round: up and down each patch in stripes, round the fire ring, pushing the mower between patches. */
 export function mowRoute(lot, W = 0.9) {
-  const pts = [], stripes = []; const f = lot.fire, R = f.r + 0.25;
-  const add = (p, stripe = null) => { pts.push(p); if (stripe) stripes.push(stripe); };
-  let first = true;
+  const pts = [], stripes = [];
+  // things to steer round: the fire ring, and any trunk standing in a patch
+  const obst = [{ x: lot.fire.x, y: lot.fire.y, r: lot.fire.r + 0.25 }, ...lot.trees.map((t) => ({ x: t.x, y: t.y, r: 0.9 }))];
   lot.mow.forEach((m, mi) => {
     const [x0, y0, x1, y1] = m; const n = Math.max(1, Math.floor((x1 - x0) / W));
-    if (mi > 0) { const g = lot.doors.gate; add([g[0] - 1.2, g[1]]); add([g[0] + 0.9, g[1]]); add([x0 + W / 2, g[1]]); }
+    if (mi > 0) { pts.push(lot.doors.gateIn, lot.doors.gateOut, [x0 + W / 2, lot.doors.gateOut[1]]); }
     for (let i = 0; i < n; i++) {
-      const x = x0 + W * (i + 0.5), down = i % 2 === 0; const ya = down ? y0 : y1, yb = down ? y1 : y0; const dx = x - f.x;
-      const start = pts.length; if (first) { first = false; }
-      add([x, ya]);
-      if (Math.abs(dx) < R && f.y > y0 && f.y < y1) { // round the fire ring
-        const hc = Math.sqrt(R * R - dx * dx), s = down ? 1 : -1, side = dx >= 0 ? 1 : -1;
-        const a0 = Math.atan2(-s * hc, dx), a1 = Math.atan2(s * hc, dx);
-        add([x, f.y - s * hc]);
-        stripes.push({ x, ya, yb: f.y - s * hc, par: i % 2, mi, from: start, to: pts.length - 1 });
-        let da = a1 - a0; if (side > 0 && s > 0 && da < 0) da += 2 * Math.PI; if (side > 0 && s < 0 && da > 0) da -= 2 * Math.PI; if (side < 0 && s > 0 && da > 0) da -= 2 * Math.PI; if (side < 0 && s < 0 && da < 0) da += 2 * Math.PI;
-        for (let k = 1; k < 6; k++) add([f.x + R * Math.cos(a0 + da * k / 6), f.y + R * Math.sin(a0 + da * k / 6)]);
-        const s2 = pts.length; add([x, f.y + s * hc]); add([x, yb]);
-        stripes.push({ x, ya: f.y + s * hc, yb, par: i % 2, mi, from: s2, to: pts.length - 1 });
-      } else { add([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from: start, to: pts.length - 1 }); }
+      const x = x0 + W * (i + 0.5), down = i % 2 === 0, s = down ? 1 : -1; let ya = down ? y0 : y1; const yb = down ? y1 : y0;
+      let from = pts.length; pts.push([x, ya]);
+      const hit = obst.filter((o) => Math.abs(x - o.x) < o.r && o.y - o.r > y0 && o.y + o.r < y1).sort((p, q) => s * (p.y - q.y));
+      for (const o of hit) { // up to it, round it on the nearer side, and on
+        const dx = x - o.x, hc = Math.sqrt(o.r * o.r - dx * dx), side = dx >= 0 ? 1 : -1;
+        pts.push([x, o.y - s * hc]); stripes.push({ x, ya, yb: o.y - s * hc, par: i % 2, mi, from, to: pts.length - 1 });
+        const a0 = Math.atan2(-s * hc, dx); let da = Math.atan2(s * hc, dx) - a0;
+        if (side * s > 0 && da < 0) da += 2 * Math.PI; if (side * s < 0 && da > 0) da -= 2 * Math.PI;
+        for (let k = 1; k < 6; k++) pts.push([o.x + o.r * Math.cos(a0 + da * k / 6), o.y + o.r * Math.sin(a0 + da * k / 6)]);
+        ya = o.y + s * hc; from = pts.length; pts.push([x, ya]);
+      }
+      pts.push([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from, to: pts.length - 1 });
     }
   });
   const route = makeRoute(pts);
@@ -282,14 +281,14 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const chairAt = (i) => { const a = lot.chairs[i].a * rad; return [F.x + Math.cos(a) * 1.95, F.y + Math.sin(a) * 1.95]; };
   const D = lot.doors, SX = lot.street[0] + 0.7;
   const MOW = mowRoute(lot);
-  const rFront = makeRoute([D.front, [D.front[0] + 0.95, D.front[1]], [D.front[0] + 0.95, D.gate[1]], [SX, D.gate[1]]]);
+  const rFront = makeRoute([...lot.walk, [SX, lot.walk[lot.walk.length - 1][1]]]);
   const outRoute = (north) => makeRoute([...rFront.pts, [SX, north ? lot.base[1] - 1 : lot.base[3] + 1]]);
   const backTo = (p) => makeRoute([D.back, [D.back[0] - 1, D.back[1]], p]);
-  const mowAll = makeRoute([D.back, [D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], ...MOW.route.pts, [D.gate[0] + 0.9, D.gate[1]], [D.gate[0] - 1.2, D.gate[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]]);
+  const mowAll = makeRoute([D.back, [D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], ...MOW.route.pts, D.gateOut, D.gateIn, [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]]);
   const mowLead = dist(D.back, [D.back[0] - 1.4, D.back[1]]) + dist([D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]) + dist([lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], MOW.route.pts[0]);
-  const carY = (i) => 12.5 - i * 6.2;
-  const friendRoute = (i, car) => makeRoute([[SX - 0.5, carY(car)], [SX - 0.5, D.gate[1]], [D.gate[0] + 0.9, D.gate[1]], [D.gate[0] - 1.2, D.gate[1]], chairAt(i + 1)]);
-  const bedSpots = lot.beds.flatMap((b) => [[b[2] + 0.5, b[1] + 1.2], [b[2] + 0.5, (b[1] + b[3]) / 2], [b[2] + 0.5, b[3] - 1.2]]);
+  const carY = (i) => D.gateOut[1] - 5 - i * 6.2;
+  const friendRoute = (i, car) => makeRoute([[SX - 0.5, carY(car)], [SX - 0.5, D.gateOut[1]], D.gateOut, D.gateIn, chairAt(i + 1)]);
+  const bedSpots = lot.beds.flatMap((b) => [[b[2] + 0.5, b[1] + 1.2], [b[2] + 0.5, (b[1] + b[3]) / 2], [b[2] + 0.5, b[3] - 1.2]]).sort((p, q) => p[1] - q[1]);
 
   /** Everyone and everything that moves, for this minute: { people: [...], mower, cars, fire: 0..1, mown: metres, away } */
   function cast(c, st, time) {
@@ -344,7 +343,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   // ---------- the view ----------
   let Wc = 800, Hc = 450, dpr = 1, zoom = +Q.get('z') || 1, fit = 1, panX = +(Q.get('pan') || '').split(',')[0] || 0, panY = +(Q.get('pan') || '').split(',')[1] || 0;
   function extent() { const b = lot.base, pts = [P(b[0], b[1]), P(b[2], b[1]), P(b[2], b[3]), P(b[0], b[3])]; const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys) - 15 * ZP, y1: Math.max(...ys) + 1.6 * ZP }; }
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys) - Math.max(15, ...lot.trees.map((t) => t.h + 2)) * ZP, y1: Math.max(...ys) + 1.6 * ZP }; }
   function resize() {
     const r = canvas.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1); Wc = Math.max(50, r.width); Hc = Math.max(50, r.height);
     canvas.width = Math.round(Wc * dpr); canvas.height = Math.round(Hc * dpr);
@@ -388,6 +387,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   }
 
   // the parts that never move
+  const FENCE = lot.fence || C.wood;
   const fixed = [];
   const obj = (x0, y0, x1, y1, h, draw, pad = 0) => fixed.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1), h, draw, pad });
   obj(...H.main, 8, drawMain); obj(...H.wing, 6, drawWing);
@@ -400,9 +400,12 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   for (const f of lot.fences) { const L = Math.hypot(f[2] - f[0], f[3] - f[1]), n = Math.ceil(L / 1.5);
     for (let i = 0; i < n; i++) { const a = [f[0] + (f[2] - f[0]) * i / n, f[1] + (f[3] - f[1]) * i / n], b = [f[0] + (f[2] - f[0]) * (i + 1) / n, f[1] + (f[3] - f[1]) * (i + 1) / n];
       const r = [Math.min(a[0], b[0]) - 0.05, Math.min(a[1], b[1]) - 0.05, Math.max(a[0], b[0]) + 0.05, Math.max(a[1], b[1]) + 0.05];
-      obj(...r, 1.7, () => { box(r, 0, 1.6, i % 2 ? C.wood : mix(C.wood, C.woodD, 0.35)); box([a[0] - 0.09, a[1] - 0.09, a[0] + 0.09, a[1] + 0.09], 0, 1.75, C.woodD); }); } }
-  for (const g of lot.gatePosts) obj(g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1, 1.8, () => box([g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1], 0, 1.75, C.woodD));
+      obj(...r, 1.7, () => { box(r, 0, 1.6, i % 2 ? FENCE : mix(FENCE, C.plum, 0.12)); box([a[0] - 0.09, a[1] - 0.09, a[0] + 0.09, a[1] + 0.09], 0, 1.75, mix(FENCE, C.plum, 0.3)); }); } }
+  for (const g of lot.gatePosts) obj(g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1, 1.8, () => box([g[0] - 0.1, g[1] - 0.1, g[0] + 0.1, g[1] + 0.1], 0, 1.75, mix(FENCE, C.plum, 0.3)));
   lot.trees.forEach((t, i) => fixed.push({ x0: t.x - 0.4, y0: t.y - 0.4, x1: t.x + 0.4, y1: t.y + 0.4, h: t.h, pad: t.r * TW * 1.3, tree: t, draw: (time) => drawTree(t, i, time) }));
+  if (lot.ac) obj(...lot.ac, 0.9, () => { box(lot.ac, 0, 0.8, '#b9bcb8', '#8f9390'); });
+  (lot.hedge || []).forEach((s, i) => obj(s[0] - s[2], s[1] - s[2], s[0] + s[2], s[1] + s[2], 2.2, () => { // a row of small upright evergreens
+    const a = P(s[0], s[1], 0.2), t = P(s[0], s[1], 2.1), w = s[2] * TW * 1.1; poly([[a[0] - w, a[1]], [a[0], a[1] + w * 0.45], [a[0] + w, a[1]], t], T(i % 2 ? '#2f6f4a' : '#2b7448')); poly([[a[0] - w, a[1]], [a[0], a[1] + w * 0.45], t], T(mix('#2b7448', C.plum, 0.22))); }, 4));
   lot.shrubs.forEach((s, i) => obj(s[0] - s[2], s[1] - s[2], s[0] + s[2], s[1] + s[2], s[2] * 1.4, () => drawShrub(s, i), 4));
   function drawChair(x, y, col, fx, fy) { // a low wooden chair turned toward (fx, fy)
     const d = Math.hypot(fx - x, fy - y) || 1, bx = x - (fx - x) / d * 0.38, by = y - (fy - y) / d * 0.38;
@@ -457,6 +460,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     }
     for (const r of lot.beds) ground(r, T(C.mulch));
     for (const r of lot.paths) ground(r, T(C.gravel));
+    for (const r of lot.pads || []) ground(r, T('#cfc6b3'));
     ground(lot.patio, T(C.paver)); ctx.globalAlpha = 0.18; for (let x = lot.patio[0] + 0.8; x < lot.patio[2]; x += 0.8) line(P(x, lot.patio[1]), P(x, lot.patio[3]), T(C.plum), 0.5); for (let y = lot.patio[1] + 0.8; y < lot.patio[3]; y += 0.8) line(P(lot.patio[0], y), P(lot.patio[2], y), T(C.plum), 0.5); ctx.globalAlpha = 1;
     disc(F.x, F.y, 0, F.r, T(C.gravel)); disc(F.x, F.y, 0, F.r - 0.25, T(mix(C.gravel, '#b8a888', 0.5)));
     // fallen leaves in autumn
