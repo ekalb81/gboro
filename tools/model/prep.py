@@ -13,9 +13,11 @@ src=sys.argv[1]
 INP=(sys.argv[2] if len(sys.argv)>2 else '/mnt/project-files/village').rstrip('/')+'/'
 OUT=sys.argv[3] if len(sys.argv)>3 else os.path.join(os.path.dirname(__file__),'..','..','public','model','downtown.json')
 d=json.load(open(src))
-N,S,Wl,El=36.0768,36.0660,-79.7954,-79.7856
+N0, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
+NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
+N = N0 + NORTH * 9.0 / 110574
 M=9.0
-lat0=N;lon0=Wl;k=math.cos(math.radians((N+S)/2))*111320
+lat0=N;lon0=Wl;k=math.cos(math.radians((N0+S)/2))*111320
 def g(p): return ((p['lon']-lon0)*k/M,(lat0-p['lat'])*110574/M)
 GX=(El-Wl)*k/M; GY=(N-S)*110574/M
 def inreg(x,y,m=0): return -m<=x<=GX+m and -m<=y<=GY+m
@@ -198,6 +200,28 @@ try:
         r=HT.get(str(b['id']))
         if r and r.get('h'): b['lh']=round(r['h'],1)
 except FileNotFoundError: pass
+# North of the old downtown edge the map runs through a neighbourhood of houses that OpenStreetMap mostly tags as plain
+# "building=yes" (outlines traced from aerials). A small, low, unnamed building there whose nearest street is a
+# residential one is drawn as a house (pitched roof, no shopfront) instead of a downtown storefront.
+def _seg_d(px,py,ax,ay,bx,by):
+    dx=bx-ax;dy=by-ay;L2=dx*dx+dy*dy;u=0 if L2==0 else max(0,min(1,((px-ax)*dx+(py-ay)*dy)/L2))
+    return math.hypot(px-ax-u*dx,py-ay-u*dy)
+_streets=[(r['c'],r['p']) for r in R if not r['ar'] and r['c']<=4 and r['n']]
+nh=0
+for b in B:
+    if b['t']!='yes' or b['n'] or b['a'] or b.get('lidar_new') or b.get('tr'): continue
+    xs=b['p'][0::2];ys=b['p'][1::2];cx=sum(xs)/len(xs);cy=sum(ys)/len(ys)
+    if cy>=NORTH: continue
+    ar=abs(sum(xs[i]*ys[(i+1)%len(xs)]-xs[(i+1)%len(xs)]*ys[i] for i in range(len(xs))))/2*M*M
+    if ar>=400 or (b.get('lh') or 0)>=11 or (b.get('l') or 0)>3: continue
+    best=(1e9,9)
+    for c,p in _streets:
+        if min(p[0::2])>cx+8 or max(p[0::2])<cx-8 or min(p[1::2])>cy+8 or max(p[1::2])<cy-8: continue
+        for i in range(0,len(p)-2,2):
+            d_=_seg_d(cx,cy,p[i],p[i+1],p[i+2],p[i+3])
+            if d_<best[0]: best=(d_,c)
+    if best[1]==4 and best[0]<8: b['t']='house';nh+=1
+print('houses north of downtown',nh)
 
 # ---- the ground between the buildings: OSM footpaths, lawns, beds, woods and plazas; surface lots with their stalls
 # laid out along the mapped parking aisles at the stall angle painted on the 2024 aerial (imagery/ground.json from

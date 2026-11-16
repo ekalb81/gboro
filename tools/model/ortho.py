@@ -13,9 +13,9 @@ import io, json, math, sys, time, urllib.request, urllib.parse
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
 OUT = sys.argv[1]; MPP = float(sys.argv[2]) if len(sys.argv) > 2 else .15
-W, S, E, N = (float(v) for v in sys.argv[3:7]) if len(sys.argv) > 6 else (-79.7954, 36.0660, -79.7856, 36.0768)
+W, S, E, N = (float(v) for v in sys.argv[3:7]) if len(sys.argv) > 6 else (-79.7954, 36.0660, -79.7856, 36.0768 + 145 * 9.0 / 110574)
 U = 'https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer/exportImage'
-k = math.cos(math.radians((N + S) / 2)) * 111320; KY = 110574
+k = math.cos(math.radians((36.0768 + 36.0660) / 2)) * 111320; KY = 110574   # the model's own metres per degree of longitude
 TW = round((E - W) * k / MPP); TH = round((N - S) * KY / MPP)          # final size, square metres per pixel
 ppd = TW / (E - W)                                                      # pixels per degree, both ways, as fetched
 nx = math.ceil(TW / 3000); ny = math.ceil((N - S) * ppd / 3000)
