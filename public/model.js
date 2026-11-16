@@ -144,7 +144,7 @@ function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if
 function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
 function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
-const eq=(q,col)=>{TGT.de=TGT.wide=1;TGT.e.fillStyle=col;TGT.e.fill(path(q))};
+const eq=(q,col,al)=>{TGT.de=TGT.wide=1;const e=TGT.e;e.fillStyle=col;if(al==null)e.fill(path(q));else{e.globalAlpha=al;e.fill(path(q));e.globalAlpha=1}};
 const ed=(p,col,s=1)=>{TGT.de=1;if(TGT.ink)TGT.ink.push(p[0],p[1]);TGT.e.fillStyle=col;TGT.e.fillRect(Math.round(p[0]-s/2),Math.round(p[1]-s/2),s,s)};
 function eg(x,y,r,al,sy=1,col='255,205,120'){TGT.dg=1;const G=TGT.g;G.save();G.translate(x,y);G.scale(1,sy);const gr=G.createRadialGradient(0,0,0,0,0,r);gr.addColorStop(0,`rgba(${col},${al})`);gr.addColorStop(1,`rgba(${col},0)`);G.fillStyle=gr;G.fillRect(-r,-r,r*2,r*2);G.restore()}
 
@@ -242,6 +242,20 @@ function litFrac(b){
   if(['apartments','residential','house','detached','dormitory','hotel'].includes(b.t))return n?.4:.35;
   if(b.shop)return n?.12:.55;if(b.t==='church')return .15;return n?.04:.3;
 }
+// Which windows are lit, and how. A lit window is always a window (or one bay of a shopfront, one stretch of a ribbon,
+// one bay of a parking deck): nothing lights a whole wall at once. Homes and hotels light window by window in warm
+// colours; taller offices light in runs along a floor, a few floors at a time, in paler whites; every window has its own
+// colour and strength, so a wall never reads as one flat stripe. All of it comes from the building's id, so it is the
+// same on every tile and every redraw.
+const RES=['apartments','residential','house','detached','dormitory','hotel'];
+const WARM=['#ffd75e','#ffc76a','#ffe6a6','#ffb860','#ffd75e'],PALE=['#fff0c4','#f1f0dc','#ffe08a','#e2ebf0','#ffe9b0'];
+function lite(b,wi,l,j,f,wl,q4){if(!f)return;const s=b.id%977,res=RES.includes(b.t);let p=f;
+  if(!res&&b.lv>=6&&f<.5)p=hash(s+3.1,l)<Math.min(.5,f*1.6)?(hash(s+7.7,l*37+(j>>2)+Math.round(wl.k*5))<.65?.85:.1):f*.35;
+  if(hash(b.id%10007,wi)>=p)return;
+  const h=hash(s+.37,wi*1.7+.5),pal=res||b.lv<4?WARM:PALE;let col=pal[Math.floor(h*pal.length)%pal.length];if(wl.f<=.5)col=mix(col,'#ffb050',.25);
+  eq(q4,col,.55+.45*hash(s+5.3,wi*2.3+1))}
+// a shopfront's bays: all lit where the place is open (or has an event), an odd night light where it is shut
+function shopLit(b){const live=L.lit.get(b.id);if(live!=null)return live>=.5?1:.08;return night()?.22:.7}
 function visWalls(pts){const out=[];const n=pts.length;for(let k=0;k<n;k++){const a=pts[k],q=pts[(k+1)%n];const dx=q[0]-a[0],dy=q[1]-a[1];const L=Math.hypot(dx,dy);if(L<1e-4)continue;const nx=dy/L,ny=-dx/L;if(nx+ny<=0)continue;out.push({a,q,L,nx,ny,f:(ny-nx)/2+.5,k:(a[0]+a[1]+q[0]+q[1])/2})}return out.sort((x,y)=>x.k-y.k)}
 const WP=(wl,u,z,out=0)=>P(wl.a[0]+(wl.q[0]-wl.a[0])*u+wl.nx*out,wl.a[1]+(wl.q[1]-wl.a[1])*u+wl.ny*out,z);
 function drawPrism(c,pts,z0,h,wall,roof,noTop){
@@ -274,16 +288,16 @@ function drawDeck(c,b){const d=b.dk,top=b.hpx,conc=gcol('#d6cfbf','walk'),asph=g
     const n=b.pts.length;for(let k=0;k<n;k++){const a=b.pts[k],q=b.pts[(k+1)%n];line(c,P(a[0],a[1],top),P(q[0],q[1],top),'#6a6e7c',1)}}
   else{const glass=mix(C['Haw River'],HI,.25);
     drawPrism(c,b.pts,b.z0,top-b.z0,d.cv?glass:conc,d.cv?'#d9d6cf':'#cfc8b8');
-    if(d.cv)for(const s of visWalls(b.pts)){line(c,P(s.a[0],s.a[1],b.z0+1),P(s.q[0],s.q[1],b.z0+1),mix(C.Concrete,SH,.2),1.4);line(c,P(s.a[0],s.a[1],top-.5),P(s.q[0],s.q[1],top-.5),'#f1ede4',1);if(evening())eq([P(s.a[0],s.a[1],b.z0+2),P(s.q[0],s.q[1],b.z0+2),P(s.q[0],s.q[1],top-1),P(s.a[0],s.a[1],top-1)],GLOW)}}}
+    if(d.cv)for(const s of visWalls(b.pts)){line(c,P(s.a[0],s.a[1],b.z0+1),P(s.q[0],s.q[1],b.z0+1),mix(C.Concrete,SH,.2),1.4);line(c,P(s.a[0],s.a[1],top-.5),P(s.q[0],s.q[1],top-.5),'#f1ede4',1);if(evening()){const n=Math.max(1,Math.round(s.L*M/3));for(let k=0;k<n;k++){const u0=(k+.12)/n,u1=(k+.88)/n,A=u=>[s.a[0]+(s.q[0]-s.a[0])*u,s.a[1]+(s.q[1]-s.a[1])*u],p0=A(u0),p1=A(u1);eq([P(p0[0],p0[1],b.z0+2),P(p1[0],p1[1],b.z0+2),P(p1[0],p1[1],top-1),P(p0[0],p0[1],top-1)],'#ffe9b0',.5)}}}}}
 function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b)}
 // stepped roof levels measured by the lidar survey: each tier sits on the one below it
 function drawTiers(c,b){let z0=b.hpx;const fr_=litFrac(b);let wi=7;
   for(const t of b.tiers){const z1=Math.min(250,t.h*ZPM);if(z1<z0+3)continue;
     for(const wl of visWalls(t.pts)){const col=mix(b.wall,SH,.32*(1-wl.f));poly(c,[WP(wl,0,z0),WP(wl,1,z0),WP(wl,1,z1),WP(wl,0,z1)],col);
       if(b.cornice&&z1-z0>8)poly(c,[WP(wl,0,z1-2.5),WP(wl,1,z1-2.5),WP(wl,1,z1),WP(wl,0,z1)],b.trim?mix(b.trim,SH,.3*(1-wl.f)):mix(col,HI,.35));
-      const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f)),lit=wl.f>.5?GLOW:mix(GLOW,'#ffb050',.3);
+      const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f));
       const nw=Math.floor(wl.L*M/(b.win||3.4));if(nw<1)continue;
-      for(let z=z0+2.2;z+3.4<z1-2.5;z+=7.4)for(let j=0;j<nw;j++){const u0=(j+.28)/nw,u1=(j+.72)/nw;const q4=[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z+3.4),WP(wl,u0,z+3.4)];if(b.curtain){poly(c,q4,mix(glass,HI,.05))}else poly(c,q4,glass);if(hash(b.id%10007,wi++)<fr_)eq(q4,lit)}}
+      for(let z=z0+2.2;z+3.4<z1-2.5;z+=7.4)for(let j=0;j<nw;j++){const u0=(j+.28)/nw,u1=(j+.72)/nw;const q4=[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z+3.4),WP(wl,u0,z+3.4)];if(b.curtain){poly(c,q4,mix(glass,HI,.05))}else poly(c,q4,glass);lite(b,wi++,b.lv+Math.round(z/7.4),j,fr_,wl,q4)}}
     poly(c,t.pts.map(p=>P(p[0],p[1],z1)),surf(mix(b.roof,HI,.1),true),surf(mix(b.roof,SH,.3),true));z0=z1}}
 function drawBuilding0(c,b){
   if(b.special==='tower'){drawLFT(c,b);return}
@@ -293,25 +307,25 @@ function drawBuilding0(c,b){
     poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],hp),P(a[0],a[1],hp)],col);
     poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],3),P(a[0],a[1],3)],mix(col,SH,.18));
     if(b.canopy)continue;
-    if(b.curtain){const gl=mix(mix(b.wall,'#2c3a48',.5),SH,.1+.3*(1-wl.f));poly(c,[WP(wl,0,3),WP(wl,1,3),WP(wl,1,hp-2),WP(wl,0,hp-2)],gl);const lvp=hp/b.lv;for(let l=1;l<b.lv;l++)line(c,WP(wl,0,l*lvp),WP(wl,1,l*lvp),mix(gl,HI,.25));const nm=Math.max(1,Math.round(wl.L*M/1.8));for(let k=1;k<nm;k++)line(c,WP(wl,k/nm,3),WP(wl,k/nm,hp-2),mix(gl,HI,.15));if(fr_)for(let l=0;l<b.lv;l++)for(let k=0;k<nm;k++)if(hash(b.id%10007,wi++)<fr_*.7)eq([WP(wl,k/nm,l*lvp+1),WP(wl,(k+1)/nm,l*lvp+1),WP(wl,(k+1)/nm,(l+1)*lvp-1),WP(wl,k/nm,(l+1)*lvp-1)],GLOW);continue}
+    if(b.curtain){const gl=mix(mix(b.wall,'#2c3a48',.5),SH,.1+.3*(1-wl.f));poly(c,[WP(wl,0,3),WP(wl,1,3),WP(wl,1,hp-2),WP(wl,0,hp-2)],gl);const lvp=hp/b.lv;for(let l=1;l<b.lv;l++)line(c,WP(wl,0,l*lvp),WP(wl,1,l*lvp),mix(gl,HI,.25));const nm=Math.max(1,Math.round(wl.L*M/1.8));for(let k=1;k<nm;k++)line(c,WP(wl,k/nm,3),WP(wl,k/nm,hp-2),mix(gl,HI,.15));if(fr_)for(let l=0;l<b.lv;l++)for(let k=0;k<nm;k++)lite(b,wi++,l,k,fr_*.7,wl,[WP(wl,k/nm,l*lvp+1),WP(wl,(k+1)/nm,l*lvp+1),WP(wl,(k+1)/nm,(l+1)*lvp-1),WP(wl,k/nm,(l+1)*lvp-1)]);continue}
     if(b.cornice&&hp>10){poly(c,[WP(wl,0,hp-3),WP(wl,1,hp-3),WP(wl,1,hp),WP(wl,0,hp)],b.trim?mix(b.trim,SH,.3*(1-wl.f)):mix(col,HI,.35));line(c,WP(wl,0,hp-3.5),WP(wl,1,hp-3.5),mix(col,SH,.35))}
-    const lvpx=hp/b.lv;const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f));const lit=wl.f>.5?GLOW:mix(GLOW,'#ffb050',.3);
-    if(b.garage){for(let l=0;l<b.lv;l++){const z=l*lvpx+lvpx*.35,z2=z+lvpx*.42;const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z2),WP(wl,.03,z2)];poly(c,q4,mix(b.wall,SH,.55));if(fr_)eq(q4,'rgba(255,236,190,.5)')}continue}
+    const lvpx=hp/b.lv;const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f));
+    if(b.garage){for(let l=0;l<b.lv;l++){const z=l*lvpx+lvpx*.35,z2=z+lvpx*.42;const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z2),WP(wl,.03,z2)];poly(c,q4,mix(b.wall,SH,.55));if(fr_){const nb=Math.max(1,Math.round(wl.L*M/8));for(let k=0;k<nb;k++){const h=hash(b.id%977+1.9,wi++);if(h<.12)continue;const u0=.03+.94*(k+.08)/nb,u1=.03+.94*(k+.92)/nb;eq([WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z2),WP(wl,u0,z2)],'#e9ecd6',.2+.14*h)}}}continue}
     const spacing=(b.win||3.4)/M;const nw=Math.floor(wl.L/spacing);
     // storefront
     let l0=0;
     if(b.shop&&wl.L*M>5){l0=1;const sz=Math.min(lvpx*.75,6.5);const q4=[WP(wl,.04,1.2),WP(wl,.96,1.2),WP(wl,.96,1.2+sz),WP(wl,.04,1.2+sz)];poly(c,q4,mix(glass,SH,.15));
       const nd=Math.max(1,Math.floor(wl.L*M/8));for(let k=0;k<nd;k++){const u=(k+.5)/nd;line(c,WP(wl,u,1.2),WP(wl,u,1.2+sz),mix(col,SH,.1))}
-      if(fr_)eq(q4,mix(GLOW,'#ffffff',.25));
+      if(fr_){const sp=shopLit(b);for(let k=0;k<nd;k++){const h=hash(b.id%977+2.7,wi++);if(h>=sp)continue;const u0=.04+.92*(k+.1)/nd,u1=.04+.92*(k+.9)/nd;eq([WP(wl,u0,1.8),WP(wl,u1,1.8),WP(wl,u1,.9+sz),WP(wl,u0,.9+sz)],WARM[Math.floor(hash(b.id%977+4.1,k+wl.k)*5)%5],.7+.3*hash(b.id%977+6.3,k+wl.k))}}
       if(b.awn){const an=Math.max(4,Math.round(wl.L*M/1.2));for(let k=0;k<an;k++){const u0=.03+.94*k/an,u1=.03+.94*(k+1)/an;poly(c,[WP(wl,u0,2+sz),WP(wl,u1,2+sz),WP(wl,u1,sz-.5,.13),WP(wl,u0,sz-.5,.13)],surf(k%2?b.awn:mix(b.awn,HI,.12),true))}}}
     if(nw<1)continue;
     for(let l=l0;l<b.lv;l++){
       const z=l*lvpx+lvpx*.3,wh=Math.max(2,lvpx*.45);if(z+wh>hp-(b.cornice?4:1.5))break;
       const ar=(b.arch&&l>=b.lv-2)||b.archAll;
-      if(b.ribbon){const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z+wh),WP(wl,.03,z+wh)];poly(c,q4,glass);if(hash(b.id%10007,wi++)<fr_)eq(q4,lit);continue}
+      if(b.ribbon){const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z+wh),WP(wl,.03,z+wh)];poly(c,q4,glass);const ns=Math.max(1,Math.round(wl.L*M/5));for(let k=0;k<ns;k++){const u0=.03+.94*(k+.06)/ns,u1=.03+.94*(k+.94)/ns;lite(b,wi++,l,k*4,fr_,wl,[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z+wh),WP(wl,u0,z+wh)])}continue}
       for(let j=0;j<nw;j++){const u0=(j+.28)/nw,u1=(j+.72)/nw;const zt=ar?z+wh*1.5:z+wh;const q4=[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,zt),WP(wl,u0,zt)];poly(c,q4,glass);if(ar){const du=(u1-u0)*.25;poly(c,[WP(wl,u0+du,zt),WP(wl,u1-du,zt),WP(wl,u1-du,zt+1.2),WP(wl,u0+du,zt+1.2)],glass)}
         if(wh>=3)line(c,WP(wl,u0,z+wh-.5),WP(wl,u1,z+wh-.5),mix(glass,HI,.4));
-        if(hash(b.id%10007,wi++)<fr_)eq(q4,lit)}
+        lite(b,wi++,l,j,fr_,wl,q4)}
     }
     if(b.band){poly(c,[WP(wl,0,hp-8),WP(wl,1,hp-8),WP(wl,1,hp-4),WP(wl,0,hp-4)],mix(C.Mortar,SH,.3*(1-wl.f)))}
   }
@@ -358,11 +372,11 @@ function drawLFT(c,b){
     poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],top),P(a[0],a[1],top)],col);
     if(short){// the dark glass recesses at the stepped corners
       for(let l=1;l<20;l++){const z=Z(l*3.95);line(c,WP(wl,0,z),WP(wl,1,z),mix(col,HI,.14))}
-      if(fr_)for(let l=0;l<20;l++)if(hash(b.id%977,wi++)<fr_*.8){const z=Z(l*3.95)+2;eq([WP(wl,.2,z),WP(wl,.8,z),WP(wl,.8,z+3),WP(wl,.2,z+3)],GLOW)}
+      if(fr_)for(let l=0;l<20;l++){const z=Z(l*3.95)+2;lite(b,wi++,l,0,fr_*.8,wl,[WP(wl,.2,z),WP(wl,.8,z),WP(wl,.8,z+3),WP(wl,.2,z+3)])}
       continue}
-    const glass=mix('#3a4656',SH,.1+.3*(1-wl.f)),lit=wl.f>.5?GLOW:mix(GLOW,'#ffb050',.3);
+    const glass=mix('#3a4656',SH,.1+.3*(1-wl.f));
     const nb=Math.max(1,Math.round(wl.L*M/6.2));
-    const win=(u0,u1,z0,z1,arch)=>{const q4=[WP(wl,u0,z0),WP(wl,u1,z0),WP(wl,u1,z1),WP(wl,u0,z1)];poly(c,q4,glass);if(arch){const du=(u1-u0)*.25;poly(c,[WP(wl,u0+du,z1),WP(wl,u1-du,z1),WP(wl,u1-du,z1+1.4),WP(wl,u0+du,z1+1.4)],glass)}if(hash(b.id%10007,wi++)<fr_)eq(q4,lit)};
+    const win=(u0,u1,z0,z1,arch)=>{const q4=[WP(wl,u0,z0),WP(wl,u1,z0),WP(wl,u1,z1),WP(wl,u0,z1)];poly(c,q4,glass);if(arch){const du=(u1-u0)*.25;poly(c,[WP(wl,u0+du,z1),WP(wl,u1-du,z1),WP(wl,u1-du,z1+1.4),WP(wl,u0+du,z1+1.4)],glass)}lite(b,wi++,Math.round(z0/(3.95*ZPM)),Math.round(u0*nb*2),fr_,wl,q4)};
     for(const zm of [8,49,59.5,63.5])poly(c,[WP(wl,0,Z(zm)),WP(wl,1,Z(zm)),WP(wl,1,Z(zm)+1.5),WP(wl,0,Z(zm)+1.5)],mix(col,HI,.38));
     poly(c,[WP(wl,0,top-3),WP(wl,1,top-3),WP(wl,1,top),WP(wl,0,top)],mix(col,HI,.42));line(c,WP(wl,0,top-3.5),WP(wl,1,top-3.5),mix(col,SH,.3));
     for(let k=0;k<nb;k++){const u0=k/nb,u1=(k+1)/nb,uw=u1-u0;
