@@ -6,7 +6,7 @@
 // time to the first drawn frame. The view, date, time of day and wind are fixed so runs compare.
 //
 // Options:
-//   --only name,name   run only these scenarios (see SCENARIOS below); 'steady', 'interaction' and 'zoom' name the groups
+//   --only name,name   run only these scenarios (see SCENARIOS below); 'steady', 'interaction', 'zoom' and 'tiles' name the groups
 //   --secs N           seconds to measure each scenario (default 8)
 //   --json file        also write the results as JSON
 //   --profile dir      also save a CPU profile (.cpuprofile, open in Chrome DevTools > Performance) per scenario
@@ -63,6 +63,9 @@ const SCENARIOS = [
   { name: 'phone-touch', vw: 390, vh: 844, dpr: 3, q: '', cpu: 4, mobile: true, gesture: 'touch' },
   // zoom: one zoom step at a time (wheel, keys, the buttons) with a pause after each, and a trackpad pinch; the third
   // table takes each step apart (worst frame, time outside frame(), handlers, the glide). Meant for --swgpu.
+  // tiles: a wheel sequence at the Retina size, so that many tiles get drawn; see the "per tile drawn" table
+  { name: 'tiles-night', vw: 1335, vh: 805, dpr: 2, q: '&z=1&time=night', gesture: 'wheel', tilesc: true },
+  { name: 'tiles-day', vw: 1335, vh: 805, dpr: 2, q: '&z=1', gesture: 'wheel', tilesc: true },
   { name: 'zoom-steps', vw: 1335, vh: 805, dpr: 2, q: '&z=1', gesture: 'zoomsteps', zoom: true },
   { name: 'zoom-steps-dpr1', vw: 1920, vh: 1080, dpr: 1, q: '&z=1', gesture: 'zoomsteps', zoom: true },
   { name: 'zoom-pinch', vw: 1335, vh: 805, dpr: 2, q: '&z=1', gesture: 'pinch', zoom: true },
@@ -163,7 +166,12 @@ async function run(browser, base, sc) {
     // src = drawImage with a canvas as its source; dirty = of those, the source had been drawn on since it was last
     // used as a source (the browser must flush it and often copy it); full = draws, fills and clears covering at least
     // half of a canvas as big as the model's; clip = clip() calls; filter = draws with a canvas filter set.
-    const ops = (window.__ops = { src: 0, dirty: 0, full: 0, clip: 0, filter: 0 });
+    // Off screen (the destination canvas is not in the page: a tile, or a scratch card): osrc / odirty = the same two
+    // counts for those alone; made = canvases created; sized = canvases not in the page given a new non-zero size (a
+    // new backing store; a new canvas's first size is not counted); zeroed = canvases set to zero size (given back).
+    const ops = (window.__ops = { src: 0, dirty: 0, full: 0, clip: 0, filter: 0, osrc: 0, odirty: 0, made: 0, sized: 0, zeroed: 0 });
+    const ce = Document.prototype.createElement; Document.prototype.createElement = function (n, ...a) { const e = ce.call(this, n, ...a); if (String(n).toLowerCase() === 'canvas') { ops.made++; e.__new = 1; } return e; };
+    for (const k of ['width', 'height']) { const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, k); Object.defineProperty(HTMLCanvasElement.prototype, k, { ...d, set(v) { if (!this.isConnected && v !== d.get.call(this)) { if (k === 'width') { if (this.__new) this.__new = 0; else if (v === 0) ops.zeroed++; else if (d.get.call(this) > 1 || v > 1) ops.sized++; } } d.set.call(this, v); } }); }
     const P = CanvasRenderingContext2D.prototype, big = (c) => { const v = document.getElementById('village'); return v && c.width * c.height >= 0.9 * v.width * v.height; };
     const area = (ctx, w, h) => { const m = ctx.getTransform(); return Math.abs(w * h * (m.a * m.d - m.b * m.c)); };
     const full = (ctx, w, h) => { const c = ctx.canvas; if (big(c) && area(ctx, w, h) >= 0.5 * c.width * c.height) ops.full++; };
@@ -172,7 +180,7 @@ async function run(browser, base, sc) {
     const cl = P.clip; P.clip = function (...a) { ops.clip++; return cl.apply(this, a); };
     const di = P.drawImage; P.drawImage = function (...a) {
       const src = a[0]; this.canvas.__d = 1;
-      if (src instanceof HTMLCanvasElement) { ops.src++; if (src.__d) { ops.dirty++; src.__d = 0; } }
+      if (src instanceof HTMLCanvasElement) { const off = !this.canvas.isConnected; ops.src++; if (off) ops.osrc++; if (src.__d) { ops.dirty++; if (off) ops.odirty++; src.__d = 0; } }
       if (this.filter && this.filter !== 'none') ops.filter++;
       full(this, a.length >= 9 ? a[7] : a.length >= 5 ? a[3] : src.width, a.length >= 9 ? a[8] : a.length >= 5 ? a[4] : src.height);
       return di.apply(this, a);
@@ -205,7 +213,7 @@ async function run(browser, base, sc) {
   await page.waitForTimeout(3000); // settle: fonts, the first tiles, the live scene from app.js
   let warmS = 0; // --warm: also wait (up to 60 s) until the model has drawn ahead everything it wants to, as after a minute's look
   if (WARM && sc.gesture) { const w0 = Date.now(); await page.waitForFunction(() => window.__bench.aheadLeft === 0, null, { timeout: 60000, polling: 250 }).catch(() => {}); warmS = (Date.now() - w0) / 1000; }
-  const tilesBefore = await page.evaluate(() => [window.__bench.tiles, window.__bench.tileMs]);
+  const tilesBefore = await page.evaluate(() => [window.__bench.tiles, window.__bench.tileMs, window.__bench.cs ? window.__bench.cs.cards : null, window.__bench.tw || 0, window.__bench.twLate || 0]);
   const n0 = await page.evaluate(() => { window.__long.length = 0; window.__ops0 = { ...window.__ops }; return window.__bench.frames.length; });
   if (PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start'); }
   const tStart = Date.now();
@@ -216,7 +224,7 @@ async function run(browser, base, sc) {
     mkdirSync(PROFILE, { recursive: true });
     writeFileSync(join(PROFILE, `${sc.name}.cpuprofile`), JSON.stringify(profile));
   }
-  const r = await page.evaluate((n0) => ({ frames: window.__bench.frames.slice(n0), long: window.__long.slice(), tiles: window.__bench.tiles, tileMs: window.__bench.tileMs, mem: window.__bench.mem(), ops: Object.fromEntries(Object.keys(window.__ops).map((k) => [k, window.__ops[k] - window.__ops0[k]])) }), n0);
+  const r = await page.evaluate((n0) => ({ cs: window.__bench.cs ? { ...window.__bench.cs, log: 0, last: 0 } : null, flags: window.__bench.flags || null, tw: window.__bench.tw, twLate: window.__bench.twLate, frames: window.__bench.frames.slice(n0), long: window.__long.slice(), tiles: window.__bench.tiles, tileMs: window.__bench.tileMs, mem: window.__bench.mem(), ops: Object.fromEntries(Object.keys(window.__ops).map((k) => [k, window.__ops[k] - window.__ops0[k]])) }), n0);
   const { metrics } = await cdp.send('Performance.getMetrics');
   const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
   await ctx.close();
@@ -265,8 +273,13 @@ async function run(browser, base, sc) {
       };
     });
   }
+  // per static tile drawn while measuring: canvas-to-canvas copies onto canvases off screen, canvases made and resized
+  const nT = r.tiles - tilesBefore[0], per = (v) => (nT ? +(v / nT).toFixed(1) : '-');
+  const tile = { tiles: nT, osrc: per(r.ops.osrc), odirty: per(r.ops.odirty), made: per(r.ops.made), sized: per(r.ops.sized), zeroed: per(r.ops.zeroed),
+    cards: r.cs && tilesBefore[2] != null ? per(r.cs.cards - tilesBefore[2]) : '-', ms: per(r.tileMs - tilesBefore[1]),
+    late: r.tw != null && r.tw - tilesBefore[3] > 1 ? +((r.twLate - tilesBefore[4]) / (r.tw - tilesBefore[3])).toFixed(1) : '-', cut: r.flags ? r.flags.tilecut + (r.flags.ahead ? '' : ', no ahead') : '-' };
   return {
-    zoom,
+    zoom, tile,
     name: sc.name, viewport: `${sc.vw}x${sc.vh}@${sc.dpr}${sc.cpu > 1 ? ` cpu/${sc.cpu}` : ''}`,
     fps: +(r.frames.length / secs).toFixed(1),
     frameP50: +pct(iv, 0.5).toFixed(1), frameP95: +pct(iv, 0.95).toFixed(1), frameMax: +pct(iv, 1).toFixed(1),
@@ -286,7 +299,7 @@ const browser = await chromium.launch({ headless: !HEADED, args: args.includes('
 const results = [];
 try {
   for (const sc of SCENARIOS) {
-    const want = ONLY.split(',').flatMap((n) => (n === 'steady' ? STEADY : n === 'interaction' ? SCENARIOS.filter((x) => x.gesture && !x.zoom && x.name !== 'pan-zoom').map((x) => x.name) : n === 'zoom' ? SCENARIOS.filter((x) => x.zoom).map((x) => x.name) : [n]));
+    const want = ONLY.split(',').flatMap((n) => (n === 'steady' ? STEADY : n === 'interaction' ? SCENARIOS.filter((x) => x.gesture && !x.zoom && !x.tilesc && x.name !== 'pan-zoom').map((x) => x.name) : n === 'zoom' ? SCENARIOS.filter((x) => x.zoom).map((x) => x.name) : n === 'tiles' ? SCENARIOS.filter((x) => x.tilesc).map((x) => x.name) : [n]));
     if (ONLY && !want.includes(sc.name)) continue;
     process.stderr.write(`running ${sc.name}...\n`);
     results.push(await run(browser, base, sc));
@@ -320,6 +333,17 @@ if (IR.length) {
   const iw = ic.map(([k, h]) => Math.max(h.length, ...IR.map((r) => String(get(r, k)).length)));
   console.log(ic.map(([, h], i) => h.padStart(iw[i])).join('  '));
   for (const r of IR) console.log(ic.map(([k], i) => String(get(r, k)).padStart(iw[i])).join('  '));
+}
+{
+  console.log('\nper static tile drawn while measuring (canvas calls whose destination is a canvas not in the page: a tile or a scratch card).');
+  console.log('copies = drawImage from a canvas; dirty = of those, from a canvas just drawn on; made / sized / zeroed = canvases created, given a new');
+  console.log('size, set to zero size; cards = scratch cards used (as the model counts them); ms = JavaScript time per tile; late/ms = ms the next');
+  console.log('frame started late per ms of tile drawing (meaningless without a graphics card); cut = how static things behind buildings are cut:');
+  const tc = [['name', 'scenario'], ['tiles', 'tiles'], ['osrc', 'copies'], ['odirty', 'dirty'], ['made', 'made'], ['sized', 'sized'], ['zeroed', 'zeroed'], ['cards', 'cards'], ['ms', 'ms'], ['late', 'late/ms'], ['cut', 'cut']];
+  const g = (r, k) => (k === 'name' ? r.name : r.tile[k]);
+  const tw = tc.map(([k, h]) => Math.max(h.length, ...results.map((r) => String(g(r, k)).length)));
+  console.log(tc.map(([, h], i) => h.padStart(tw[i])).join('  '));
+  for (const r of results) console.log(tc.map(([k], i) => String(g(r, k)).padStart(tw[i])).join('  '));
 }
 const ZR = results.filter((r) => r.zoom);
 if (ZR.length) {

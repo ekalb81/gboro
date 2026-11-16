@@ -144,7 +144,9 @@ function erase(p){if(TGT.de)eraseOn(TGT.e,p);if(TGT.dg)eraseOn(TGT.g,p)}
 function eraseOn(e,p){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}
 function path(pts){const p=new Path2D();p.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)p.lineTo(pts[i][0],pts[i][1]);p.closePath();return p}
 function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke(p)}if(c===TGT.c)erase(p)}
-function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke()}
+let LNE=false; // lines rub out the lit-window and glow layers under them too (as a scratch card did): set while a static thing is drawn under a clip
+function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke();
+  if(LNE&&c===TGT.c)for(const e of [TGT.de?TGT.e:null,TGT.dg?TGT.g:null])if(e){e.globalCompositeOperation='destination-out';e.beginPath();e.moveTo(a[0],a[1]);e.lineTo(b[0],b[1]);e.strokeStyle='#000';e.lineWidth=lw;e.stroke();e.globalCompositeOperation='source-over'}}
 function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
 const eq=(q,col,al)=>{TGT.de=TGT.wide=1;const e=TGT.e;e.fillStyle=col;if(al==null)e.fill(path(q));else{e.globalAlpha=al;e.fill(path(q));e.globalAlpha=1}};
@@ -694,40 +696,68 @@ function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx
 // ?bench: per-frame timings of each phase, read by scripts/bench.mjs (window.__bench). Off, it costs one null check per phase.
 // ?fps: the same timings shown in a small box on the page (see fpsBox), for checking a browser by eye.
 const FPS=QS.has('fps'),CARD=QS.get('cut')==='card'||(SOFT&&QS.get('cut')!=='clip');
-const BM=DIAG?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,flush:QS.get('bench')==='flush'}):null;let bmT=0,bmF=null;
+const BM=DIAG?(window.__bench={frames:[],tiles:0,tileMs:0,staticMs:0,tw:0,twLate:0,flush:QS.get('bench')==='flush'}):null;let bmT=0,bmF=null;
 // an input handler, timed for the readout
 const timed=f=>DIAG?(...a)=>{const t=performance.now();try{return f(...a)}finally{tm.inp+=performance.now()-t}}:f;
 const bm=k=>{const t=performance.now();bmF[k]=(bmF[k]||0)+t-bmT;bmT=t};
 const DBG=new URLSearchParams(location.search).has('debug');const tiles=new Map();let stver=0,T=0,renderedFor='';
+// How a static thing (tree, lamp, parked car, string of lights, fountain) that is partly behind a building is cut when
+// a tile is drawn. 'clip' (wherever moving things are clipped, i.e. not on a software renderer): drawn straight onto the
+// tile under a clip that is everything but the buildings in front, so no canvas is read back. 'card': on a scratch card,
+// the buildings rubbed out of it, the card copied onto the tile's layers, as it always was. ?tilecut=card|clip forces one.
+// ?ahead=0 turns drawing ahead off (tiles are then drawn only when the view needs them), to see what it costs.
+const TCLIP=QS.get('tilecut')?QS.get('tilecut')==='clip':!CARD,AHEAD=QS.get('ahead')!=='0';
+// Tile canvases are reused, not made and thrown away: a tile dropped from the cache hands its canvases to a small pool
+// and the next tile drawn takes them from there. A tile's lit-window and glow layers are real canvases only while
+// something is painted on them; otherwise they are NIL (one shared blank) and the canvas they were drawn on goes back
+// to the pool as it is, without being resized. CS counts what was made, freed and reused, for the readout and the bench.
+const NIL=mk(1,1).getContext('2d'),pool=[],POOL=24,CS={made:0,freed:0,reused:0,cards:0,log:[],last:[]};
+const csLog=k=>{CS[k]++;if(DIAG){CS.log.push([performance.now(),k]);if(CS.log.length>600)CS.log.splice(0,200)}};
+function takeCanvas(){const c=pool.pop();if(c){csLog('reused');return c}csLog('made');return mk(TILE,TILE).getContext('2d')}
+function giveCanvas(c){if(c!==NIL)pool.push(c)}
+function freeSpare(){const c=pool.pop();c.canvas.width=c.canvas.height=0;csLog('freed')}
+const dropTile=t=>{giveCanvas(t.c);giveCanvas(t.e);giveCanvas(t.g);t.c=t.e=t.g=NIL};
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
 let TR=null;const scales=new Set();
 // A tile is drawn in small steps (the ground, then one building, tree, lamp or parked car at a time), so the work can be
 // spread over frames; run straight through, the steps are exactly the drawing a tile always had.
 function* tileSteps(tx,ty,t,vs){scales.add(vs);
-  if(!t){t={};for(const k of ['c','e','g']){t[k]=mk(TILE,TILE).getContext('2d')}}
-  // a tile's lit-window and glow layers shrink to nothing when nothing is painted on them (most of the day)
-  for(const k of ['c','e','g']){const cv_=t[k].canvas;if(cv_.width!==TILE){cv_.width=TILE;cv_.height=TILE}t[k].setTransform(1,0,0,1,0,0);t[k].clearRect(0,0,TILE,TILE)}
+  for(const k of ['c','e','g']){if(t[k]===NIL)t[k]=takeCanvas();const c=t[k];c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.globalCompositeOperation='source-over';c.clearRect(0,0,TILE,TILE)}
+  t.cards=0;
   const bt=[vs,0,0,vs,-tx*TILE,-ty*TILE],tg={c:t.c,e:t.e,g:t.g,de:0,dg:0},r=[tx*TILE/vs,ty*TILE/vs,(tx+1)*TILE/vs,(ty+1)*TILE/vs];
   const at=()=>{BT=bt;TGT=tg;ox=BOX;oy=BOY;TR=r};at();setT(t.c,t.e,t.g);
   const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]};const cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
   TG=[Math.min(...cs.map(c=>c[0])),Math.min(...cs.map(c=>c[1])),Math.max(...cs.map(c=>c[0])),Math.max(...cs.map(c=>c[1]))];
   drawGround(t.c);drawShadows(t.c);TG=null;yield;at();
   for(const b of blds)if(hitBox(b.box,r)){drawBuilding(t.c,b);yield;at()}
-  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);yield;at()}
+  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else if(TCLIP)clipPoint(o,tg);else{t.cards++;CS.cards++;drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}yield;at()}
   drawNet(t.c);
-  t.de=tg.de;t.dg=tg.dg;if(!t.de)t.e.canvas.width=t.e.canvas.height=1;if(!t.dg)t.g.canvas.width=t.g.canvas.height=1;
+  // a layer with nothing painted on it is not kept: its canvas goes back to the pool for the next tile
+  t.de=tg.de;t.dg=tg.dg;if(!t.de){giveCanvas(t.e);t.e=NIL}if(!t.dg){giveCanvas(t.g);t.g=NIL}
   t.vs=vs;t.sw=scr[0].canvas.width;t.sh=scr[0].canvas.height;return t}
-function tileDone(t,ms,tx,ty,inFrame=true){if(BM){if(BM.flush){const T0=performance.now();for(const k of ['c','e','g'])t[k].getImageData(0,0,1,1);ms+=performance.now()-T0} // software canvases draw lazily: count the drawing here
+// A static thing partly behind buildings, drawn straight onto the tile: clipped to its box (as the card was) and to
+// everything but each building in front whose outline really reaches the box; wholly inside one, it is not drawn.
+// The lit-window and glow layers are clipped too when something is on them or the thing lights up, so what it paints
+// and what it rubs out there are cut the same way.
+function clipPoint(o,tg){const ips=[];for(const b of o.bl){const q=silhouette(b),iv=invOf(q),r_=boxVsLoops(o.box,q.loops);if(r_===2)return;if(r_)ips.push(iv[0])}
+  if(!ips.length){drawPoint(tg.c,o);return}
+  const X0=Math.floor(BT[0]*o.box[0]+BT[4]),Y0=Math.floor(BT[3]*o.box[1]+BT[5]),X1=Math.ceil(BT[0]*o.box[2]+BT[4]),Y1=Math.ceil(BT[3]*o.box[3]+BT[5]);if(X1<=X0||Y1<=Y0)return;
+  const lit=lampsOn(),cs=[tg.c];if(tg.de||lit&&(o.kind==='lamp'||o.kind==='string'))cs.push(tg.e);if(tg.dg||lit&&o.kind==='lamp')cs.push(tg.g);
+  for(const c of cs){c.save();c.setTransform(1,0,0,1,0,0);c.beginPath();c.rect(X0,Y0,X1-X0,Y1-Y0);c.clip();c.setTransform(...BT);for(const ip of ips)c.clip(ip,'evenodd')}
+  LNE=true;try{drawPoint(tg.c,o)}finally{LNE=false;for(const c of cs)c.restore()}}
+function tileDone(t,ms,tx,ty,inFrame=true){CS.last.push(t.cards||0);if(CS.last.length>20)CS.last.shift();if(BM){if(BM.flush){const T0=performance.now();for(const k of ['c','e','g'])t[k].getImageData(0,0,1,1);ms+=performance.now()-T0} // software canvases draw lazily: count the drawing here
     BM.tiles++;BM.tileMs+=ms;if(bmF)bmF.td=(bmF.td||0)+1;if(bmF&&inFrame){bmF.nt=(bmF.nt||0)+1;bmF.tt=(bmF.tt||0)+ms;(bmF.tl||(bmF.tl=[])).push(+ms.toFixed(1))}}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(ms)+'ms')}
-function renderTile(tx,ty,t,vs=VS){const T0=performance.now(),ver=stver;const g=tileSteps(tx,ty,t,vs);let r;while(!(r=g.next()).done);t=r.value;t.ver=ver;tileDone(t,performance.now()-T0,tx,ty);return t}
+const newTile=()=>{makeRoom();return{c:takeCanvas(),e:NIL,g:NIL}};
+function renderTile(tx,ty,t,vs=VS){const T0=performance.now(),ver=stver;const g=tileSteps(tx,ty,t||newTile(),vs);let r;while(!(r=g.next()).done);t=r.value;t.ver=ver;const ms=performance.now()-T0;tbTw+=ms;tileDone(t,ms,tx,ty);return t}
 // tiles part drawn, by key; a step at a time until `until` (performance.now()), then they wait for the next frame
 const jobs=new Map();
-function work(key,tx,ty,vs,until){let j=jobs.get(key);if(j&&j.ver!==stver){jobs.delete(key);j=null}
-  if(!j){j={g:tileSteps(tx,ty,null,vs),ms:0,ver:stver};jobs.set(key,j);while(jobs.size>4)jobs.delete(jobs.keys().next().value)}
-  const sv=[BT,TGT,ox,oy,TR],t0=performance.now();let r;do r=j.g.next();while(!r.done&&performance.now()<until);[BT,TGT,ox,oy,TR]=sv;const dt_=performance.now()-t0;j.ms+=dt_;if(BM&&bmF)bmF.tw=(bmF.tw||0)+dt_;
-  if(!r.done)return null;jobs.delete(key);const t=r.value;t.ver=j.ver;tileDone(t,j.ms,tx,ty,false);tiles.set(key,t);return t}
+const dropJob=k=>{const j=jobs.get(k);if(j){jobs.delete(k);dropTile(j.t)}}; // a part-drawn tile given up: its canvases go back to the pool
+function work(key,tx,ty,vs,until){let j=jobs.get(key);if(j&&j.ver!==stver){dropJob(key);j=null}
+  if(!j){const t=newTile();j={t,g:tileSteps(tx,ty,t,vs),ms:0,ver:stver};jobs.set(key,j);while(jobs.size>4)dropJob(jobs.keys().next().value)}
+  const sv=[BT,TGT,ox,oy,TR],t0=performance.now();let r;do r=j.g.next();while(!r.done&&performance.now()<until);[BT,TGT,ox,oy,TR]=sv;const dt_=performance.now()-t0;j.ms+=dt_;tbTw+=dt_;if(BM&&bmF)bmF.tw=(bmF.tw||0)+dt_;
+  if(!r.done)return null;jobs.delete(key);const t=r.value,old=tiles.get(key);if(old&&old!==t)dropTile(old);t.ver=j.ver;tileDone(t,j.ms,tx,ty,false);tiles.set(key,t);return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
-  if(t){tiles.delete(key);tiles.set(key,t);if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
+  if(t){tiles.delete(key);tiles.set(key,t);t.use=useNo;if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
   const t0=performance.now();t=jobs.has(key)?work(key,tx,ty,VS,Infinity):renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
 // While a drag or a zoom brings in tiles that are not drawn yet, a frame draws them within its budget and, until each
 // is done, stands in for it with the same ground at another scale already drawn (a zoom step's previous scale, or the
@@ -747,21 +777,23 @@ function partStandIn(tx,ty){const r0=tx*TILE/VS,r1=ty*TILE/VS,r2=(tx+1)*TILE/VS,
     const f=m?n/m:0;if(f>bn||(f===bn&&f>0&&d<bd)){best={s,r:[r0,r1,r2,r3],rg:[a0,a1,b0,b1]};bn=f;bd=d}}
   return best}
 function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
-  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const t=tiles.get(s+'|'+x+'|'+y);if(!t)continue;
+  for(let y=rg[1];y<=rg[3];y++)for(let x=rg[0];x<=rg[2];x++){const k=s+'|'+x+'|'+y,t=tiles.get(k);if(!t)continue;
+    t.use=useNo; // in use: not to be dropped to make room for the tile it stands in for
     const i0=Math.max(r0,x*TILE/s),i1=Math.max(r1,y*TILE/s),i2=Math.min(r2,(x+1)*TILE/s),i3=Math.min(r3,(y+1)*TILE/s);if(i2<=i0||i3<=i1)continue;
     const dx=Math.round(i0*VS)-cx,dy=Math.round(i1*VS)-cy,dw=Math.round(i2*VS)-cx-dx,dh=Math.round(i3*VS)-cy-dy,sx=i0*s-x*TILE,sy=i1*s-y*TILE,sw=(i2-i0)*s,sh=(i3-i1)*s;
     w.drawImage(t.c.canvas,sx,sy,sw,sh,dx,dy,dw,dh);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,sx,sy,sw,sh,dx,dy,dw,dh)}}}
 // What is worth drawing ahead: the whole model at a small scale (once), the ring of tiles just outside the view, then
 // the view at the next zoom out and in (after a zoom step: the next level the same way first). A little of it is drawn
-// at the end of each frame (what is left of the frame's tile allowance, see tileBudget; at least 2 ms), so a drag or a
-// zoom step usually finds its tiles ready, and otherwise has something to stand in.
-let keepN=24,nVis=12,zdir=0;const OV=.5;
-function aheadList(){const out=[];const{dw,dh}=dev();
+// at the end of each frame (what is left of the frame's tile allowance, see tileBudget), so a drag or a zoom step
+// usually finds its tiles ready, and otherwise has something to stand in. Not while the pointer is down, and while a
+// zoom glides only the tiles it will land on (landOnly).
+let keepN=24,nVis=12,zdir=0,useNo=0;const OV=.5;
+function aheadList(landOnly){const out=[];const{dw,dh}=dev();
   // while a zoom is on its way, "the view" is where it will land: those tiles come first, so it lands sharp
   const R=ZG?ZG.rest:null,VS_=R?R.vs:VS,W_=R?R.W:W,H_=R?R.H:H,cX=R?R.camX:camX,cY=R?R.camY:camY;const mx=cX+W_/VS_/2,my=cY+H_/VS_/2;
   const add=(vs,x0,y0,x1,y1,skip)=>{const nx=Math.ceil(BW*vs/TILE)-1,ny=Math.ceil(BH*vs/TILE)-1;for(let y=Math.max(0,y0);y<=Math.min(ny,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(nx,x1);x++)if(!skip||!skip(x,y))out.push([x,y,vs])};
   const cx=Math.round(cX*VS_),cy=Math.round(cY*VS_),tx0=Math.floor(cx/TILE),ty0=Math.floor(cy/TILE),tx1=Math.floor((cx+W_-1)/TILE),ty1=Math.floor((cy+H_-1)/TILE);
-  if(R)add(VS_,tx0,ty0,tx1,ty1);
+  if(R)add(VS_,tx0,ty0,tx1,ty1);if(landOnly)return out; // while a zoom glides, nothing but the tiles it lands on
   const ring=()=>add(VS_,tx0-1,ty0-1,tx1+1,ty1+1,(x,y)=>x>=tx0&&x<=tx1&&y>=ty0&&y<=ty1);
   const level=d=>{if(!zoomAllowed(zi+d,dw,dh))return;const{vs}=planFor(ZL[zi+d],dw,dh);if(vs===VS_)return;const hw=dw/ZL[zi+d]/2,hh=dh/ZL[zi+d]/2;
     add(vs,Math.floor((mx-hw)*vs/TILE),Math.floor((my-hh)*vs/TILE),Math.floor((mx+hw)*vs/TILE),Math.floor((my+hh)*vs/TILE))};
@@ -773,23 +805,48 @@ function aheadList(){const out=[];const{dw,dh}=dev();
   const fit_=Math.floor(TILE_MB*262144/(TILE*TILE*(lampsOn()||FT.de?3:1.2))),nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1,nOv=(nx+1)*(ny+1)<=fit_/4?(nx+1)*(ny+1):0;
   const ov=[];if(VS_!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
   return ov.concat(out.slice(0,Math.max(0,Math.min(keepN,fit_-nOv)-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
-// Drawing ahead uses scratch canvases of its own: how big the shared ones have grown decides some edge antialiasing,
-// so leaving them as they are keeps every frame drawn exactly as before.
+// Where static things are cut on scratch cards (?tilecut=card, a software renderer), drawing ahead uses cards of its
+// own: how big the shared ones have grown decides some edge antialiasing, so leaving them as they are keeps every
+// frame drawn exactly as before. (Cut by clip, no card is used and none of this matters.)
 const scrA=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d')),scrInkA=[0,0,0];
 // A tile drawn ahead starts from the shared ones' size, and when it comes into view the shared ones grow as drawing it
 // there would have grown them: so it, and everything after, comes out exactly as if it had been drawn then.
-function drawAhead(until){const miss=([x,y,vs])=>{const t=tiles.get(vs+'|'+x+'|'+y);return!t||t.ver!==stver},al=aheadList();if(BM)BM.aheadLeft=al.filter(miss).length;const q=al.find(miss);if(!q)return;const[x,y,vs]=q,key=vs+'|'+x+'|'+y;
+function drawAhead(until,landOnly){const miss=([x,y,vs])=>{const t=tiles.get(vs+'|'+x+'|'+y);return!t||t.ver!==stver},al=aheadList(landOnly);if(BM)BM.aheadLeft=al.filter(miss).length;const q=al.find(miss);if(!q)return;const[x,y,vs]=q,key=vs+'|'+x+'|'+y;
+  if(!jobs.has(key)&&!roomAhead(al))return;
   if(!jobs.has(key))for(let i=0;i<3;i++){const a=scrA[i].canvas,m=scr[i].canvas;if(a.width!==m.width||a.height!==m.height){a.width=m.width;a.height=m.height;scrInkA[i]=0}}
   const sv=scr.slice(),si=scrInk.slice();scr.splice(0,3,...scrA);scrInk.splice(0,3,...scrInkA);
   try{const t=work(key,x,y,vs,until);if(t)t.ah=1}finally{scrA.splice(0,3,...scr);scrInkA.splice(0,3,...scrInk);scr.splice(0,3,...sv);scrInk.splice(0,3,...si)}trimTiles(keepN)}
 // The cache is bounded by count and by memory (TILE_MB of tile canvases; browsers, Safari above all, cap the total
-// canvas memory of a page and fail badly past it). The tiles on screen always stay. A dropped tile gives its canvases
-// back at once instead of waiting for the garbage collector.
+// canvas memory of a page and fail badly past it). The tiles on screen always stay. A dropped tile hands its canvases
+// to the pool, and the pool frees what is over the cap at once instead of waiting for the garbage collector.
 const TILE_MB=+QS.get('tilemb')||(window.matchMedia&&matchMedia('(pointer:coarse)').matches?64:160);
 const tilePx=t=>t.c.canvas.width*t.c.canvas.height+t.e.canvas.width*t.e.canvas.height+t.g.canvas.width*t.g.canvas.height;
-function trimTiles(keep){let n=0,px=0;for(const t of tiles.values()){px+=tilePx(t);if(t.vs!==OV)n++}const cap=TILE_MB*262144;if(n<=keep&&px<=cap)return;
-  for(const[k,t]of tiles){if(t.vs===OV)continue;if(n<=nVis)break;px-=tilePx(t);tiles.delete(k);for(const c of [t.c,t.e,t.g])c.canvas.width=c.canvas.height=0;if(--n<=keep&&px<=cap)break}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
+// (the pool and the part-drawn tiles count toward the memory too)
+const sparePx=()=>{let px=pool.length*TILE*TILE;for(const j of jobs.values())px+=tilePx(j.t);return px};
+const usedPx=()=>{let px=sparePx();for(const t of tiles.values())px+=tilePx(t);return px};
+// the tiles in least-recently-used order that may be dropped: not the last nVis (the view), not a tile laid on the
+// screen in this frame or the last one (the view again, and whatever is standing in for a tile not drawn yet: t.use),
+// and not the small whole-model copy or any other tile at its scale
+const kept=t=>t.vs===OV||t.use>=useNo-1,nLoose=()=>{let n=0;for(const t of tiles.values())if(t.vs!==OV)n++;return n};
+function dropOldest(){if(nLoose()<=nVis)return false;for(const[k,t]of tiles){if(kept(t))continue;tiles.delete(k);dropTile(t);return true}return false}
+// Drawing ahead never throws away what it is itself asking for: when a new tile would push out (by count or by
+// memory) a tile that is on the list too, there is no room for more and it stops, instead of drawing the list round
+// and round (as it did in a small cache when tiles at the whole-model copy's scale, which are never dropped, had
+// taken most of the room: a tile drawn every few frames for as long as the page stood still).
+function roomAhead(al){const n=nLoose();if(n<keepN&&(pool.length>=3||usedPx()+(3-pool.length)*TILE*TILE<=TILE_MB*262144))return true;
+  if(n<=nVis)return false;for(const[k,t]of tiles)if(!kept(t))return!al.some(([x,y,vs])=>vs+'|'+x+'|'+y===k);return false}
+// Before a new tile is started at the memory cap, the oldest tile hands over its canvases, so the new one is drawn on
+// those instead of on new ones (made first and the old ones freed after, as it was, the cache at its cap made and
+// freed three canvases for every tile drawn).
+function makeRoom(){const cap=TILE_MB*262144;for(let i=0;i<3&&pool.length<3&&usedPx()+(3-pool.length)*TILE*TILE>cap;i++)if(!dropOldest())break}
+function trimTiles(keep){let n=nLoose();const cap=TILE_MB*262144;
+  while(n>keep&&n>nVis&&dropOldest())n--;
+  // over the cap: spare canvases are freed, then old tiles dropped. Three spares (one tile's worth) are let be, so that
+  // when the view alone is over the cap (a small cache, a big window at night) the next tile still finds its canvases
+  for(;;){if(usedPx()-Math.min(pool.length,3)*TILE*TILE<=cap)break;if(pool.length>3)freeSpare();else if(!dropOldest())break}
+  while(pool.length>POOL)freeSpare()}
+if(BM){BM.cs=CS;BM.flags={tilecut:TCLIP?'clip':'card',ahead:AHEAD}}
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
 function renderStatic(){const T0=performance.now();
   SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
@@ -1029,7 +1086,7 @@ cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.
   if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
 function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
-const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}if(drag)TB=Math.min(TB,2);drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 cv.addEventListener('mousemove',timed(e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}}));cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
 
 // ---------- light grading from the sun ----------
@@ -1099,14 +1156,17 @@ function fpsBox(){const fr_=BM.frames,now=performance.now(),n=fr_.length;
   const iv=fs.slice(1).map((f,i)=>f.t-fs[i].t),span=fs[fs.length-1].t-fs[0].t,avg=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0)/fs.length,sum=k=>fs.reduce((s_,f)=>s_+(f[k]||0),0);
   const out=fs.slice(1).map((f,i)=>f.t-fs[i].end),f1=v=>v.toFixed(1);
   const ua=navigator.userAgent,br=(/Edg\/([\d.]+)/.exec(ua)&&'Edge '+RegExp.$1)||(/Firefox\/([\d.]+)/.exec(ua)&&'Firefox '+RegExp.$1)||(/Chrome\/([\d.]+)/.exec(ua)&&'Chrome '+RegExp.$1)||(/Version\/([\d.]+).*Safari/.exec(ua)&&'Safari '+RegExp.$1)||ua.slice(0,40);
-  let mb=0;for(const t of tiles.values())mb+=tilePx(t);
+  let mb=sparePx();for(const t of tiles.values())mb+=tilePx(t);
+  const cs5=k=>CS.log.filter(e=>e[1]===k&&e[0]>now-5000).length;let twS=0,exS=0,ex0=0,n0=0,n1=0;for(const[,tw,ex]of TS){if(tw>.3){twS+=tw;exS+=ex;n1++}else{ex0+=ex;n0++}}ex0=n0?ex0/n0:0;const exT=Math.max(0,exS-n1*ex0); // extra rest after tile frames, over what frames without tile work show
   let wl='';if(fpsW){const{A,B}=fpsW,inF=A.end-A.t,ph=PH.filter(k=>A[k]>=.05).map(k=>k+' '+f1(A[k])).join(' '),fitH=B.fit||0,fitF=A.fitF||0;
     wl=`worst frame of the last 5 s: ${f1(fpsW.iv)} ms, ${f1((now-B.t)/1000)} s ago = frame() ${f1(inF)} (${ph||'-'}) + handlers ${f1(B.inp||0)} + rest ${f1(Math.max(0,fpsW.iv-inF-(B.inp||0)))}\n`+
       `  fit() in it: ${f1(fitH+fitF)} ms (layers ${f1((B.ml||0)+(A.mlF||0))}, place ${f1((B.pl||0)+(A.plF||0))})   what happened: ${fpsWhat(A,B)}\n`}
   if(fpsZ){const z=fpsZ;wl+=`last zoom ${z.what}: `+(z.n?`glide ${z.n} frames in ${z.gms.toFixed(0)} ms (longest ${f1(z.gmax)})`:reduce?'a jump (reduced motion)':'no glide frame yet')+(z.land!=null?`, the frame that landed ${f1(z.land)} ms (frame() ${f1(z.lin)}), longest in the 0.6 s after ${f1(z.amax)}${z.amax>25?' ('+z.aw+')':''}`:'')+'\n'}
   fpsEl.textContent=`${(1000*(fs.length-1)/span).toFixed(1)} fps   frame ${(span/(fs.length-1)).toFixed(1)} ms (max ${Math.max(...iv).toFixed(0)})   work ${PH.reduce((s_,k)=>s_+avg(k),0).toFixed(1)} ms   outside frame() ${f1(out.reduce((a,b)=>a+b,0)/out.length)} ms (max ${Math.max(...out).toFixed(0)})\n`+
     PH.map(k=>k+' '+avg(k).toFixed(1)).join('  ')+'\n'+
-    `input handlers ${f1(sum('inp'))} ms in this half second (longest ${f1(Math.max(...fs.map(f=>f.inp||0)))})   fit() ${f1(sum('fit')+sum('fitF'))} ms (layers ${f1(sum('ml')+sum('mlF'))}, place ${f1(sum('pl')+sum('plF'))})   tile allowance ${f1(TB)} ms, ${sum('late')} late frames\n`+wl+
+    `input handlers ${f1(sum('inp'))} ms in this half second (longest ${f1(Math.max(...fs.map(f=>f.inp||0)))})   fit() ${f1(sum('fit')+sum('fitF'))} ms (layers ${f1(sum('ml')+sum('mlF'))}, place ${f1(sum('pl')+sum('plF'))})\n`+
+    `tiles cut by ${TCLIP?'clip':'card'}${QS.get('tilecut')?' (?tilecut)':''}, ${CS.last.length?f1(CS.last.reduce((a,b)=>a+b,0)/CS.last.length):'-'} cards a tile   drawing ahead ${AHEAD?'on':'OFF (?ahead=0)'}   tile canvases in the last 5 s: ${cs5('made')} made, ${cs5('freed')} freed, ${cs5('reused')} reused (${pool.length} spare)\n`+
+    `tile work ${f1(twS)} ms in ${n1} frames of the last 5 s, extra rest after them ${f1(exT)} ms = ${twS>.5?f1(exT/twS):'-'} ms of rest per ms of tile work (${f1(n1?exS/n1:0)} ms extra a frame against ${f1(ex0)} without tile work)   allowance ${f1(TB)} ms${TBFIX?' (pinned, ?tilems)':''}${tbGap?' every '+(tbGap+1)+' frames':''}, ${sum('late')} stalls\n`+wl+
     `moving things ${Math.round(avg('n'))}, cut out ${Math.round(avg('cut'))}   tiles ${tiles.size} (${(mb*4/1048576).toFixed(0)} MB of ${TILE_MB})   glow ${FT.dg?'on':'off'}\n`+
     `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)}   zoom ${+zNow().toFixed(2)}${ZG?' (on its way to '+ZL[zi]+')':''}\n`+
     `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}${reduce?'   reduced motion: zoom jumps':''}`}
@@ -1121,16 +1181,33 @@ function bldsNear(x0,y0,x1,y1){
   return bgOut.sort((a,b)=>a.bi-b.bi)}
 const bgOut0=[];
 let FT={de:1,dg:1};const glowOn=()=>{useGlow(true);FT.dg=1};
-// How long a frame may spend drawing tiles (in the frame, for the view; then ahead, with what is left). It was a fixed
-// 12 ms (10 ahead). Tile drawing costs more than the time measured here: the browser's graphics process does the
-// actual painting afterwards, and when it falls behind, the next frame is held up however little the page itself did.
-// So the allowance follows the wait between the end of one frame() and the start of the next: a wait of more than a
-// frame and a half (by the shortest time between frames lately) halves it, down to 3 ms; every frame that starts on
-// time gives a little back, up to 12. A machine that keeps up, or one that is slow in its own drawing, draws as before.
-let TB=12,tbLast=0,tbEnd=0,tbBase=16.7,tbMin=1e9,tbN=0;
-function tileBudget(now){const iv=now-tbLast,wait=now-tbEnd;tbLast=now;if(reduce||!(iv>0&&iv<1000))return TB; // (reduced motion draws frames only when asked, so their spacing says nothing)
+// How long a frame may spend drawing tiles (in the frame, for the view; then ahead, with what is left), and how often.
+// Tile drawing costs more than the time measured here: the browser's graphics process does the actual painting
+// afterwards, and when it falls behind, the next frame is held up however little the page itself did (Safari: 2 ms of
+// tile drawing, 40 to 85 ms of stall). So the allowance follows what tile drawing is seen to cost. For every frame
+// the "extra rest" is how much later the next frame started than it should have (given how long frame() itself took).
+// After a frame that drew tiles: extra rest of more than half a frame over what frames without tile drawing show
+// (tbE0) is a stall and halves the allowance, down to 1.5 ms, and at 1.5 ms spaces tile drawing out instead (every
+// 2nd, 4th, up to every 9th frame); no stall gives a quarter millisecond back, up to 12, and halves the spacing.
+// The allowance is also kept to what fits in a frame beside the rest of frame()'s work (when that fits at all).
+// While a zoom glides only the tiles it lands on are drawn, 2 ms a frame at most, and none after a stall; while the
+// pointer is down nothing is drawn ahead; and when a glide lands or a drag ends the allowance starts again from 2 ms.
+// TS keeps the last five seconds (tile ms and extra rest per frame) for the readout. ?tilems=N pins the allowance at
+// N ms a frame whatever happens (a diagnostic: is a stall a matter of how much is drawn, or of drawing at all?).
+const TBFIX=+QS.get('tilems')||0;
+let TB=12,tbGap=0,tbSince=99,tbLast=0,tbEnd=0,tbBase=16.7,tbMin=1e9,tbN=0,tbTw=0,tbE0=0;const TS=[];
+function tileBudget(now){const iv=now-tbLast,inF=tbEnd-tbLast,tw=tbTw;tbLast=now;tbTw=0;
+  if(reduce||!(iv>0&&iv<1000))return TB; // (reduced motion draws frames only when asked, so their spacing says nothing)
   if(iv<tbMin)tbMin=iv;if(++tbN>=90){tbBase=tbMin;tbMin=1e9;tbN=0} // the usual interval: the shortest of the last 90 frames
-  const late=wait>Math.min(tbBase,tbMin)*1.5+1;TB=late?Math.max(3,TB/2):Math.min(12,TB+.5);if(BM){bmF.tb=TB;if(late)bmF.late=1}return TB}
+  const base=Math.min(tbBase,tbMin),extra=Math.max(0,iv-Math.max(1,Math.ceil((inF-1)/base))*base),other=Math.max(0,inF-tw);
+  if(tw>.3){const stall=extra>base*.5+tbE0;
+    if(stall){if(TB<=1.5)tbGap=Math.min(8,tbGap*2+1);TB=Math.max(1.5,TB/2);if(ZG)ZG.noTiles=true;if(BM)bmF.late=1}
+    else{TB=Math.min(12,TB+.25);tbGap>>=1}}
+  else tbE0+=(Math.min(extra,2*base)-tbE0)*.1;
+  if(BM){TS.push([now,tw,extra]);while(TS[0][0]<now-5000)TS.shift();BM.tw+=tw;if(tw>.3)BM.twLate+=extra;bmF.tb=TB;bmF.ex=extra}
+  if(TBFIX)return TB=TBFIX;
+  tbSince=tw>.3?0:tbSince+1;if(tbSince<tbGap)return 0;
+  return other<base*.5?Math.min(TB,Math.max(1.5,base-other-3)):TB}
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 function frame(ts){const F0=performance.now();
   if(BM){bmT=performance.now();bmF={t:bmT,fit:tm.fit,inp:tm.inp,ml:tm.ml,pl:tm.pl,ev:evs.splice(0)};tm.fit=tm.inp=tm.ml=tm.pl=0}
@@ -1146,7 +1223,7 @@ function frame(ts){const F0=performance.now();
   if(lampsOn())useGlow(true);
   for(const c of [w,E,GL])c.setTransform(1,0,0,1,0,0);if(FT.de)E.clearRect(0,0,W,H);if(FT.dg)GL.clearRect(0,0,W,H);w.fillStyle='#3a2c26';w.fillRect(0,0,W,H);
   FT={c:w,e:E,g:GL,de:0,dg:0,wide:CARD?1:0,ink:[]};
-  frame.stale=false;const budget={left:tileBudget(F0)},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
+  frame.stale=false;useNo++;const tb=tileBudget(F0),budget={left:tb},tx0=Math.max(0,Math.floor(cx/TILE)),ty0=Math.max(0,Math.floor(cy/TILE)),tx1=Math.min(Math.ceil(BW*VS/TILE)-1,Math.floor((cx+W-1)/TILE)),ty1=Math.min(Math.ceil(BH*VS/TILE)-1,Math.floor((cy+H-1)/TILE));
   for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const X=tx*TILE-cx,Y=ty*TILE-cy,key=VS+'|'+tx+'|'+ty;let t,si;
     // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
     // a zoom on its way: every square from tiles already made, at whatever scale is nearest
@@ -1321,8 +1398,9 @@ function frame(ts){const F0=performance.now();
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
   ctx.setTransform(1,0,0,1,0,0)}
   if(BM){bm('labels');bmF.n=dyn.length;BM.frames.push(bmF);if(BM.frames.length>4000)BM.frames.splice(0,2000)}
-  // a little drawing ahead with what is left of the frame (at least 2 ms, so it gets done on a slow machine too)
-  if(!frame.stale){const a=zg?Math.min(TB,4):TB;drawAhead(performance.now()+Math.max(Math.min(2,a),a*.83-(performance.now()-F0)))} // (a third of it while a zoom glides)
+  // a little drawing ahead with what is left of the frame's tile allowance: not while the pointer is down, and while
+  // a zoom glides only the tiles it lands on, 2 ms at most, none once tile drawing has stalled a frame of the glide
+  if(AHEAD&&!frame.stale&&tb>0&&!drag&&!(zg&&ZG.noTiles)){const left=(zg?Math.min(tb,2):tb)-tbTw;if(left>.5)drawAhead(performance.now()+left,zg)}
   if(BM){bm('ahead');bmF.fitF=tm.fit;bmF.mlF=tm.ml;bmF.plF=tm.pl;tm.fit=tm.ml=tm.pl=0;bmF.evF=evs.splice(0);bmF.end=performance.now();if(FPS)fpsBox()}
   tbEnd=performance.now();
   if(!reduce||!frame.once||frame.stale){frame.once=true;requestAnimationFrame(frame)}
@@ -1403,7 +1481,7 @@ function restFor(i,from){const{dw,dh}=dev(),{k,vs}=planFor(ZL[i],dw,dh),nW=Math.
 function zoomStart(){if(!ZG){ZG={z:ZL[zi],live:false,rest:{i:zi,k:KPX,vs:VS,W,H,vw:VWm(),vh:VHm(),camX,camY},c:[camX+VWm()/2,camY+VHm()/2]};glide=false;if(drag){drag=null;cv.style.cursor='grab'}}return ZG}
 function zoomStep(g,i){ev('zoom '+ZL[zi]+'>'+ZL[i]);zdir=Math.sign(i-zi);g.rest=restFor(i,g.rest);zi=i}
 function zoomGlide(g){g.live=false;g.z0=g.z;g.z1=ZL[zi];g.c0=g.c;g.c1=[g.rest.camX+g.rest.vw/2,g.rest.camY+g.rest.vh/2];g.t0=performance.now()-8}
-function land(){const r=ZG.rest;ZG=null;ev('landed');fit(true,[r.camX,r.camY])}
+function land(){const r=ZG.rest;ZG=null;ev('landed');TB=Math.min(TB,2);fit(true,[r.camX,r.camY])}
 // each frame of a zoom on its way: the scale and the camera for this frame, or the landing
 function zoomFrame(){const g=ZG;
   if(!g.live){const p=(performance.now()-g.t0)/ZDUR;if(p>=1)return land();const e=1-Math.pow(1-Math.max(0,p),3);g.z=g.z0*Math.pow(g.z1/g.z0,e);g.c=[g.c0[0]+(g.c1[0]-g.c0[0])*e,g.c0[1]+(g.c1[1]-g.c0[1])*e]}
