@@ -79,7 +79,15 @@ for nm in ['North Elm Street','South Elm Street','East Market Street','West Mark
     for c in chains(its):
         if plen(c)>8: traffic.append({'n':nm,'p':[round(v,2) for p in c for v in p],'c':min(r['c'] for r in its)})
 main=[r for r in RL if not r['sv']]
-rc=sorted(chains(main),key=plen,reverse=True)
+# the train runs on the main line with the most track inside the model, not the longest chain in the extract
+# (a line that only clips a corner of the model can be longer end to end)
+def plen_in(c):
+    t=0
+    for a,b in zip(c,c[1:]):
+        L=math.dist(a,b);n=max(1,int(L/2))
+        t+=sum(L/n for i in range(n) if inreg(a[0]+(b[0]-a[0])*(i+.5)/n,a[1]+(b[1]-a[1])*(i+.5)/n,1.5))
+    return t
+rc=sorted(chains(main),key=plen_in,reverse=True)
 train=[round(v,2) for p in rc[0] for v in p] if rc else []
 # intersections for crosswalks
 from collections import defaultdict

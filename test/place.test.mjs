@@ -94,3 +94,26 @@ test('items are placed by a tenant of a building, or by the building at that add
   const odd = model.B.find((b) => b.ad === '343 S Elm St');
   assert.equal(P.place({ venue: 'New event', address: '343 S Elm St' }).buildingId, odd.id);
 });
+
+test("the train's route runs over the gated railroad crossings", () => {
+  // The crossings' lights and gates follow the train, so a route that misses them leaves them dead.
+  // (A crossing with no gates can be on a siding the train never takes.)
+  const T = [];
+  for (let i = 0; i < model.TRAIN.length; i += 2) T.push([model.TRAIN[i], model.TRAIN[i + 1]]);
+  const dist = (x, y) => {
+    let best = Infinity;
+    for (let i = 1; i < T.length; i++) {
+      const [ax, ay] = T[i - 1], [bx, by] = T[i];
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2)) : 0;
+      best = Math.min(best, Math.hypot(ax + dx * t - x, ay + dy * t - y));
+    }
+    return best;
+  };
+  const streets = model.LX.filter((l) => l[4] <= 4 && l[5]);
+  assert.ok(streets.length >= 1, 'the model has a gated street crossing');
+  for (const [ax, ay, bx, by] of streets) {
+    const d = dist((ax + bx) / 2, (ay + by) / 2);
+    assert.ok(d < Math.hypot(bx - ax, by - ay) / 2 + 1, `the train passes the crossing at ${ax}, ${ay} (${d.toFixed(1)} tiles off)`);
+  }
+});
