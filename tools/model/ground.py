@@ -17,8 +17,12 @@ from scipy import ndimage as ndi
 Image.MAX_IMAGE_PIXELS = None
 INP = (sys.argv[1] if len(sys.argv) > 1 else '/mnt/project-files/village').rstrip('/') + '/'
 OUT = sys.argv[2] if len(sys.argv) > 2 else INP + 'imagery/ground.json'
-N, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856; M = 9.0
-k = math.cos(math.radians((N + S) / 2)) * 111320
+N0, S, Wl, E0 = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
+NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
+EAST = 13                                               # and on the east side, to take in the apartments, pool and water tower by Murrow Boulevard
+N = N0 + NORTH * 9.0 / 110574; M = 9.0
+k = math.cos(math.radians((N0 + S) / 2)) * 111320
+El = E0 + EAST * 9.0 / k
 GX = (El - Wl) * k / M; GY = (N - S) * 110574 / M
 im = np.asarray(Image.open(INP + 'imagery/ortho-downtown-15cm.jpg').convert('RGB')).astype(np.float32) / 255
 H_, W_ = im.shape[:2]

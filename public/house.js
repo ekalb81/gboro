@@ -136,6 +136,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   function poly(pts, fill, stroke = null, lw = 1) { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
   function line(a, b, col, lw = 1) { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
   const ground = (r, col) => poly([P(r[0], r[1]), P(r[2], r[1]), P(r[2], r[3]), P(r[0], r[3])], col);
+  const ground3 = (r, z, col) => poly([P(r[0], r[1], z), P(r[2], r[1], z), P(r[2], r[3], z), P(r[0], r[3], z)], col);
   const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   const P3 = (p) => P(p[0], p[1], p[2]);
   function disc(x, y, z, r, col) { const p = P(x, y, z); ctx.beginPath(); ctx.ellipse(p[0], p[1], r * TW * 1.414, r * TH * 1.414, 0, 0, 7); ctx.fillStyle = col; ctx.fill(); }
@@ -155,15 +156,30 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   // ---------- the house ----------
   let LIT = () => false; // which windows are lit, set each frame
   function drawOpen(o, b, i) {
-    const door = o.k === 'door', w = door ? 1.0 : 1.15, z0 = door ? (o.f === 'E' ? 0.45 : 0.2) : 1.05, z1 = door ? z0 + 2.1 : 2.45, f = FACE[o.f];
+    const door = o.k === 'door', gar = o.k === 'garage', pic = o.k === 'pic', w = gar ? 2.6 : pic ? 2.5 : door ? 1.0 : o.hi ? 0.8 : 1.15, f = FACE[o.f];
+    const z0 = o.z ?? (gar ? 0.02 : door ? (o.f === 'E' ? 0.45 : 0.2) : pic ? 0.95 : o.hi ? 1.55 : 1.05), z1 = gar ? 2.15 : door ? z0 + 2.1 : pic ? 2.6 : o.z != null ? z0 + 0.9 : 2.45;
     const q = (a0, a1, za, zb) => faceQuad(o.f, b, za, zb, a0, a1).map(P3);
-    poly(q(o.a - w / 2 - 0.12, o.a + w / 2 + 0.12, z0 - (door ? 0 : 0.1), z1 + 0.12), shade(H.trim, f));
-    if (door) { poly(q(o.a - w / 2, o.a + w / 2, z0, z1), shade(o.c || '#2f5d50', f)); const lit = LIT(i); poly(q(o.a - 0.28, o.a + 0.28, z1 - 0.75, z1 - 0.2), lit ? C.glow : shade(C.glass, f)); return; }
+    poly(q(o.a - w / 2 - 0.12, o.a + w / 2 + 0.12, z0 - (door || gar ? 0 : 0.1), z1 + 0.12), shade(H.trim, f));
+    if (gar) { // a panelled garage door
+      poly(q(o.a - w / 2, o.a + w / 2, z0, z1), shade(mix(H.trim, C.plum, 0.06), f)); const m = shade(mix(H.trim, C.plum, 0.3), f);
+      for (let k = 1; k < 4; k++) { const h = q(o.a - w / 2, o.a + w / 2, z0 + (z1 - z0) * k / 4, z0 + (z1 - z0) * k / 4); line(h[0], h[1], m, 0.6); }
+      for (let k = 0; k < 4; k++) poly(q(o.a - w / 2 + 0.2 + k * 0.6, o.a - w / 2 + 0.6 + k * 0.6, z1 - 0.45, z1 - 0.15), shade(mix(C.glass, C.plum, 0.25), f));
+      return;
+    }
+    if (door) {
+      poly(q(o.a - w / 2, o.a + w / 2, z0, z1), shade(o.c || '#2f5d50', f)); const lit = LIT(i);
+      if (o.wreath) { const c = q(o.a, o.a, z1 - 0.62, z1 - 0.62)[0]; ctx.beginPath(); ctx.arc(c[0], c[1], 2.4, 0, 7); ctx.strokeStyle = T('#3f8a4c'); ctx.lineWidth = 1.5; ctx.stroke(); }
+      else poly(q(o.a - 0.28, o.a + 0.28, z1 - 0.75, z1 - 0.2), lit ? C.glow : shade(C.glass, f));
+      return;
+    }
     const lit = LIT(i);
     poly(q(o.a - w / 2, o.a + w / 2, z0, z1), lit ? (i % 3 === 0 ? '#ffe9a8' : C.glow) : shade(mix(C.glass, C.plum, 0.25), f));
-    const m = shade(H.trim, f), a = q(o.a, o.a, z0, z1), h = q(o.a - w / 2, o.a + w / 2, (z0 + z1) / 2, (z0 + z1) / 2);
-    line(a[0], a[3], m, 0.7); line(h[0], h[1], m, 0.7);
-    for (const s of [-1, 1]) poly(q(o.a + s * (w / 2 + 0.14), o.a + s * (w / 2 + 0.5), z0, z1), shade('#2f4f45', f)); // shutters
+    const m = shade(H.trim, f);
+    if (pic) { // the big front window: a wide pane between two narrow ones, a row of small panes over them
+      for (const d of [-w / 2 + 0.55, w / 2 - 0.55]) { const v = q(o.a + d, o.a + d, z0, z1); line(v[0], v[3], m, 1); }
+      const h = q(o.a - w / 2, o.a + w / 2, z1 - 0.4, z1 - 0.4); line(h[0], h[1], m, 1);
+    } else { const a = q(o.a, o.a, z0, z1), h = q(o.a - w / 2, o.a + w / 2, (z0 + z1) / 2, (z0 + z1) / 2); line(a[0], a[3], m, 0.7); line(h[0], h[1], m, 0.7); }
+    if (o.s) for (const sd of [-1, 1]) poly(q(o.a + sd * (w / 2 + 0.14), o.a + sd * (w / 2 + 0.5), z0, z1), shade(H.shutter || '#2f4f45', f)); // shutters
   }
   function roofFace(e0, e1, r1, r0, f) {
     const col = shade(mix(H.roof, C.hi, f === 'S' || f === 'W' ? 0.1 : 0), FACE[f] * 0.5 + 0.5);
@@ -171,31 +187,81 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     ctx.globalAlpha = 0.16; for (let t = 0.2; t < 1; t += 0.2) line(P3(lerp3(e0, r0, t)), P3(lerp3(e1, r1, t)), T(C.plum), 0.6); ctx.globalAlpha = 1;
     if (VIS().includes(f)) line(P3(e0), P3(e1), T(H.trim), 1.3);
   }
-  function walls(b, name) {
-    for (const f of VIS()) {
-      poly(faceQuad(f, b, 0, H.eave).map(P3), shade(H.wall, FACE[f]));
-      poly(faceQuad(f, b, 0, 0.4).map(P3), shade(H.found, FACE[f]));
-      ctx.globalAlpha = 0.1; for (let z = 0.8; z < H.eave; z += 0.4) { const q = faceQuad(f, b, z, z).map(P3); line(q[0], q[1], T(C.plum), 0.5); } ctx.globalAlpha = 1;
-      H.open.forEach((o, i) => { if (o.b === name && o.f === f) drawOpen(o, b, i); });
-    }
+  // one face of a box as a wall with its openings, or only the stretch of it from a0 to a1
+  function wallFace(f, b, name, a0 = null, a1 = null, e = H.eave) {
+    poly(faceQuad(f, b, 0, e, a0, a1).map(P3), shade(H.wall, FACE[f]));
+    poly(faceQuad(f, b, 0, 0.4, a0, a1).map(P3), shade(H.found, FACE[f]));
+    ctx.globalAlpha = 0.1; for (let z = 0.8; z < e; z += 0.4) { const q = faceQuad(f, b, z, z, a0, a1).map(P3); line(q[0], q[1], T(C.plum), 0.5); } ctx.globalAlpha = 1;
+    H.open.forEach((o, i) => { if (o.b === name && o.f === f) drawOpen(o, b, i); });
   }
-  const OV = 0.35;
+  const OV = 0.35, see = (f) => VIS().includes(f);
+  // The front porch sits under the main roof: its floor and steps, the planter under the big window, the posts, and
+  // the two little clipped trees in pots by the door.
+  function porchBits() {
+    const x = H.pwall[2], b = H.main, pf = H.pfloor, pl = H.planter;
+    box([x, pf[0], b[2], pf[1]], 0, 0.45, H.found, '#d6d9da');
+    ctx.globalAlpha = 0.5; for (let i = 0; i < 4; i++) for (let j = 0; j < 9; j++) if ((i + j) % 2) ground3([x + i * 0.35, pf[0] + j * 0.333, x + (i + 1) * 0.35, pf[0] + (j + 1) * 0.333], 0.45, T('#8f989c')); ctx.globalAlpha = 1;
+    for (const y of H.topiary || []) { box([x + 0.12, y - 0.17, x + 0.46, y + 0.17], 0.45, 0.8, '#f4f2ec');
+      for (const [z, r] of [[1.08, 2.7], [1.5, 2.2], [1.88, 1.7]]) { const p = P(x + 0.29, y, z); ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 7); ctx.fillStyle = T(mix('#3f8a4c', C.plum, 0.1)); ctx.fill(); } }
+    box(pl, 0, 0.75, H.found, C.mulch);
+    for (let k = 0; k < 9; k++) { const p = P(pl[0] + 0.25 + 0.4 * hash(k, 3), pl[1] + 0.3 + k * (pl[3] - pl[1] - 0.6) / 8, 0.8 + 0.25 * hash(k, 4)); ctx.fillStyle = T(growing ? ['#4aa34c', '#e2607a', '#4aa34c', '#f2c94c', '#3f8a4c'][k % 5] : '#7d8a5a'); ctx.fillRect(p[0] - 1, p[1] - 1.6, 2, 2.4); }
+    for (const q of H.posts || []) box([q[0] - 0.08, q[1] - 0.08, q[0] + 0.08, q[1] + 0.08], q[2] ?? 0.45, H.eave, H.trim);
+  }
   function drawMain() {
-    const b = H.main; walls(b, 'main');
-    const X0 = b[0] - OV, Y0 = b[1] - OV, X1 = b[2] + OV, Y1 = b[3] + OV, e = H.eave, hw = (X1 - X0) / 2, zr = e + H.pitch * hw, cx = (X0 + X1) / 2;
-    const R1 = [cx, Y0 + hw, zr], R2 = [cx, Y1 - hw, zr];
+    const b = H.main, pw = H.pwall, bay = H.bay;
+    if (!pw) for (const f of VIS()) wallFace(f, b, 'main');
+    else { // the front wall steps back behind the porch (pwall) south of the part that stands forward (bay)
+      if (!see('E')) { porchBits(); if (see('S')) wallFace('S', bay, 'bay', pw[2], bay[2]); }
+      if (see('W')) wallFace('W', b, 'main');
+      if (see('S')) wallFace('S', b, 'main', b[0], pw[2]);
+      if (see('E')) {
+        wallFace('E', pw, 'pwall');
+        if (see('S')) { wallFace('S', bay, 'bay', pw[2], bay[2]); wallFace('E', bay, 'bay'); porchBits(); }
+        else { porchBits(); wallFace('N', b, 'main'); wallFace('E', bay, 'bay'); }
+      } else if (see('N')) wallFace('N', b, 'main');
+    }
+    const X0 = b[0] - OV, Y0 = b[1] - OV, X1 = b[2] + OV, Y1 = b[3] + OV, e = H.eave, hw = (X1 - X0) / 2, zr = e + H.pitch * hw, cx = (X0 + X1) / 2, g = H.gable;
+    const R1 = [cx, g ? Y0 : Y0 + hw, zr], R2 = [cx, g ? Y1 : Y1 - hw, zr];
     const faces = { W: [[X0, Y1, e], [X0, Y0, e], R1, R2], E: [[X1, Y0, e], [X1, Y1, e], R2, R1], N: [[X0, Y0, e], [X1, Y0, e], R1, R1], S: [[X1, Y1, e], [X0, Y1, e], R2, R2] };
-    const vis = VIS(); for (const f of ['N', 'E', 'W', 'S'].filter((k) => !vis.includes(k))) roofFace(...faces[f], f);
-    for (const f of vis) roofFace(...faces[f], f);
-    const c = H.chimney; box([c[0], c[1], c[2], c[3]], zr - 0.9, c[4], '#9a4633'); box([c[0] - 0.08, c[1] - 0.08, c[2] + 0.08, c[3] + 0.08], c[4], c[4] + 0.18, C.stone);
+    const vis = VIS();
+    if (g) { // a ridge from end to end: the two ends are wall up to the peak
+      for (const f of ['W', 'E']) if (!see(f)) roofFace(...faces[f], f);
+      for (const f of ['N', 'S']) if (see(f)) { const y = f === 'N' ? b[1] : b[3]; poly([P(X0, y, e), P(X1, y, e), P(cx, y, zr)], shade(H.wall, FACE[f])); }
+      for (const f of ['W', 'E']) if (see(f)) roofFace(...faces[f], f);
+      for (const f of ['N', 'S']) if (see(f)) { const y = f === 'N' ? Y0 : Y1; line(P(X0, y, e), P(cx, y, zr), T(H.trim), 1.2); line(P(cx, y, zr), P(X1, y, e), T(H.trim), 1.2); }
+    } else { for (const f of ['N', 'E', 'W', 'S'].filter((k) => !vis.includes(k))) roofFace(...faces[f], f); for (const f of vis) roofFace(...faces[f], f); }
+    const c = H.chimney; box([c[0], c[1], c[2], c[3]], zr - 0.9, c[4], H.chim || '#9a4633'); box([c[0] - 0.08, c[1] - 0.08, c[2] + 0.08, c[3] + 0.08], c[4], c[4] + 0.18, C.stone);
   }
+  // The garage: lower than the house, its ridge running back from the street, a wall up to the peak at the yard end.
   function drawWing() {
-    const b = H.wing; walls(b, 'wing');
-    const X0 = b[0] - OV, Y0 = b[1] - OV, Y1 = b[3] + OV, XM = H.main[0] - OV, e = H.eave, hw = (Y1 - Y0) / 2, zr = e + H.pitch * hw, cy = (Y0 + Y1) / 2;
-    const A = [X0 + hw, cy, zr], B = [XM + hw, cy, zr];
-    const faces = { W: [[X0, Y1, e], [X0, Y0, e], A, A], S: [[XM, Y1, e], [X0, Y1, e], A, B], N: [[X0, Y0, e], [XM, Y0, e], B, A] };
-    const vis = VIS(); for (const f of ['N', 'W', 'S'].filter((k) => !vis.includes(k))) roofFace(...faces[f], f);
-    for (const f of vis) if (faces[f]) roofFace(...faces[f], f);
+    const b = H.wing, m = H.main, e = H.wingEave || H.eave;
+    if (see('W')) wallFace('W', b, 'wing', null, null, e);
+    if (see('N')) wallFace('N', b, 'wing', b[0], Math.min(b[2], m[0]), e);
+    if (see('S')) wallFace('S', b, 'wing', null, null, e);
+    if (see('E')) wallFace('E', b, 'wing', Math.max(b[1], m[3]), b[3], e);
+    const X0 = b[0] - OV, Y0 = b[1] - OV, X1 = b[2] + OV, Y1 = b[3] + OV, hw = (Y1 - Y0) / 2, zr = e + H.pitch * hw, cy = (Y0 + Y1) / 2;
+    const A = [X0, cy, zr], B = [X1 - hw, cy, zr];
+    const faces = { S: [[X1, Y1, e], [X0, Y1, e], A, B], N: [[X0, Y0, e], [X1, Y0, e], B, A], E: [[X1, Y0, e], [X1, Y1, e], B, B] };
+    for (const f of ['N', 'E', 'S']) if (!see(f)) roofFace(...faces[f], f);
+    if (see('W')) poly([P(b[0], Y0, e), P(b[0], Y1, e), P(b[0], cy, zr)], shade(H.wall, FACE.W));
+    for (const f of ['N', 'E', 'S']) if (see(f)) roofFace(...faces[f], f);
+    if (see('W')) { line(P(X0, Y0, e), P(X0, cy, zr), T(H.trim), 1.2); line(P(X0, cy, zr), P(X0, Y1, e), T(H.trim), 1.2); }
+  }
+  // The covered back porch, raised on its brick base, and the steps down to the patio.
+  function drawBackPorch() {
+    const k = H.back, b = k.box, fl = k.floor, top = H.eave - 0.3, st = k.stairs;
+    box(b, 0, fl, H.found, '#cfd2d2');
+    const rail = (x0, y0, x1, y1) => { line(P(x0, y0, fl + 0.9), P(x1, y1, fl + 0.9), T(H.trim), 1.1); line(P(x0, y0, fl + 0.15), P(x1, y1, fl + 0.15), T(H.trim), 0.7);
+      const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / 0.3)); for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n; line(P(x, y, fl + 0.15), P(x, y, fl + 0.9), T(H.trim), 0.5); } };
+    const posts = () => { for (const y of [b[1] + 0.1, st[1] - 0.05, st[3] + 0.05, b[3] - 0.1]) box([b[0] + 0.02, y - 0.07, b[0] + 0.16, y + 0.07], fl, top, H.trim); };
+    const rails = () => { if (see('N')) rail(b[0] + 0.09, b[1] + 0.1, b[2], b[1] + 0.1); rail(b[0] + 0.09, b[1] + 0.1, b[0] + 0.09, st[1]); rail(b[0] + 0.09, st[3], b[0] + 0.09, b[3] - 0.1); if (see('S')) rail(b[0] + 0.09, b[3] - 0.1, b[2], b[3] - 0.1); };
+    posts(); rails();
+    box([b[0] - 0.3, b[1] - 0.25, b[2], b[3] + 0.25], top, top + 0.16, k.roof || H.trim, mix(k.roof || H.trim, C.hi, 0.3));
+  }
+  function drawBackSteps() {
+    const k = H.back, st = k.stairs, fl = k.floor, n = 5, dx = (st[2] - st[0]) / n, order = [...Array(n).keys()]; if (!see('W')) order.reverse();
+    for (const i of order) box([st[2] - (i + 1) * dx, st[1], st[2] - i * dx, st[3]], 0, fl * (1 - (i + 1) / (n + 1)), '#c9ccce', '#b5babd');
+    for (const y of [st[1], st[3]]) { line(P(st[2], y, fl + 0.9), P(st[0], y, 0.95), T(H.trim), 1.1); line(P(st[0], y, 0), P(st[0], y, 0.95), T(H.trim), 1.3); }
   }
 
   // ---------- trees and shrubs ----------
@@ -284,11 +350,14 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const MOW = mowRoute(lot);
   const rFront = makeRoute([...lot.walk, [SX, lot.walk[lot.walk.length - 1][1]]]);
   const outRoute = (north) => makeRoute([...rFront.pts, [SX, north ? lot.base[1] - 1 : lot.base[3] + 1]]);
-  const backTo = (p) => makeRoute([D.back, [D.back[0] - 1, D.back[1]], p]);
-  const mowAll = makeRoute([D.back, [D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], ...MOW.route.pts, D.gateOut, D.gateIn, [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]]);
-  const mowLead = dist(D.back, [D.back[0] - 1.4, D.back[1]]) + dist([D.back[0] - 1.4, D.back[1]], [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]) + dist([lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], MOW.route.pts[0]);
+  const YARD = D.yard || [D.back[0] - 1, D.back[1]]; // the way out of the back door and onto the grass
+  const backTo = (p) => makeRoute([D.back, YARD, p]);
+  const toPatio = makeRoute([D.back, lot.patioChair]);
+  const NEAR = [F.x + 0.9, F.y - 1.1]; // where she stands to tend the fire
+  const mowAll = makeRoute([D.back, YARD, [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], ...MOW.route.pts, D.gateOut, D.gateIn, [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]]);
+  const mowLead = dist(D.back, YARD) + dist(YARD, [lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5]) + dist([lot.shed.box[2] + 0.8, lot.shed.box[3] - 1.5], MOW.route.pts[0]);
   const carY = (i) => D.gateOut[1] - 5 - i * 6.2;
-  const friendRoute = (i, car) => makeRoute([[SX - 0.5, carY(car)], [SX - 0.5, D.gateOut[1]], D.gateOut, D.gateIn, chairAt(i + 1)]);
+  const friendRoute = (i, car) => makeRoute([[SX - 0.5, carY(car)], [SX - 0.5, D.gateOut[1]], D.gateOut, D.gateIn, ...(D.gateYard ? [D.gateYard] : []), ...(lot.chairs[i + 1].via ? [lot.chairs[i + 1].via] : []), chairAt(i + 1)]);
   const bedSpots = lot.beds.flatMap((b) => [[b[2] + 0.5, b[1] + 1.2], [b[2] + 0.5, (b[1] + b[3]) / 2], [b[2] + 0.5, b[3] - 1.2]]).sort((p, q) => p[1] - q[1]);
 
   /** Everyone and everything that moves, for this minute: { people: [...], mower, cars, fire: 0..1, mown: metres, away } */
@@ -317,11 +386,11 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
       const n = bedSpots.length, each = Tt / n, k = Math.min(n - 1, Math.floor(t / each)), p = bedSpots[k];
       const from = k ? bedSpots[k - 1] : D.front, r = makeRoute([from, p]), tt = t - k * each;
       if (tt * 1.2 < r.len) her(r.at(tt * 1.2), 'walk'); else her({ x: p[0], y: p[1], hx: -1, hy: 0 }, Math.sin(time * 0.5 + k) > -0.3 ? 'kneel' : 'stand');
-    } else if (st.kind === 'coffee') errand(backTo(lot.patioChair), 'sit', { hold: 'mug', seat: true }, [lot.patioChair[0] - 3, lot.patioChair[1] + 1]);
+    } else if (st.kind === 'coffee') errand(toPatio, 'sit', { hold: 'mug', seat: true }, [lot.patioChair[0] - 3, lot.patioChair[1] + 1]);
     else if (st.kind === 'read') errand(backTo(chairAt(0)), 'sit', { hold: 'book' }, [F.x, F.y]);
     else if (st.kind === 'fire') {
       const r = backTo(chairAt(0)), d = r.len / 1.25, tend = 7 * 60;
-      const near = [F.x - 1.1, F.y + 0.9], rn = makeRoute([D.back, [D.back[0] - 1, D.back[1]], near]);
+      const near = NEAR, rn = backTo(near);
       if (t < rn.len / 1.25) her(rn.at(t * 1.25), 'walk');
       else if (t < tend) her({ x: near[0], y: near[1], hx: F.x - near[0], hy: F.y - near[1] }, 'stand', { hold: 'stick' });
       else if (t > Tt - d) { const q = r.at((Tt - t) * 1.25); her({ ...q, hx: -q.hx, hy: -q.hy }, 'walk'); }
@@ -392,7 +461,16 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const fixed = [];
   const obj = (x0, y0, x1, y1, h, draw, pad = 0) => fixed.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1), h, draw, pad });
   obj(...H.main, 8, drawMain); obj(...H.wing, 6, drawWing);
-  { const s = H.stoop; obj(s[0], s[1], s[2], s[3], s[4], () => { box([s[0], s[1], s[2] + 0.35, s[3]], 0, s[4] / 2, C.stone); box([s[0], s[1], s[2], s[3]], 0, s[4], C.stone); }); }
+  if (H.back) { obj(...H.back.box, H.eave, drawBackPorch); obj(...H.back.stairs, H.back.floor + 1, drawBackSteps); }
+  if (lot.gazebo) { const g = lot.gazebo, b = g.box, cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, o = 0.3, e = g.h, top = [cx, cy, e + 0.95];
+    obj(...b, e + 1, () => { // four posts, a hard roof coming to a point, the table under it
+      box([cx - 0.65, cy - 0.45, cx + 0.65, cy + 0.45], 0.66, 0.74, '#5a4a40'); for (const [a, c] of [[-0.5, -0.3], [0.5, -0.3], [-0.5, 0.3], [0.5, 0.3]]) line(P(cx + a, cy + c, 0), P(cx + a, cy + c, 0.66), T('#3a3340'), 1);
+      for (const [x, y] of [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]]) box([x - 0.07, y - 0.07, x + 0.07, y + 0.07], 0, e, g.post);
+      const c = { W: [[b[0] - o, b[3] + o, e], [b[0] - o, b[1] - o, e]], E: [[b[2] + o, b[1] - o, e], [b[2] + o, b[3] + o, e]], N: [[b[0] - o, b[1] - o, e], [b[2] + o, b[1] - o, e]], S: [[b[2] + o, b[3] + o, e], [b[0] - o, b[3] + o, e]] };
+      for (const f of ['N', 'E', 'W', 'S'].filter((q) => !see(q)).concat(VIS())) poly([...c[f], top].map(P3), shade(mix(g.roof, C.hi, see(f) && (f === 'S' || f === 'W') ? 0.12 : 0), FACE[f] * 0.5 + 0.5));
+    }, 6); }
+  if (lot.grill) obj(...lot.grill, 1.1, () => { const r = lot.grill; for (const [x, y] of [[r[0] + 0.08, r[1] + 0.08], [r[2] - 0.08, r[3] - 0.08]]) line(P(x, y, 0), P(x, y, 0.55), T('#2a2630'), 1); box(r, 0.5, 0.95, '#3a3a42', '#2a2630'); });
+  { const s = H.stoop, col = H.pwall ? H.found : C.stone; obj(s[0], s[1], s[2], s[3], s[4], () => { box([s[0], s[1], s[2] + 0.35, s[3]], 0, s[4] / 2, col); box([s[0], s[1], s[2], s[3]], 0, s[4], col); }); }
   { const s = lot.shed, b = s.box; obj(...b, s.h + 1, () => { box(b, 0, s.h, s.wall);
     const cx = (b[0] + b[2]) / 2, e = s.h, zr = e + 0.7, o = 0.15; const A = [cx, b[1] - o, zr], B = [cx, b[3] + o, zr];
     for (const f of VIS()) if (f === 'S' || f === 'N') { const y = f === 'S' ? b[3] : b[1]; poly([P(b[0], y, e), P(b[2], y, e), P(cx, y, zr)], shade(s.wall, FACE[f])); if (f === 'S') poly(faceQuad('S', b, 0, 1.9, cx - 0.5, cx + 0.5).map(P3), shade(C.woodD, FACE.S)); }
@@ -462,8 +540,9 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     for (const r of lot.beds) ground(r, T(C.mulch));
     for (const r of lot.paths) ground(r, T(C.gravel));
     for (const r of lot.pads || []) ground(r, T('#cfc6b3'));
-    ground(lot.patio, T(C.paver)); ctx.globalAlpha = 0.18; for (let x = lot.patio[0] + 0.8; x < lot.patio[2]; x += 0.8) line(P(x, lot.patio[1]), P(x, lot.patio[3]), T(C.plum), 0.5); for (let y = lot.patio[1] + 0.8; y < lot.patio[3]; y += 0.8) line(P(lot.patio[0], y), P(lot.patio[2], y), T(C.plum), 0.5); ctx.globalAlpha = 1;
-    disc(F.x, F.y, 0, F.r, T(C.gravel)); disc(F.x, F.y, 0, F.r - 0.25, T(mix(C.gravel, '#b8a888', 0.5)));
+    for (const pt of lot.patios || [lot.patio]) { ground(pt, T(C.paver)); ctx.globalAlpha = 0.18; for (let x = pt[0] + 0.8; x < pt[2]; x += 0.8) line(P(x, pt[1]), P(x, pt[3]), T(C.plum), 0.5); for (let y = pt[1] + 0.8; y < pt[3]; y += 0.8) line(P(pt[0], y), P(pt[2], y), T(C.plum), 0.5); ctx.globalAlpha = 1; }
+    if (F.bare) disc(F.x, F.y, 0, 1.05, T(mix(lawnCol, '#b8a888', 0.4))); // a ring of stones on the grass
+    else { disc(F.x, F.y, 0, F.r, T(C.gravel)); disc(F.x, F.y, 0, F.r - 0.25, T(mix(C.gravel, '#b8a888', 0.5))); }
     // fallen leaves in autumn
     if (doy > 285 && doy < 350) for (let i = 0; i < 90; i++) { const t = lot.trees[i % lot.trees.length]; if (t.k === 'pine') continue; const a = hash(i, 1) * 7, r = t.r * 1.3 * Math.sqrt(hash(i, 2)), x = t.x + Math.cos(a) * r, y = t.y + Math.sin(a) * r; if (x < b[0] || x > lot.street[0] || y < b[1] || y > b[3]) continue; const p = P(x, y); ctx.fillStyle = T(leafCol(t.k, i)); ctx.fillRect(p[0], p[1], 1.6, 1); }
     // the street
@@ -474,7 +553,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
       ctx.save(); ctx.beginPath(); for (const q of [P(b[0], b[1]), P(b[2], b[1]), P(b[2], b[3]), P(b[0], b[3])]) ctx.lineTo(q[0], q[1]); ctx.clip(); // shadows stay on the model
       ctx.fillStyle = `rgba(44,33,71,${overcast ? 0.1 : 0.24})`;
       const cast2 = (r, h) => { const pts = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]; const all = [...pts, ...pts.map((p) => [p[0] + sx * h, p[1] + sy * h])].map((p) => P(p[0], p[1])); poly(hull(all), ctx.fillStyle); };
-      cast2(H.main, H.eave + 1.4); cast2(H.wing, H.eave + 0.6); cast2(lot.shed.box, lot.shed.h + 0.3);
+      cast2(H.main, H.eave + 1.4); cast2(H.wing, (H.wingEave || H.eave) + 0.6); if (H.back) cast2(H.back.box, H.eave); if (lot.gazebo) cast2(lot.gazebo.box, lot.gazebo.h + 0.4); cast2(lot.shed.box, lot.shed.h + 0.3);
       for (const f of lot.fences) cast2([Math.min(f[0], f[2]), Math.min(f[1], f[3]), Math.max(f[0], f[2]) + 0.05, Math.max(f[1], f[3]) + 0.05], 1.6);
       for (const t of lot.trees) { const k = t.k === 'pine' ? 1 : 0.3 + 0.7 * leafAmt; ctx.globalAlpha = k; const p = P(t.x + sx * t.h * 0.75, t.y + sy * t.h * 0.75); ctx.beginPath(); ctx.ellipse(p[0], p[1], t.r * TW * 1.2, t.r * TH * 1.2, 0, 0, 7); ctx.fill(); line(P(t.x, t.y), p, ctx.fillStyle, 2); ctx.globalAlpha = 1; }
       ctx.restore();
@@ -491,11 +570,18 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
       if (m.on) for (let i = 0; i < 5; i++) { const a = (time * 3 + i / 5) % 1, q = P(m.x - m.hy * (0.3 + a * 0.6), m.y + m.hx * (0.3 + a * 0.6), 0.1 + Math.sin(a * 3.1) * 0.3); ctx.fillStyle = T('#8ad05a'); ctx.fillRect(q[0], q[1], 1.2, 1.2); } } }); }
     for (const p of who.people) objs.push({ x0: p.x - 0.25, y0: p.y - 0.25, x1: p.x + 0.25, y1: p.y + 0.25, h: 1.8, pad: 8, draw: () => { const q = P(p.x, p.y, p.pose === 'sit' && !p.kneel ? 0.0 : 0); figure(q[0], q[1], p); } });
     const night0 = NIGHT;
+    // strings of bulbs from the back porch out to the trees: on when it is dark and someone is up
+    const bulbs = () => { const on = dark && litSet > 0;
+      for (const [a, z] of lot.lights || []) { const n = Math.max(4, Math.round(Math.hypot(z[0] - a[0], z[1] - a[1]) / 1.1)), at = (t) => P(a[0] + (z[0] - a[0]) * t, a[1] + (z[1] - a[1]) * t, a[2] + (z[2] - a[2]) * t - Math.sin(Math.PI * t) * 0.8);
+        ctx.beginPath(); for (let i = 0; i <= 14; i++) { const q = at(i / 14); if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); } ctx.strokeStyle = T('#3a3340'); ctx.lineWidth = 0.45; ctx.stroke();
+        for (let i = 1; i < n; i++) { const q = at(i / n); if (on) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,190,80,.16)'; ctx.beginPath(); ctx.arc(q[0], q[1] + 0.9, 3.2, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; } ctx.fillStyle = on ? '#ffe9a8' : T('#efe6cf'); ctx.fillRect(q[0] - 0.7, q[1], 1.4, 1.7); } } };
+    if (!see('W')) bulbs(); // from the street side the house stands in front of them
     for (const o of sortObjs(objs)) { // things round the fire are lit by it
       const d = Math.hypot((o.x0 + o.x1) / 2 - F.x, (o.y0 + o.y1) / 2 - F.y); NIGHT = d < 3.4 && !o.tree ? night0 * (1 - 0.7 * FIRE * (1 - d / 5)) : night0;
       o.draw(time);
     }
     NIGHT = night0;
+    if (see('W')) bulbs();
 
     // smoke, sparks and the warm light, over everything
     if (FIRE > 0.02) {
@@ -509,7 +595,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     // the porch light, and light spilling from lit windows
     if (dark) { ctx.globalCompositeOperation = 'lighter';
       const spill = (p, R, a) => { const gl = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], R); gl.addColorStop(0, `rgba(255,215,94,${a})`); gl.addColorStop(1, 'rgba(255,215,94,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(p[0], p[1], R, 0, 7); ctx.fill(); };
-      if (VIS().includes('E')) spill(P(H.main[2] + 0.1, D.front[1] - 0.9, 2.3), 30, 0.5 * NIGHT);
+      if (VIS().includes('E')) spill(P((H.pwall || H.main)[2] + 0.1, D.front[1] - 0.9, 2.3), 30, 0.5 * NIGHT);
       H.open.forEach((o, i) => { if (o.k === 'win' && LIT(i) && VIS().includes(o.f)) { const bx = H[o.b]; spill(P3(faceQuad(o.f, bx, 1.2, 1.2, o.a, o.a)[0]), 22, 0.2 * NIGHT); } });
       ctx.globalCompositeOperation = 'source-over'; }
     // rain

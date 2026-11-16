@@ -311,7 +311,7 @@ function renderAround() {
   const order = ['college-hill', 'uncg', 'westside', 'north', 'coliseum', 'ncat', 'southeast', 'board', 'away'];
   const box = $('aroundList');
   const open = new Set([...box.querySelectorAll('details.area[open]')].map((d) => d.id));
-  box.replaceChildren(el('div', { className: 'sub', textContent: 'The model covers downtown only. Everything else, by area; the signposts at the edge of the model point to each one.' }));
+  box.replaceChildren(el('div', { className: 'sub', textContent: 'The model covers downtown and the neighbourhood just north of it. Everything else, by area; the signposts at the edge of the model point to each one.' }));
   const rest = items.filter((it) => !isDowntown(it));
   const groups = [...new Set([...order, ...rest.map((it) => it.district)])];
   for (const g of groups) {
@@ -437,7 +437,7 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null)]);
+const [map, info, eatsData, trees, home, details] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null)]);
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
@@ -445,7 +445,10 @@ model = startModel({
   canvas: $('village'),
   map,
   trees,
+  home,
+  details,
   onPick: (b) => {
+    if (b && (b.special === 'home' || b.special === 'homeshed')) { location.href = 'house.html'; return; } // the close-up of the house up the street
     if (b && b.sign) {
       const d = $(`area-${b.sign}`);
       if (d) { d.open = true; d.classList.remove('flash'); void d.offsetWidth; d.classList.add('flash'); }
@@ -462,6 +465,7 @@ function syncTools() { $('zin').disabled = !model.canZoom(1); $('zout').disabled
 $('zin').onclick = () => { model.zoomIn(); syncTools(); };
 $('zout').onclick = () => { model.zoomOut(); syncTools(); };
 $('home').onclick = () => model.home();
+$('tohouse').onclick = () => model.lookHome();
 // The name tags stay how the visitor left them; ?labels in the address turns them on for a shared link.
 function setLabels(on, keep) { $('labels').setAttribute('aria-pressed', on); model.setLabels(on); if (keep) try { localStorage.setItem('gso-labels', on ? '1' : '0'); } catch { /* private window */ } }
 $('labels').onclick = (e) => setLabels(e.currentTarget.getAttribute('aria-pressed') !== 'true', true);

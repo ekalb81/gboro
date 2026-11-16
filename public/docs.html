@@ -100,7 +100,7 @@
 
 <section id="what">
   <h2>What it is</h2>
-  <p>GSO Village is a small isometric model of downtown Greensboro, from Bellemeade Street to the railroad crossings just south of Gate City Boulevard, drawn in a browser. It is something you watch, not something you play. The town reacts to what is really happening: it rains on the model when it rains downtown, City Hall lights up on council nights, barrels block a street NCDOT has closed, and a bar's windows glow while it is open.</p>
+  <p>GSO Village is a small isometric model of downtown Greensboro and the neighbourhood north of it, from Wendover Avenue to the railroad crossings just south of Gate City Boulevard, drawn in a browser. It is something you watch, not something you play. The town reacts to what is really happening: it rains on the model when it rains downtown, City Hall lights up on council nights, barrels block a street NCDOT has closed, and a bar's windows glow while it is open.</p>
   <p>Beside the model sits "the paper" (The Gate City Almanac), which lists the same things in words: today's events, council meetings, road closures, places to eat and drink, items from elsewhere in the city, and crime counts.</p>
   <p>Three rules shape everything:</p>
   <ul>
@@ -129,7 +129,7 @@
     <tr><td><code>data/eats.json</code></td><td>restaurants and bars collector</td><td>Independent restaurants, bars, cafes and breweries with opening hours</td></tr>
     <tr><td><code>data/traffic-volumes.json</code></td><td>traffic volumes collector</td><td>NCDOT's average daily traffic at its count stations downtown</td></tr>
     <tr><td><code>data/crime.json</code></td><td>crime collector</td><td>Citywide monthly counts, and counts per police division when available</td></tr>
-    <tr><td><code>model/downtown.json</code>, <code>model/trees.json</code></td><td>the model tools</td><td>Buildings, streets, ground, parking, signals and trees</td></tr>
+    <tr><td><code>model/downtown.json</code>, <code>model/trees.json</code>, <code>model/details.json</code></td><td>the model tools</td><td>Buildings, streets, ground, parking, signals, trees, and the small things (pools, fountains, courts, benches)</td></tr>
   </table></div>
   <p>While the page is open it re-reads the items every minute and the weather and road closures every 5 minutes, so it stays current without a reload. Opening hours and the council state are rechecked against the clock every 30 seconds.</p>
 </section>
@@ -240,7 +240,7 @@
 
 <section id="model">
   <h2>The downtown model</h2>
-  <p>The model covers the box from 36.0768 to 36.0660 north and 79.7954 to 79.7856 west, at 9 metres per tile (about 98 by 133 tiles). The file records that box, so anything with a latitude and longitude lands in the right place. It holds 374 buildings, 496 street segments, 83 signals and stop signs, 731 trees and about 7,900 parking stalls, plus the Eugene Street bridge over the tracks, the railroad bridge over South Davie Street, two covered skywalks and three railroad crossings.</p>
+  <p>The model covers the box from 36.0886 to 36.0660 north and 79.7954 to 79.7843 west, at 9 metres per tile (about 111 by 278 tiles; the 145 rows north of 36.0768 were added to reach the house up the street, and the 13 columns east of 79.7856 to take in the apartments, pool and water tower by Murrow Boulevard). The file records that box, so anything with a latitude and longitude lands in the right place. It holds 990 buildings, 998 street segments, 141 signals and stop signs, 2,344 trees and about 13,400 parking stalls, plus the Eugene Street bridge over the tracks, the railroad bridge over South Davie Street, two covered skywalks and three railroad crossings.</p>
   <h3>What each layer is built from</h3>
   <div class="tbl"><table>
     <tr><th>Layer</th><th>Source</th><th>As of</th></tr>
@@ -252,22 +252,26 @@
     <tr><td>Facade colours and floor counts</td><td>Mapillary street photos (about 50 buildings)</td><td>2018 and 2021</td></tr>
     <tr><td>Landmark fronts (Kress, Carolina Theatre and others)</td><td>Photos on Wikimedia Commons, used as reference</td><td>Various</td></tr>
     <tr><td>Lincoln Financial tower and Jefferson Standard Building</td><td>OpenStreetMap 3D building parts</td><td>Current</td></tr>
+    <tr><td>Pools, fountains, courts, playgrounds, the dog park, fences, benches, picnic tables, hydrants, bus stops, statues and public art, the water tower</td><td>OpenStreetMap. Pools OpenStreetMap lacks, and the ballpark's diamond, were found in the aerial and checked by eye (<code>data/model/details-extra.json</code>)</td><td>The extract used at the last rebuild; aerial of February 2024</td></tr>
+    <tr><td>Brick paving in parks and plazas</td><td>NC OneMap aerial imagery (by colour, only inside mapped parks and pedestrian areas)</td><td>Flown February 2024</td></tr>
+    <tr><td>Ballast along and between the railroad tracks</td><td>OpenStreetMap rail lines</td><td>The extract used at the last rebuild</td></tr>
     <tr><td>Trees: position, height, crown width, evergreen or not</td><td>The 2015 lidar, the 2024 aerial, and OpenStreetMap for trees planted since</td><td>2015 to now</td></tr>
   </table></div>
   <p>Google Street View is not used: its terms forbid building a model from its imagery.</p>
 
   <h3>Rebuilding the model</h3>
-  <p>Four Python tools in <code>tools/model/</code> build the model files. They are run by hand when the inputs change; the publish run does not rebuild the model.</p>
+  <p>Five Python tools in <code>tools/model/</code> build the model files. They are run by hand when the inputs change; the publish run does not rebuild the model.</p>
   <div class="tbl"><table>
     <tr><th>Tool</th><th>Writes</th><th>When to run it</th></tr>
     <tr><td><code>ortho.py</code></td><td>The aerial photo for the model's box, from NC OneMap. It asks for tiles shaped to the box in degrees and checks the area the server says it sent, because the server quietly widens a request whose shape does not match.</td><td>Only after a new statewide aerial flight</td></tr>
     <tr><td><code>ground.py</code></td><td><code>data/model/imagery/ground.json</code>: ground cover in 1.5 m cells and the direction of painted parking lines</td><td>Only after a new statewide aerial flight</td></tr>
     <tr><td><code>trees.py lidar</code></td><td><code>data/model/osm/trees-lidar.json</code>: tree crowns from the lidar</td><td>Only after a new lidar survey</td></tr>
     <tr><td><code>trees.py</code></td><td><code>public/model/trees.json</code></td><td>With each model rebuild</td></tr>
-    <tr><td><code>prep.py</code></td><td><code>public/model/downtown.json</code></td><td>When OpenStreetMap or a survey layer changes. Takes about 3 minutes.</td></tr>
+    <tr><td><code>prep.py</code></td><td><code>public/model/downtown.json</code></td><td>When OpenStreetMap or a survey layer changes. Takes about 10 minutes.</td></tr>
+    <tr><td><code>details.py</code></td><td><code>public/model/details.json</code>: pools, fountains, courts, playgrounds, brick paving, the ballpark's diamond, street furniture. It reads the model's box from <code>downtown.json</code>, so it runs after <code>prep.py</code>. <code>details.py find-pools</code> lists pool-coloured patches in the aerial; the real ones are added by hand to <code>data/model/details-extra.json</code>.</td><td>With each model rebuild</td></tr>
   </table></div>
   <pre><code>py tools\model\prep.py downtown-osm.json path\to\survey-inputs public\model\downtown.json</code></pre>
-  <p>The tools need Python 3 with <code>numpy</code>, <code>pillow</code>, <code>scipy</code> and <code>shapely</code> (<code>trees.py lidar</code> also needs <code>laspy</code> and <code>pyproj</code>). The large survey inputs (the aerial image, lidar-derived heights and shapes, roof and facade colours, the OpenStreetMap extract) are kept in the project's working files, not in git; only the two small derived files under <code>data/model/</code> are committed. Any input that is missing is skipped. A newer <code>downtown.json</code> drops in with no code change.</p>
+  <p>The tools need Python 3 with <code>numpy</code>, <code>pillow</code>, <code>scipy</code> and <code>shapely</code> (<code>trees.py lidar</code> also needs <code>laspy</code> and <code>pyproj</code>). The large survey inputs (the aerial image, lidar-derived heights and shapes, roof and facade colours, the OpenStreetMap extract) are kept in the project's working files, not in git; only the small files under <code>data/model/</code> are committed. Any input that is missing is skipped. A newer <code>downtown.json</code> drops in with no code change.</p>
 
   <h3>The renderer</h3>
   <p><code>public/model.js</code> draws everything on plain 2D canvases, with no libraries.</p>
@@ -365,9 +369,9 @@ npm run serve</code></pre>
   <h2>Where things live</h2>
   <div class="tbl"><table>
     <tr><th>Path</th><th>What it is</th></tr>
-    <tr><td><code>public/</code></td><td>The whole site. <code>index.html</code> and <code>app.js</code> (page, scene and the paper), <code>model.js</code> (renderer), <code>trees.js</code>, <code>activity.js</code> (how busy it looks), <code>place.js</code> (venue and address placement), <code>civic.js</code>, <code>crime.js</code>, <code>hours.js</code>, <code>docs.html</code> (this page), <code>classic.html</code> with <code>village.js</code>, <code>roads.js</code> and <code>eats.js</code> (the first citywide map)</td></tr>
+    <tr><td><code>public/</code></td><td>The whole site. <code>index.html</code> and <code>app.js</code> (page, scene and the paper), <code>model.js</code> (renderer), <code>trees.js</code>, <code>details.js</code> (pools, courts, benches and other small things), <code>activity.js</code> (how busy it looks), <code>place.js</code> (venue and address placement), <code>civic.js</code>, <code>crime.js</code>, <code>hours.js</code>, <code>docs.html</code> (this page), <code>classic.html</code> with <code>village.js</code>, <code>roads.js</code> and <code>eats.js</code> (the first citywide map)</td></tr>
     <tr><td><code>public/data/</code></td><td>The collectors' output. Generated, git-ignored, apart from <code>map.json</code></td></tr>
-    <tr><td><code>public/model/</code></td><td>The built model: <code>downtown.json</code> and <code>trees.json</code></td></tr>
+    <tr><td><code>public/model/</code></td><td>The built model: <code>downtown.json</code>, <code>trees.json</code> and <code>details.json</code></td></tr>
     <tr><td><code>scripts/</code></td><td>Collectors (<code>fetch-*.mjs</code>, <code>civic.mjs</code>) and their libraries, <code>ingest.mjs</code> and <code>lib.mjs</code> (parsing, placement, privacy rules), <code>refresh.mjs</code> and <code>collectors.json</code> (the runner), <code>serve.mjs</code>, <code>bench.mjs</code></td></tr>
     <tr><td><code>data/</code></td><td><code>sources.json</code> (news feeds and Bluesky accounts), <code>civic-config.json</code> (council schedule), <code>model/</code> (small committed model inputs). <code>raw/</code> and <code>held.json</code> are generated and git-ignored</td></tr>
     <tr><td><code>tools/model/</code></td><td>The Python tools that build the model</td></tr>
@@ -396,9 +400,10 @@ npm run serve</code></pre>
 
 <section id="house">
   <h2>The house up the street</h2>
-  <p>The house button on the model opens <code>house.html</code>: one house lot north of downtown as a close-up model, with the one person who lives there going about a day. It is a keepsake, and it is deliberately not labelled: no name, no address, no street name and no map position appear on the page or anywhere in the code, and a test (<code>test/homeday.test.mjs</code>) fails if one is added.</p>
+  <p>One house in the neighbourhood north of downtown is a keepsake. On the model it stands where it really is, with its own walls and roof, and the one person who lives there goes about a day on the lot: the house button on the model goes to it. Tapping the house opens <code>house.html</code>, the same lot as a close-up model. It is deliberately not labelled: no name, no address and no street name appear on either page or in the house's files, and a test (<code>test/homeday.test.mjs</code>) fails if one is added. The model was grown north to reach it (the <code>NORTH</code> rows of tiles in <code>tools/model/prep.py</code>).</p>
   <ul>
-    <li><b>The lot</b> is <code>public/model/house.json</code>, in metres from the corner of the lot. The outline of the house, the yard, the shed, the fences, the shrubs and the trees were measured from the NC OneMap aerials (2024, with the 2014 and 2018 flights for what the newest one hides) and OpenStreetMap. The eave and ridge heights and the heights of the trees are from the 2015 state lidar. No open street-level photos show the house closely, so the windows, doors, front walk and exact wall colour are guesses, as are the fire pit and the chairs.</li>
+    <li><b>The lot</b> is <code>public/model/house.json</code>, in metres from the corner of its back yard, with <code>at</code> saying where that corner sits on the model. The outline of the house, the garage, the back porch, the drive, the shed and the trees were measured from the NC OneMap aerials (2024, with the 2014 and 2018 flights for what the newest one hides). The eave and ridge heights and the heights of the trees are from the 2015 state lidar. The colours, the front porch with its door, big window and planter, the windows, the back porch and its steps, the patio and gazebo, the fire ring, the fence and the string lights follow photos of the house, which are not kept in this repository. The chairs round the fire are made up.</li>
+    <li><b>On the model</b> (<code>public/model.js</code>, the part headed "the house up the street") she is a figure the size of everyone else: pushing a mower, by the fire with friends whose cars wait at the kerb, or out along her street for a run or a walk and back. <code>index.html?do=fire&amp;time=night</code> previews one (<code>mow</code>, <code>run</code>, <code>walk</code>, <code>coffee</code>, <code>read</code>, <code>garden</code>).</li>
     <li><b>The day is made up, not watched.</b> <code>public/homeday.js</code> works it out from the date, the clock and the downtown weather, the same for everyone who looks: a run some mornings, a walk before dark, the lawn on Saturdays from mid-March to November, friends round the fire on Friday and Saturday evenings. Rain, cold or wind call things off.</li>
     <li><b>The picture</b> is <code>public/house.js</code>: its own small renderer with the real sun, the season's leaves, and four corners to look from.</li>
     <li><b>Previews:</b> <code>house.html?do=mow</code> (or <code>run</code>, <code>walk</code>, <code>fire</code>, <code>coffee</code>, <code>read</code>, <code>garden</code>), <code>?clock=sat-20:30</code>, <code>?speed=30</code>, <code>?date=2026-06-13</code>, <code>?weather=rain</code>, <code>?view=0</code> to <code>3</code>.</li>

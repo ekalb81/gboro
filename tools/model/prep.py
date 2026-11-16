@@ -13,9 +13,13 @@ src=sys.argv[1]
 INP=(sys.argv[2] if len(sys.argv)>2 else '/mnt/project-files/village').rstrip('/')+'/'
 OUT=sys.argv[3] if len(sys.argv)>3 else os.path.join(os.path.dirname(__file__),'..','..','public','model','downtown.json')
 d=json.load(open(src))
-N,S,Wl,El=36.0768,36.0660,-79.7954,-79.7856
+N0, S, Wl, E0 = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
+NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
+EAST = 13                                               # and on the east side, to take in the apartments, pool and water tower by Murrow Boulevard
+N = N0 + NORTH * 9.0 / 110574
 M=9.0
-lat0=N;lon0=Wl;k=math.cos(math.radians((N+S)/2))*111320
+lat0=N;lon0=Wl;k=math.cos(math.radians((N0+S)/2))*111320
+El = E0 + EAST * 9.0 / k
 def g(p): return ((p['lon']-lon0)*k/M,(lat0-p['lat'])*110574/M)
 GX=(El-Wl)*k/M; GY=(N-S)*110574/M
 def inreg(x,y,m=0): return -m<=x<=GX+m and -m<=y<=GY+m
@@ -77,7 +81,15 @@ for nm in ['North Elm Street','South Elm Street','East Market Street','West Mark
     for c in chains(its):
         if plen(c)>8: traffic.append({'n':nm,'p':[round(v,2) for p in c for v in p],'c':min(r['c'] for r in its)})
 main=[r for r in RL if not r['sv']]
-rc=sorted(chains(main),key=plen,reverse=True)
+# the train runs on the main line with the most track inside the model, not the longest chain in the extract
+# (a line that only clips a corner of the model can be longer end to end)
+def plen_in(c):
+    t=0
+    for a,b in zip(c,c[1:]):
+        L=math.dist(a,b);n=max(1,int(L/2))
+        t+=sum(L/n for i in range(n) if inreg(a[0]+(b[0]-a[0])*(i+.5)/n,a[1]+(b[1]-a[1])*(i+.5)/n,1.5))
+    return t
+rc=sorted(chains(main),key=plen_in,reverse=True)
 train=[round(v,2) for p in rc[0] for v in p] if rc else []
 # intersections for crosswalks
 from collections import defaultdict
@@ -198,6 +210,28 @@ try:
         r=HT.get(str(b['id']))
         if r and r.get('h'): b['lh']=round(r['h'],1)
 except FileNotFoundError: pass
+# North of the old downtown edge the map runs through a neighbourhood of houses that OpenStreetMap mostly tags as plain
+# "building=yes" (outlines traced from aerials). A small, low, unnamed building there whose nearest street is a
+# residential one is drawn as a house (pitched roof, no shopfront) instead of a downtown storefront.
+def _seg_d(px,py,ax,ay,bx,by):
+    dx=bx-ax;dy=by-ay;L2=dx*dx+dy*dy;u=0 if L2==0 else max(0,min(1,((px-ax)*dx+(py-ay)*dy)/L2))
+    return math.hypot(px-ax-u*dx,py-ay-u*dy)
+_streets=[(r['c'],r['p']) for r in R if not r['ar'] and r['c']<=4 and r['n']]
+nh=0
+for b in B:
+    if b['t']!='yes' or b['n'] or b['a'] or b.get('lidar_new') or b.get('tr'): continue
+    xs=b['p'][0::2];ys=b['p'][1::2];cx=sum(xs)/len(xs);cy=sum(ys)/len(ys)
+    if cy>=NORTH: continue
+    ar=abs(sum(xs[i]*ys[(i+1)%len(xs)]-xs[(i+1)%len(xs)]*ys[i] for i in range(len(xs))))/2*M*M
+    if ar>=400 or (b.get('lh') or 0)>=11 or (b.get('l') or 0)>3: continue
+    best=(1e9,9)
+    for c,p in _streets:
+        if min(p[0::2])>cx+8 or max(p[0::2])<cx-8 or min(p[1::2])>cy+8 or max(p[1::2])<cy-8: continue
+        for i in range(0,len(p)-2,2):
+            d_=_seg_d(cx,cy,p[i],p[i+1],p[i+2],p[i+3])
+            if d_<best[0]: best=(d_,c)
+    if best[1]==4 and best[0]<8: b['t']='house';nh+=1
+print('houses north of downtown',nh)
 
 # ---- the ground between the buildings: OSM footpaths, lawns, beds, woods and plazas; surface lots with their stalls
 # laid out along the mapped parking aisles at the stall angle painted on the 2024 aerial (imagery/ground.json from
@@ -344,6 +378,41 @@ try:
     try:
         gd=gd if 'gd' in dir() else json.load(open(INP+'imagery/ground.json'))
         GC=gd['gc']
+        # Tidy the aerial's ground classes: a 1.5 m cell on its own (a car, a shadow, one bare branch) is noise, so each
+        # cell takes the commonest class around it and specks of green in paving (or paving in green) under 25 m2 go.
+        # The ground along and between railroad tracks is ballast (class 7), whatever the weeds looked like in February.
+        try:
+            import numpy as np
+            from scipy import ndimage as ndi
+            gw,gh,gr=GC['w'],GC['h'],GC['r'];ga=np.zeros((gh,gw),np.uint8)
+            for j,row in enumerate(GC['rows']):
+                i=0
+                for t in row.split(','):
+                    n=int(t[1:],36);ga[j,i:i+n]=int(t[0],36);i+=n
+            def mode(a,size):
+                best=np.zeros(a.shape,np.float32);out=a.copy()
+                for c in np.unique(a):
+                    f=ndi.uniform_filter((a==c).astype(np.float32),size)
+                    out[f>best]=c;best=np.maximum(best,f)
+                return out
+            ga=mode(ga,3);wide=mode(ga,9);veg=(ga==2)|(ga==3)
+            for msk in (veg,~veg):
+                lab,n=ndi.label(msk);small=np.isin(lab,1+np.nonzero(ndi.sum(msk,lab,range(1,n+1))<11)[0])
+                ga[small]=wide[small]
+            from PIL import Image,ImageDraw
+            rm=Image.new('L',(gw,gh),0);dr=ImageDraw.Draw(rm)
+            for r in RL: dr.line([(r['p'][i]*gr,r['p'][i+1]*gr) for i in range(0,len(r['p']),2)],fill=1,width=1)
+            near=ndi.distance_transform_edt(np.asarray(rm)==0)*M/gr          # metres to the nearest track
+            yard=ndi.binary_erosion(near<10,iterations=3)|(near<4.2)          # between tracks up to 20 m apart, and the bed itself
+            bm=Image.new('L',(gw,gh),0);dr=ImageDraw.Draw(bm)
+            for b_ in B: dr.polygon([(b_['p'][i]*gr,b_['p'][i+1]*gr) for i in range(0,len(b_['p']),2)],fill=1)
+            ga[yard&(np.asarray(bm)==0)]=7
+            rows=[]
+            for j in range(gh):
+                row=ga[j];cut=np.flatnonzero(np.diff(row))+1;st_=np.concatenate(([0],cut));en=np.concatenate((cut,[gw]))
+                rows.append(','.join(np.base_repr(int(row[a_]),36).lower()+np.base_repr(int(b__-a_),36).lower() for a_,b__ in zip(st_,en)))
+            GC={'r':gr,'w':gw,'h':gh,'rows':rows}
+        except ImportError as ex: print('ground classes left as read:',ex)
     except (FileNotFoundError,NameError): pass
 except FileNotFoundError: pass
 # ---- bridges and railroad crossings (OpenStreetMap bridge=yes ways and railway=level_crossing nodes) ----

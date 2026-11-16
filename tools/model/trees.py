@@ -32,9 +32,13 @@ else:
     OUT = sys.argv[2] if len(sys.argv) > 2 else __file__.rsplit('/', 3)[0] + '/public/model/trees.json'
     osm_raw = INP + 'osm/downtown-raw.json'
 
-N, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856
+N0, S, Wl, E0 = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
+NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
+EAST = 13                                               # and on the east side, to take in the apartments, pool and water tower by Murrow Boulevard
+N = N0 + NORTH * 9.0 / 110574
 M = 9.0
-k = math.cos(math.radians((N + S) / 2)) * 111320
+k = math.cos(math.radians((N0 + S) / 2)) * 111320
+El = E0 + EAST * 9.0 / k
 GX = (El - Wl) * k / M; GY = (N - S) * 110574 / M
 R = 9  # cells per model unit (1 m)
 gw, gh = int(math.ceil(GX * R)), int(math.ceil(GY * R))

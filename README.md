@@ -24,7 +24,7 @@ npm test         # parser, date, placement and privacy-rule tests
 
 - **Ingest** (`scripts/ingest.mjs`, `scripts/lib.mjs`): reads every `data/raw/*.txt`, pulls out the `ITEM | ...` lines (12 pipe-separated fields, `n/a` for blanks), normalizes dates to Eastern time, dedupes by post URL, and places each item in a village district by address, venue or title.
 - **Public-site rules** (in `applyRules`): individuals' names are never shown (their items read as "a local post"), personal posts from individuals are held back, and unverified news is held back. Held items go to `data/held.json`, which is outside `public/` and ignored by git.
-- **The model** (`public/index.html`, `public/app.js`, `public/model.js`): an isometric pixel model of downtown, from Bellemeade St to just south of Gate City Blvd, built from `public/model/downtown.json`. `app.js` loads the live data, places it (`public/place.js`) and hands `model.js` a scene; it also writes the almanac strip under the model and the paper beside it. See "The downtown model" below.
+- **The model** (`public/index.html`, `public/app.js`, `public/model.js`): an isometric pixel model of downtown and the neighbourhood north of it, from Wendover Ave to just south of Gate City Blvd, built from `public/model/downtown.json`. `app.js` loads the live data, places it (`public/place.js`) and hands `model.js` a scene; it also writes the almanac strip under the model and the paper beside it. See "The downtown model" below.
 - **Citywide sketch map** (`public/classic.html`, `public/village.js`): the first slice's schematic map of the whole city, still served at `classic.html`.
 
 ## Weather
@@ -84,7 +84,9 @@ Point it at a dedicated project inbox rather than a personal account if you can.
 python3 tools/model/prep.py downtown-osm.json path/to/survey-inputs public/model/downtown.json
 ```
 
-**Building names.** The tag button on the model names the buildings. `tools/model/names.py` (run by `prep.py`) gives each building, from OpenStreetMap alone, its own name (`n`), the shops, restaurants and offices mapped inside it (`tn`), and its street address (`ad`); closed places are left out. The model labels a building with the first of those it has: 301 of the 374 buildings have one, and the rest are sheds, roofs and a few decks with nothing mapped. Landmarks show from far out, and named buildings, tenants and then addresses join as you zoom in; a label that would touch another waits for a closer zoom. Corrections for typos upstream go in `data/model/names.json`. The same data places digest items: a post about a shop lands on the building it is in.
+**Building names.** The tag button on the model names the buildings. `tools/model/names.py` (run by `prep.py`) gives each building, from OpenStreetMap alone, its own name (`n`), the shops, restaurants and offices mapped inside it (`tn`), and its street address (`ad`); closed places are left out. The model labels a building with the first of those it has: 544 of the 990 buildings have one, and the rest are houses, sheds, roofs and a few decks with nothing mapped. Landmarks show from far out, and named buildings, tenants and then addresses join as you zoom in; a label that would touch another waits for a closer zoom. Corrections for typos upstream go in `data/model/names.json`. The same data places digest items: a post about a shop lands on the building it is in.
+
+**Small details.** `tools/model/details.py` (run after `prep.py`) writes `public/model/details.json`: pools, fountains, courts, playgrounds, the ballpark's diamond, brick paving, fences, benches, bus stops, hydrants and public art, from OpenStreetMap and the aerial. Things OpenStreetMap lacks go in `data/model/details-extra.json`. `public/details.js` draws them.
 
 Dropping in a newer file (for example after the 2024 lidar update) needs no code change.
 
