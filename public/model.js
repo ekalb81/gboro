@@ -171,7 +171,7 @@ const HM=HOME&&HOME.at?(()=>{const[ax,ay]=HOME.at,g=p=>[ax+p[0]/M,ay+p[1]/M],Hh=
   let ob=MAP.B.find(b=>!b.dk&&pip(c[0],c[1],pairs(b.p)));if(!ob){ob={id:9300000001};MAP.B.push(ob)}
   Object.assign(ob,{p:rectG(m),t:'house',n:'',tn:[],ad:'',a:''});delete ob.tr;delete ob.tb;delete ob.f;
   const ids={[ob.id]:'home'};
-  if(Hh.wing){MAP.B.push({id:9300000002,p:rectG(Hh.wing),t:'house',n:'',lh:Hh.eave});ids[9300000002]='home'}
+  if(Hh.wing){MAP.B.push({id:9300000002,p:rectG(Hh.wing),t:'house',n:'',lh:Hh.wingEave||Hh.eave});ids[9300000002]='home'}
   if(HOME.shed){MAP.B.push({id:9300000003,p:rectG(HOME.shed.box),t:'shed',n:'',lh:HOME.shed.h});ids[9300000003]='homeshed'}
   return{g,ids}})():null;
 const SPECIAL={...(HM?HM.ids:{}),341049142:'tower',467218959:'jsb',208101229:'kress',208202822:'theatre',326037856:'city',264852482:'depot',1064222230:'tanger',208101224:'icrc',133178249:'ballpark'};
@@ -944,10 +944,11 @@ const HD=HM?(()=>{const g=HM.g,lot=HOME,F=lot.fire,D=lot.doors,me=lot.her||{},Qd
   const chair=i=>{const a=lot.chairs[i%lot.chairs.length].a*rad;return[F.x+Math.cos(a)*(F.r-.55),F.y+Math.sin(a)*(F.r-.55)]};
   const CH=lot.chairs.map((k,i)=>({p:g(chair(i)),c:k.c}));
   const SX=lot.street[0],endY=lot.walk[lot.walk.length-1][1],shedPt=[lot.shed.box[2]+.8,lot.shed.box[3]-1.5];
-  const rMow=ch([D.back,[D.back[0]-1.4,D.back[1]],shedPt,...mowRoute(lot).route.pts,D.gateOut,D.gateIn,shedPt]);
+  const yard=D.yard||[D.back[0]-1,D.back[1]];
+  const rMow=ch([D.back,yard,shedPt,...mowRoute(lot).route.pts,D.gateOut,D.gateIn,shedPt]);
   const rOut=ch([...lot.walk,[SX+.6,endY]]);
-  const back=p=>ch([D.back,[D.back[0]-1,D.back[1]],p]);
-  const near=[F.x-1.1,F.y+.9],rChair=back(chair(0)),rPatio=back(lot.patioChair),rNear=back(near);
+  const back=p=>ch([D.back,yard,p]);
+  const near=[F.x+.9,F.y-1.1],rChair=back(chair(0)),rPatio=ch([D.back,lot.patioChair]),rNear=back(near);
   const beds=lot.beds.map(b=>[b[2]+.5,(b[1]+b[3])/2]);
   // her street: the mapped road nearest the end of the front walk, joined end to end with the rest of the same road
   const street=(()=>{const[sx,sy]=g([SX+3,endY]);let best=null;

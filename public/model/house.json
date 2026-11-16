@@ -1,128 +1,158 @@
 {
- "about": "One house lot up the street from downtown, in metres from the north-west corner of its back yard (x east, y south). The outline of the house, the rear addition, the drive, the shed and the trees were measured from the 2024 and earlier NC OneMap aerials (fetched in true proportion); the eave and ridge heights and the tree heights are from the 2015 state lidar. Windows, doors, the fence, the front walk, the fire pit and the chairs are guesses. 'at' is where that corner sits on the downtown model, in model tiles. No name, address or street name is kept here on purpose.",
+ "about": "One house lot up the street from downtown, in metres from the north-west corner of its back yard (x east, y south). The outline of the house, the garage, the back porch, the drive, the shed and the trees were measured from the 2024 and earlier NC OneMap aerials (fetched in true proportion); the eave and ridge heights and the tree heights are from the 2015 state lidar. The colours, the front porch with its door, big window and planter, the windows, the back porch and its steps, the patio, the gazebo, the fire ring, the fence and its gates, and the string lights follow photos of the house. The chairs round the fire are made up. 'at' is where that corner sits on the downtown model, in model tiles. No name, address or street name is kept here on purpose.",
  "at": [44.19, 13.76],
  "base": [-3.5, -3.5, 60.5, 26],
  "street": [52.5, 60.5],
  "house": {
-  "eave": 2.9,
-  "pitch": 0.69,
-  "wall": "#efe9dc",
-  "trim": "#fbf8f0",
-  "roof": "#6b4a44",
-  "found": "#9a9186",
-  "main": [23.4, 2.6, 32.4, 16.2],
-  "wing": [19.6, 9.6, 23.4, 14.8],
-  "chimney": [26.0, 10.2, 26.8, 11.0, 6.9],
-  "stoop": [32.4, 8.3, 33.6, 10.5, 0.4],
+  "eave": 3.1,
+  "pitch": 0.55,
+  "wall": "#f3f1eb",
+  "trim": "#fbfaf6",
+  "roof": "#7a5b49",
+  "found": "#e6e3db",
+  "main": [23.4, 2.6, 33.4, 16.2],
+  "wing": [18.4, 15.9, 25.4, 19.4],
+  "chimney": [26.1, 9.9, 26.9, 11.7, 6.9],
+  "stoop": [33.4, 13.5, 34.0, 15.3, 0.25],
   "open": [
-   {"b": "main", "f": "E", "a": 9.4, "k": "door", "c": "#2f5d50"},
-   {"b": "main", "f": "E", "a": 4.4, "k": "win"},
-   {"b": "main", "f": "E", "a": 6.6, "k": "win"},
-   {"b": "main", "f": "E", "a": 12.2, "k": "win"},
-   {"b": "main", "f": "E", "a": 14.4, "k": "win"},
-   {"b": "main", "f": "S", "a": 25.6, "k": "win"},
-   {"b": "main", "f": "S", "a": 28.0, "k": "win"},
-   {"b": "main", "f": "S", "a": 30.4, "k": "win"},
-   {"b": "main", "f": "W", "a": 7.0, "k": "door", "c": "#fbf8f0"},
-   {"b": "main", "f": "W", "a": 4.4, "k": "win"},
-   {"b": "main", "f": "N", "a": 25.6, "k": "win"},
+   {"b": "pwall", "f": "E", "a": 14.2, "k": "door", "c": "#eccdd6", "wreath": 1},
+   {"b": "pwall", "f": "E", "a": 11.2, "k": "pic"},
+   {"b": "bay", "f": "E", "a": 7.2, "k": "win", "hi": 1, "s": 1},
+   {"b": "bay", "f": "E", "a": 4.7, "k": "win", "s": 1},
+   {"b": "main", "f": "S", "a": 26.4, "k": "win"},
+   {"b": "main", "f": "S", "a": 29.6, "k": "win"},
+   {"b": "main", "f": "W", "a": 4.3, "k": "win"},
+   {"b": "main", "f": "W", "a": 7.4, "k": "win"},
+   {"b": "main", "f": "W", "a": 12.9, "k": "door", "c": "#fbfaf6", "z": 1.0},
+   {"b": "main", "f": "W", "a": 11.0, "k": "win", "z": 1.9},
+   {"b": "main", "f": "N", "a": 26.0, "k": "win"},
    {"b": "main", "f": "N", "a": 30.2, "k": "win"},
-   {"b": "wing", "f": "S", "a": 21.5, "k": "win"},
-   {"b": "wing", "f": "W", "a": 11.0, "k": "win"},
-   {"b": "wing", "f": "W", "a": 13.4, "k": "win"},
-   {"b": "wing", "f": "N", "a": 21.5, "k": "win"}
-  ]
+   {"b": "wing", "f": "E", "a": 17.65, "k": "garage"},
+   {"b": "wing", "f": "W", "a": 17.65, "k": "win"},
+   {"b": "wing", "f": "S", "a": 21.0, "k": "win", "hi": 1}
+  ],
+  "wingEave": 2.6,
+  "gable": true,
+  "chim": "#efede6",
+  "shutter": "#dcdad3",
+  "bay": [23.4, 2.6, 33.4, 8.5],
+  "pwall": [23.4, 8.5, 32.0, 16.2],
+  "pfloor": [13.2, 16.2],
+  "planter": [32.5, 8.7, 33.4, 13.2],
+  "posts": [
+   [33.3, 16.1],
+   [33.3, 8.7, 0.75]
+  ],
+  "topiary": [13.5, 14.9],
+  "back": {
+   "box": [20.4, 9.8, 23.4, 14.6],
+   "floor": 1.0,
+   "stairs": [18.6, 12.2, 20.4, 13.4],
+   "roof": "#e9e7e1"
+  }
  },
  "doors": {
-  "front": [33.9, 9.4],
-  "back": [22.9, 7.0],
-  "gateIn": [22.6, 18.2],
-  "gateOut": [24.4, 18.2]
+  "front": [34.3, 14.4],
+  "back": [18.2, 12.5],
+  "yard": [13.6, 11.0],
+  "gateIn": [24.2, 20.55],
+  "gateYard": [17.4, 20.6],
+  "gateOut": [25.9, 20.55]
  },
  "walk": [
-  [33.9, 9.4],
-  [34.8, 9.4],
-  [34.8, 19.5],
-  [52.0, 19.5]
+  [34.3, 14.4],
+  [35.0, 14.4],
+  [35.0, 18.4],
+  [52.0, 18.4]
  ],
  "shed": {
   "box": [0.6, 17.6, 4.6, 20.2],
   "h": 2.2,
-  "wall": "#7d6a58",
-  "roof": "#4a4440"
+  "wall": "#a9623f",
+  "roof": "#6b5445"
  },
- "fence": "#9c8468",
+ "fence": "#b78c5e",
  "fences": [
   [0, 0, 23.4, 0],
   [23.4, 0, 23.4, 2.6],
   [0, 0, 0, 22.5],
-  [0, 22.5, 23.4, 22.5],
-  [23.4, 16.2, 23.4, 17.6],
-  [23.4, 18.8, 23.4, 22.5]
+  [0, 22.5, 25.0, 22.5],
+  [25.0, 19.4, 25.0, 19.8],
+  [25.0, 21.3, 25.0, 22.5]
  ],
  "gatePosts": [
-  [23.4, 17.6],
-  [23.4, 18.8]
+  [25.0, 19.8],
+  [25.0, 21.3]
  ],
  "lawns": [
   [0, 0, 23.4, 22.5],
   [23.4, 0, 52.5, 2.6],
-  [32.4, 2.6, 52.5, 17.4],
+  [33.4, 2.6, 52.5, 16.4],
   [23.4, 16.2, 52.5, 22.5]
  ],
  "mow": [
   [5.2, 0.8, 14.0, 21.6],
-  [35.6, 3.2, 51.8, 16.8]
+  [35.6, 3.2, 44.0, 16.0]
  ],
- "patio": [19.4, 4.4, 23.4, 9.6],
  "paths": [
-  [24.5, 17.4, 52.5, 21.6],
-  [33.6, 9.0, 35.2, 9.9],
-  [34.4, 9.9, 35.2, 17.4]
+  [25.4, 16.4, 52.5, 21.0],
+  [34.0, 14.0, 35.4, 16.4]
  ],
  "pads": [
-  [51.2, 17.4, 52.5, 21.6]
+  [51.2, 16.4, 52.5, 21.0]
  ],
  "beds": [
-  [32.4, 3.2, 33.6, 8.0],
-  [32.4, 10.8, 33.6, 15.6],
-  [14.6, 2.0, 18.0, 6.4]
+  [33.4, 2.8, 35.2, 8.4],
+  [44.4, 11.2, 51.0, 16.2]
  ],
  "shrubs": [
-  [33.0, 4.2, 0.55],
-  [33.0, 6.6, 0.6],
-  [33.0, 11.8, 0.55],
-  [33.0, 14.2, 0.6]
+  [34.3, 6.7, 0.85],
+  [34.3, 3.6, 0.8],
+  [22.6, 6.0, 0.7],
+  [12.6, 0.8, 0.4],
+  [14.1, 0.8, 0.4],
+  [15.6, 0.8, 0.4]
  ],
- "hedge": [],
- "ac": [20.4, 15.0, 21.2, 15.8],
+ "hedge": [
+  [45.4, 12.0, 0.35],
+  [46.2, 15.4, 0.35],
+  [49.8, 15.2, 0.35]
+ ],
+ "ac": [22.4, 3.4, 23.2, 4.2],
  "trees": [
-  {"x": 47.6, "y": 16.2, "h": 14, "r": 4.6, "k": "pine"},
-  {"x": 44.8, "y": 9.8, "h": 15, "r": 4.4, "k": "pine"},
-  {"x": 50.6, "y": 4.7, "h": 14.5, "r": 4.8, "k": "pine"},
-  {"x": 37.0, "y": 0.6, "h": 13, "r": 4.0, "k": "pine"},
-  {"x": 6.8, "y": 16.7, "h": 27, "r": 8.2, "k": "oak"},
+  {"x": 47.6, "y": 13.4, "h": 17, "r": 6.8, "k": "pine"},
+  {"x": 45.6, "y": 1.2, "h": 5.5, "r": 2.4, "k": "maple"},
+  {"x": 50.0, "y": 1.4, "h": 6, "r": 2.6, "k": "maple"},
+  {"x": 27.6, "y": 0.3, "h": 7, "r": 2.4, "k": "pine"},
+  {"x": 4.1, "y": 21.6, "h": 26, "r": 7.6, "k": "oak"},
   {"x": 18.8, "y": 0.7, "h": 20, "r": 7.0, "k": "oak"},
   {"x": -1.2, "y": 22.7, "h": 25, "r": 7.4, "k": "oak"},
-  {"x": 29.8, "y": 23.4, "h": 6, "r": 3.0, "k": "maple"}
+  {"x": 10.0, "y": 1.4, "h": 6, "r": 2.6, "k": "maple"}
  ],
- "fire": {"x": 9.6, "y": 9.6, "r": 2.6},
+ "fire": {"x": 11.6, "y": 16.6, "r": 2.6, "bare": true},
  "chairs": [
   {"a": 200, "c": "#2f5d50"},
   {"a": 128, "c": "#c98a2b"},
   {"a": 56, "c": "#a63d2a"},
   {"a": 344, "c": "#4a68b0"},
-  {"a": 272, "c": "#f4ecda"}
+  {"a": 272, "c": "#f4ecda", "via": [13.9, 14.6]}
  ],
- "patioChair": [21.0, 6.2],
- "her": {
-  "skin": "#e8b796",
-  "hair": "#6b4226",
-  "style": "pony",
-  "top": "#3d7f8f",
-  "bottom": "#39405e",
-  "runTop": "#e2607a",
-  "runBottom": "#2c2147",
-  "shoes": "#f4ecda"
- }
+ "patioChair": [16.4, 13.3],
+ "her": {"skin": "#e8b796", "hair": "#6b4226", "style": "pony", "top": "#3d7f8f", "bottom": "#39405e", "runTop": "#e2607a", "runBottom": "#2c2147", "shoes": "#f4ecda"},
+ "patios": [
+  [14.8, 11.8, 18.6, 18.8],
+  [18.6, 11.8, 20.4, 15.9]
+ ],
+ "gazebo": {
+  "box": [15.8, 13.8, 18.3, 16.3],
+  "h": 2.3,
+  "post": "#6b5a4c",
+  "roof": "#4f4038"
+ },
+ "grill": [17.9, 17.5, 18.5, 18.5],
+ "lights": [
+  [[20.3, 14.4, 3.0], [4.2, 21.5, 4.4]],
+  [[20.3, 12.2, 3.0], [10.0, 1.5, 3.6]],
+  [[20.3, 10.0, 3.0], [18.8, 0.8, 4.2]]
+ ]
 }
