@@ -220,6 +220,12 @@ if AER:
             out.append(format(i - i0, 'x'))
         rows.append(','.join(out) if row.any() else '')
     BK = {'r': R, 'w': gw, 'h': gh, 'rows': rows}
+    # a playground whose ground is blue in the aerial has a poured rubber surface, not mulch
+    for a in A_:
+        if a['k'] != 'play': continue
+        m = Image.new('L', (gw, gh), 0); ImageDraw.Draw(m).polygon([(a['p'][i] * R, a['p'][i + 1] * R) for i in range(0, len(a['p']), 2)], fill=1)
+        m = np.asarray(m).astype(bool)
+        if m.sum() and ((b - r > .06) & (b > gg) & m).sum() > .25 * m.sum(): a['s'] = 'rubber'
     print('brick paving from the aerial:', int(brick.sum() * 2.25), 'm2')
 
 json.dump({'A': A_, 'L': L_, 'P': P_, 'D': D_, 'BK': BK}, open(OUT, 'w'), separators=(',', ':'))

@@ -149,7 +149,7 @@ export function makeDetails(DET, env) {
   }
 
   // ---- tall things: static points among the buildings ----
-  const TALL = { art: [9, 1.2], memorial: [10, 1.5], busstop: [7, 0.8], play: [8, 2], fountain: [8, 1.6], tower: [86, 13] };
+  const TALL = { art: [9, 1.2], memorial: [10, 1.5], busstop: [7, 0.8], play: [8, 2], fountain: [8, 1.6], tower: [94, 17] };
   const points = pts.filter((p) => TALL[p.k]).map((p) => ({ kind: 'prop', what: p.k, gx: p.gx, gy: p.gy, x: p.x, ph: TALL[p.k][0], pr: TALL[p.k][1] }));
   // a jet for each fountain basin
   for (const a of wetAreas) if (a.k === 'fountain') points.push({ kind: 'prop', what: 'jet', gx: a.c[0], gy: a.c[1], ph: 8, pr: 0.8 });
@@ -166,11 +166,11 @@ export function makeDetails(DET, env) {
         if (!snowy()) { fr(c, x, y - 7, 1, 7, '#e9f6fc'); fr(c, x - 1, y - 5, 3, 1, '#e9f6fc'); fr(c, x - 2, y - 2, 5, 1, WATER_HI); }
         break;
       case 'tower': {            // a spheroid water tank on a fluted column
-        const top = 84, r = 23;
+        const top = 90, r = 30;
         poly(c, [[x - 5, y], [x + 5, y], [x + 3, y - top + 26], [x - 3, y - top + 26]], '#e6e3dc'); poly(c, [[x, y], [x + 5, y], [x + 3, y - top + 26], [x, y - top + 26]], '#cfccc4');
-        c.fillStyle = '#f1efe9'; c.beginPath(); c.ellipse(x, y - top + 16, r, 16, 0, 0, 7); c.fill();
-        c.fillStyle = '#d6d3cb'; c.beginPath(); c.ellipse(x + 3, y - top + 19, r - 3, 12, 0, 0.1, 2.6); c.fill();
-        c.fillStyle = HI; c.beginPath(); c.ellipse(x - 6, y - top + 9, 9, 4, -0.3, 0, 7); c.fill();
+        c.fillStyle = '#f1efe9'; c.beginPath(); c.ellipse(x, y - top + 18, r, 18, 0, 0, 7); c.fill();
+        c.fillStyle = '#d6d3cb'; c.beginPath(); c.ellipse(x + 3, y - top + 22, r - 4, 13, 0, 0.1, 2.6); c.fill();
+        c.fillStyle = HI; c.beginPath(); c.ellipse(x - 8, y - top + 9, 11, 5, -0.3, 0, 7); c.fill();
         fr(c, x, y - top - 3, 1, 4, '#8a8f99'); break;
       }
     }

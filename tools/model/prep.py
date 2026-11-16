@@ -13,11 +13,13 @@ src=sys.argv[1]
 INP=(sys.argv[2] if len(sys.argv)>2 else '/mnt/project-files/village').rstrip('/')+'/'
 OUT=sys.argv[3] if len(sys.argv)>3 else os.path.join(os.path.dirname(__file__),'..','..','public','model','downtown.json')
 d=json.load(open(src))
-N0, S, Wl, El = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
+N0, S, Wl, E0 = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
 NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
+EAST = 13                                               # and on the east side, to take in the apartments, pool and water tower by Murrow Boulevard
 N = N0 + NORTH * 9.0 / 110574
 M=9.0
 lat0=N;lon0=Wl;k=math.cos(math.radians((N0+S)/2))*111320
+El = E0 + EAST * 9.0 / k
 def g(p): return ((p['lon']-lon0)*k/M,(lat0-p['lat'])*110574/M)
 GX=(El-Wl)*k/M; GY=(N-S)*110574/M
 def inreg(x,y,m=0): return -m<=x<=GX+m and -m<=y<=GY+m

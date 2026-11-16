@@ -13,7 +13,9 @@ import io, json, math, sys, time, urllib.request, urllib.parse
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
 OUT = sys.argv[1]; MPP = float(sys.argv[2]) if len(sys.argv) > 2 else .15
-W, S, E, N = (float(v) for v in sys.argv[3:7]) if len(sys.argv) > 6 else (-79.7954, 36.0660, -79.7856, 36.0768 + 145 * 9.0 / 110574)
+# default: the model's bounds (prep.py): downtown, plus 145 tiles north and 13 tiles east, a tile being 9 m
+W, S, E, N = (float(v) for v in sys.argv[3:7]) if len(sys.argv) > 6 else (
+    -79.7954, 36.0660, -79.7856 + 13 * 9.0 / (math.cos(math.radians((36.0768 + 36.0660) / 2)) * 111320), 36.0768 + 145 * 9.0 / 110574)
 U = 'https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer/exportImage'
 k = math.cos(math.radians((36.0768 + 36.0660) / 2)) * 111320; KY = 110574   # the model's own metres per degree of longitude
 TW = round((E - W) * k / MPP); TH = round((N - S) * KY / MPP)          # final size, square metres per pixel
