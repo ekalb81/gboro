@@ -20,7 +20,7 @@ Species: no public inventory of downtown Greensboro's trees exists (the City has
 so each tree gets a species typical of Piedmont NC plantings for what we do know about it: evergreen or not,
 height, crown width, and whether it stands along a street or in a park or yard. The choice is stable per tree.
 """
-import json, math, sys, glob
+import os, json, math, sys, glob
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -154,6 +154,10 @@ def merge_step():
             ds.line(px, fill=255, width=26)  # within ~13 m of a street's centre line: sidewalk and verge
         if (t.get('leisure') in ('park', 'garden', 'playground') or t.get('landuse') in ('grass', 'recreation_ground', 'cemetery') or t.get('natural') in ('wood', 'scrub')) and len(px) >= 3:
             dp.polygon(px, fill=255)
+    try:   # buildings the lidar found that OpenStreetMap lacks are buildings too (the model file is prep.py's output)
+        for b in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', 'model', 'downtown.json')))['B']:
+            if b.get('lidar_new') and b.get('t') != 'roof': dr.polygon([(b['p'][i] * R, b['p'][i + 1] * R) for i in range(0, len(b['p']), 2)], fill=255)
+    except FileNotFoundError: pass
     bm = np.asarray(bmask) > 0; st = np.asarray(streets) > 0; pk = np.asarray(parks) > 0
     cell = lambda gx, gy: (min(gh - 1, max(0, int(gy * R))), min(gw - 1, max(0, int(gx * R))))
 

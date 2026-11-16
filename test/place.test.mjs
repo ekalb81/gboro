@@ -67,7 +67,8 @@ test('nearestOnChain finds the closest point and distance along', () => {
 
 test('most buildings have something to call them, and the data stays in shape', () => {
   // downtown proper: the houses in the neighbourhood north of it (the first 145 rows of tiles) mostly have no name on the map
-  const town = model.B.filter((b) => b.p.filter((_, i) => i % 2).reduce((a, v) => a + v, 0) / (b.p.length / 2) >= 145);
+  // and not the buildings the lidar found that the map lacks (decks, sheds, shelters): nothing on the map can name those
+  const town = model.B.filter((b) => !b.lidar_new).filter((b) => b.p.filter((_, i) => i % 2).reduce((a, v) => a + v, 0) / (b.p.length / 2) >= 145);
   const called = town.filter((b) => b.n || b.tn?.length || b.ad);
   assert.ok(called.length / town.length > 0.75, `${called.length} of ${town.length} downtown buildings have a name, a tenant or an address`);
   for (const b of model.B) {

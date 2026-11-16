@@ -108,12 +108,14 @@ for pt,ds in vx.items():
         X.append([round(pt[0],2),round(pt[1],2),[[d[1],d[2],d[3]] for d in ds]])
 # lidar-derived shapes: stepped tiers inside footprints, and verified buildings OSM lacks (outlines from the State's
 # 2022 building footprints where it has one, else from the lidar; 't' is set for the depot's platform canopies)
+# (tools/model/lidar_shapes.py writes the file; the heights further down come from tools/model/lidar_heights.py)
 try:
     SHP=json.load(open(INP+'osm/shapes.json'))
     for b in B:
         t=SHP['tiers'].get(str(b['id']))
         if t: b['tb']=t['base'];b['tr']=t['tiers']
     for n,nb in enumerate(SHP['new']):
+        if nb.get('gone'): continue    # stood in an older survey, flat ground in the latest lidar; kept in the file so the numbering holds
         B.append({'p':nb['p'],'l':None,'h':None,'lh':nb['h'],'t':nb.get('t','yes'),'n':'','id':9100000000+n,'a':'','mat':'','rs':'','lidar_new':1})
 except FileNotFoundError: pass
 # a building that straddles the edge of the model is cut off at the edge, not left hanging over it
@@ -203,7 +205,7 @@ try:
         if f: b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
 except FileNotFoundError: pass
 
-# measured heights from NC Phase III lidar (flown 2015-02-03)
+# measured heights: the 2024 NC lidar (flown 2024-02-03) where its downloaded tiles reach, the 2015 one north of them
 try:
     HT=json.load(open(INP+'osm/heights.json'))['buildings']
     for b in B:
@@ -219,7 +221,7 @@ def _seg_d(px,py,ax,ay,bx,by):
 _streets=[(r['c'],r['p']) for r in R if not r['ar'] and r['c']<=4 and r['n']]
 nh=0
 for b in B:
-    if b['t']!='yes' or b['n'] or b['a'] or b.get('lidar_new') or b.get('tr'): continue
+    if b['t']!='yes' or b['n'] or b['a'] or b.get('tr'): continue   # (the houses the lidar found count too)
     xs=b['p'][0::2];ys=b['p'][1::2];cx=sum(xs)/len(xs);cy=sum(ys)/len(ys)
     if cy>=NORTH: continue
     ar=abs(sum(xs[i]*ys[(i+1)%len(xs)]-xs[(i+1)%len(xs)]*ys[i] for i in range(len(xs))))/2*M*M
@@ -536,6 +538,7 @@ try:
 except FileNotFoundError: pass
 
 GEO={'north':N,'south':S,'west':Wl,'east':El,'mPerDegLon':round(k,3),'mPerDegLat':110574}
+if GC: VG=None   # the aerial's ground classes (GC) took over from the planted-ground mask; the live model ships without it
 out={'GEO':GEO,'X':X,'GX':round(GX,2),'GY':round(GY,2),'M':M,'B':B,'R':R,'RL':RL,'PK':PK,'PL':PL,'TR':traffic,'TRAIN':train,'PT':PT,'VG':VG,'FW':FW,'GA':GA,'SR':SR,'GC':GC,'SIG':SIG,'DK':DK,'LX':LX}
 s=json.dumps(out,separators=(',',':'))
 open(OUT,'w').write(s)

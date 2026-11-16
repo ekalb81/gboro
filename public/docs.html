@@ -245,17 +245,17 @@
   <div class="tbl"><table>
     <tr><th>Layer</th><th>Source</th><th>As of</th></tr>
     <tr><td>Building outlines, streets, parks, parking lots, rail, footpaths, signals and stop signs</td><td>OpenStreetMap</td><td>The extract used at the last rebuild</td></tr>
-    <tr><td>Building heights and stepped roofs</td><td>NC Floodplain Mapping Phase III lidar, public on NOAA's Digital Coast</td><td>Flown February 2015</td></tr>
-    <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the lidar, each checked against the aerial; outlines from NC Emergency Management's statewide building footprints where it has one</td><td>2015, 2022 and 2024</td></tr>
+    <tr><td>Building heights and stepped roofs</td><td>NC Emergency Management's Phase 3 lidar (about 18 points per square metre), ordered from the State's Spatial Data Download site. In the northern third of the model, beyond the tiles ordered so far (about 36.083° N): NC Floodplain Mapping Phase III lidar, public on NOAA's Digital Coast</td><td>Flown February 2024 (north part: February 2015)</td></tr>
+    <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the 2024 lidar (returns the survey classified as building); outlines from NC Emergency Management's statewide building footprints where it has one, else the lidar's own. A building in the earlier list that the 2024 lidar shows as flat ground is left out</td><td>2022 and 2024</td></tr>
     <tr><td>Bridges, the underpass, skywalks and railroad crossings</td><td>OpenStreetMap (bridge and crossing tags). Deck heights and ramp lengths are typical, not measured.</td><td>The extract used at the last rebuild</td></tr>
-    <tr><td>Roof colours, lawns and planting, paving, painted parking rows</td><td>NC OneMap aerial imagery</td><td>Flown February 2024</td></tr>
+    <tr><td>Roof colours, lawns and planting, paving, painted parking rows</td><td>NC OneMap aerial imagery</td><td>Flown February 2022</td></tr>
     <tr><td>Facade colours and floor counts</td><td>Mapillary street photos (about 50 buildings)</td><td>2018 and 2021</td></tr>
     <tr><td>Landmark fronts (Kress, Carolina Theatre and others)</td><td>Photos on Wikimedia Commons, used as reference</td><td>Various</td></tr>
     <tr><td>Lincoln Financial tower and Jefferson Standard Building</td><td>OpenStreetMap 3D building parts</td><td>Current</td></tr>
     <tr><td>Pools, fountains, courts, playgrounds, the dog park, fences, benches, picnic tables, hydrants, bus stops, statues and public art, the water tower</td><td>OpenStreetMap. Pools OpenStreetMap lacks, and the ballpark's diamond, were found in the aerial and checked by eye (<code>data/model/details-extra.json</code>)</td><td>The extract used at the last rebuild; aerial of February 2024</td></tr>
-    <tr><td>Brick paving in parks and plazas</td><td>NC OneMap aerial imagery (by colour, only inside mapped parks and pedestrian areas)</td><td>Flown February 2024</td></tr>
+    <tr><td>Brick paving in parks and plazas</td><td>NC OneMap aerial imagery (by colour, only inside mapped parks and pedestrian areas)</td><td>Flown February 2022</td></tr>
     <tr><td>Ballast along and between the railroad tracks</td><td>OpenStreetMap rail lines</td><td>The extract used at the last rebuild</td></tr>
-    <tr><td>Trees: position, height, crown width, evergreen or not</td><td>The 2015 lidar, the 2024 aerial, and OpenStreetMap for trees planted since</td><td>2015 to now</td></tr>
+    <tr><td>Trees: position, height, crown width, evergreen or not</td><td>The 2015 lidar, the 2022 aerial, and OpenStreetMap for trees planted since</td><td>2015 to now</td></tr>
   </table></div>
   <p>Google Street View is not used: its terms forbid building a model from its imagery.</p>
 
@@ -265,6 +265,7 @@
     <tr><th>Tool</th><th>Writes</th><th>When to run it</th></tr>
     <tr><td><code>ortho.py</code></td><td>The aerial photo for the model's box, from NC OneMap. It asks for tiles shaped to the box in degrees and checks the area the server says it sent, because the server quietly widens a request whose shape does not match.</td><td>Only after a new statewide aerial flight</td></tr>
     <tr><td><code>ground.py</code></td><td><code>data/model/imagery/ground.json</code>: ground cover in 1.5 m cells and the direction of painted parking lines</td><td>Only after a new statewide aerial flight</td></tr>
+    <tr><td><code>lidar_load.py</code>, <code>lidar_heights.py</code>, <code>lidar_ndsm.py</code>, <code>lidar_shapes.py</code> (and <code>footprints.py</code>)</td><td>The survey inputs <code>osm/heights.json</code> (every building's measured height) and <code>osm/shapes.json</code> (stepped roofs, and buildings OpenStreetMap lacks), from the State's lidar tiles. The 2024 tiles have no download address: someone signed in at sdd.nc.gov orders them (each script's first lines say how)</td><td>Only after a new lidar survey (the State flies the county about once a decade), then <code>prep.py</code></td></tr>
     <tr><td><code>trees.py lidar</code></td><td><code>data/model/osm/trees-lidar.json</code>: tree crowns from the lidar</td><td>Only after a new lidar survey</td></tr>
     <tr><td><code>trees.py</code></td><td><code>public/model/trees.json</code></td><td>With each model rebuild</td></tr>
     <tr><td><code>prep.py</code></td><td><code>public/model/downtown.json</code></td><td>When OpenStreetMap or a survey layer changes. Takes about 10 minutes.</td></tr>
@@ -435,8 +436,8 @@ npm run serve</code></pre>
   <h2>Credits and licences</h2>
   <ul>
     <li>Map data, restaurants and bars: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, under the Open Database License (ODbL).</li>
-    <li>Building heights and trees: NC Floodplain Mapping Program Phase III lidar (2015), distributed by NOAA's Office for Coastal Management.</li>
-    <li>Roof colours and ground cover: NC OneMap orthoimagery (2024), NC CGIA and the NC 911 Board.</li>
+    <li>Building heights and shapes: NC Emergency Management Phase 3 lidar (2024), from NC Spatial Data Download. Trees, and heights north of those tiles: NC Floodplain Mapping Program Phase III lidar (2015), distributed by NOAA's Office for Coastal Management.</li>
+    <li>Roof colours and ground cover: NC OneMap orthoimagery (2022), NC CGIA and the NC 911 Board.</li>
     <li>Facades: Mapillary street photos, © Mapillary contributors, CC BY-SA 4.0.</li>
     <li>Weather: the National Weather Service.</li>
     <li>Road closures: NCDOT DriveNC.</li>
