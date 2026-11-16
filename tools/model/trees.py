@@ -7,7 +7,7 @@ it is, and whether it keeps its leaves in winter. Two steps:
    20150203_LA_37_1078640{1,2,3,4}.copc.laz on the public noaa-nos-coastal-lidar-pds S3 bucket). Vegetation
    returns (classes 3-5) minus ground give a canopy height model; each crown is a local high point of it, its
    width from the canopy around it. False "trees" (vegetation-classed returns on parking decks and roofs, a few
-   stray returns) are dropped, and so are crowns that are a bright flat roof or slab in the February 2024
+   stray returns) are dropped, and so are crowns that are a bright flat roof or slab in the February 2022
    NC OneMap aerial. A crown still green in that leaf-off aerial, or dark and so dense that almost no pulses
    reached the ground, is an evergreen. Output: a small committed file of crowns.
 
@@ -101,7 +101,7 @@ def lidar_step():
     for n, c in enumerate(crowns, 1):
         c['r'] = float(np.clip(math.sqrt(area[n] / math.pi), 1.5, 0.45 * c['h'] + 2))
         c['gx'] = (c['i'] + .5) / R; c['gy'] = (c['j'] + .5) / R
-    # ---- check each crown against the February 2024 aerial ----
+    # ---- check each crown against the February 2022 aerial ----
     Image.MAX_IMAGE_PIXELS = None
     A = np.asarray(Image.open(ortho).convert('RGB')).astype(np.float32) / 255
     OH, OW = A.shape[:2]; Lum = A.mean(-1)
@@ -112,14 +112,14 @@ def lidar_step():
         x0, x1, y0, y1 = int(px - rr), int(px + rr), int(py - rr), int(py + rr)
         if x0 < 0 or y0 < 0 or x1 > OW or y1 > OH: return None
         return slice(y0, y1), slice(x0, x1)
-    dropped = {'sparse': 0, 'roof_or_paving_2024': 0}
+    dropped = {'sparse': 0, 'roof_or_paving_2022': 0}
     out = []
     for t in crowns:
         # a handful of vegetation returns is a wire, a sign or a roof unit, not a tree
         if t['n'] < 15: dropped['sparse'] += 1; continue
-        # mostly bright, flat surface in 2024: a new roof or fresh concrete where a tree stood in 2015
+        # mostly bright, flat surface in 2022: a new roof or fresh concrete where a tree stood in 2015
         s = patch(t, 0.5, 6)
-        if s and (Lum[s] > 0.8).mean() > 0.5: dropped['roof_or_paving_2024'] += 1; continue
+        if s and (Lum[s] > 0.8).mean() > 0.5: dropped['roof_or_paving_2022'] += 1; continue
         # evergreen: green in February, or a dark crown that let almost no pulses reach the ground in February
         g = patch(t, 0.7, 4); gf = 0.0
         if g:
@@ -129,7 +129,7 @@ def lidar_step():
         dark = s is not None and float(Lum[s].mean()) < 0.3
         ever = gf > 0.25 or (t['pen'] < 0.1 and dark)
         out.append([round(t['gx'], 2), round(t['gy'], 2), round(t['h'], 1), round(t['r'], 1), 1 if ever else 0])
-    json.dump({'about': 'Tree crowns from NC 2015 Phase III lidar (NOAA Digital Coast dataset 6209, flown 2015-02-03), checked against the 2024-02-03 NC OneMap aerial. gx, gy in model grid units (9 m), h and r in metres, ever = evergreen.',
+    json.dump({'about': 'Tree crowns from NC 2015 Phase III lidar (NOAA Digital Coast dataset 6209, flown 2015-02-03), checked against the 2022-02-09 NC OneMap aerial. gx, gy in model grid units (9 m), h and r in metres, ever = evergreen.',
                'cols': ['gx', 'gy', 'h', 'r', 'ever'], 'C': out}, open(LOUT, 'w'), separators=(',', ':'))
     print(len(out), 'crowns;', dropped)
 

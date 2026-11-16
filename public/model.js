@@ -461,7 +461,7 @@ for(const r of MAP.R)r._bb=bbOf(r.p);for(const r of MAP.RL)r._bb=bbOf(r.p);for(c
 let TG=null;const inTG=bb=>!TG||!(bb[0]>TG[2]||bb[2]<TG[0]||bb[1]>TG[3]||bb[3]<TG[1]);
 // pools, courts, playgrounds, brick paving, benches and the like (public/details.js, from public/model/details.json)
 const DT=makeDetails(DET,{P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,snowy:()=>S.wx==='snow',HI,SH});
-// The ground texture: one texel per 1.5 m. Where the 2024 aerial has been classified (MAP.GC) each texel takes the
+// The ground texture: one texel per 1.5 m. Where the 2022 aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
 const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
 let GTEX=null;
@@ -569,7 +569,7 @@ const pts0=[];
   // parked cars in surface lots
   const carCols=['#eeeef2','#eeeef2','#f6f4ee','#c4c8d0','#c4c8d0','#9aa0aa','#5c6270','#2c2c34','#2c2c34',C.Brick,C['Aggie blue'],'#6a7f96'];
   // Parked cars sit in the lots' real stalls (tools/model/prep.py lays them out along each lot's painted rows and
-  // stall angle, read from the 2024 aerial), nose in, about two thirds full until the
+  // stall angle, read from the 2022 aerial), nose in, about two thirds full until the
   // page says how busy it is (see "how busy it is" below: each car keeps a number u, and is shown while u is under
   // its lot's share of stalls in use). Without stalls, a plain grid.
   if(ST.length)ST.forEach((st,i)=>{const u=hash(i*.731+3,st[6]);if(u>.9)return;const[x,y,ux,uy]=stallFrame(st);const L=4.4/M,Wd=1.85/M,j=(hash(i,9)-.5)*.25/M;const cx=x+ux*j,cy=y+uy*j;

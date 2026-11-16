@@ -2,7 +2,7 @@
 //
 // Where the trees are comes from public/model/trees.json (tools/model/trees.py): positions, heights and crown
 // widths measured by the 2015 NC lidar, plus OpenStreetMap trees planted since, and evergreen-or-not from the
-// February 2024 aerial. Species are inferred (no public inventory of downtown's trees exists), so each tree gets
+// February 2022 aerial. Species are inferred (no public inventory of downtown's trees exists), so each tree gets
 // a species typical of Piedmont plantings for its size and setting.
 //
 // The season follows the date in Greensboro. Each species has its own calendar (leaf-out, bloom, fall colour,

@@ -4,7 +4,7 @@ the optional survey layers (lidar tiers and heights, roof colours, aerial vegeta
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
 osm/heights.json, imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
-painted parking lines read from the 2024 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
+painted parking lines read from the 2022 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
 Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
 """
@@ -148,7 +148,7 @@ try:
         PT.append({'id':e['id'],'p':flat(pts),'h':num(t.get('height')),'mh':num(t.get('min_height')),'l':num(t.get('building:levels')),'rs':t.get('roof:shape',''),'rc':t.get('roof:colour',''),'ra':num(t.get('roof:angle')),'n':t.get('name',''),'a':t.get('amenity','')})
 except FileNotFoundError: pass
 
-# real roof colours (NC OneMap aerial, 2024) and a ground vegetation mask from the same aerial
+# real roof colours (NC OneMap aerial, 2022) and a ground vegetation mask from the same aerial
 try:
     RC=json.load(open(INP+'osm/roofs.json'))
     for b in B:
@@ -236,7 +236,7 @@ for b in B:
 print('houses north of downtown',nh)
 
 # ---- the ground between the buildings: OSM footpaths, lawns, beds, woods and plazas; surface lots with their stalls
-# laid out along the mapped parking aisles at the stall angle painted on the 2024 aerial (imagery/ground.json from
+# laid out along the mapped parking aisles at the stall angle painted on the 2022 aerial (imagery/ground.json from
 # tools/model/ground.py); and the aerial's ground classes for everything else.
 FW=[];GA=[];SR=[];GC=None;SIG=[]
 try:
