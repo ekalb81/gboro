@@ -27,6 +27,7 @@ npm run bench -- --json bench.json             also save the numbers
 npm run bench -- --profile profiles            save a CPU profile per scenario (open in Chrome DevTools > Performance)
 npm run bench -- --only interaction            only the drag / wheel / pinch scenarios ('steady' for the rest)
 npm run bench -- --swgpu --only zoom           zoom steps one at a time, each taken apart (see the zoom table below)
+npm run bench -- --only tiles --query "compose=layers&cut=clip"    what drawing one static tile takes (the per-tile table)
 npm run bench -- --warm                        interaction scenarios wait until the model has drawn ahead first
 npm run bench -- --query time=night            extra URL parameters for every scenario (they override the defaults)
 npm run bench -- --headed                      show the browser: uses your real graphics card
@@ -54,6 +55,7 @@ nothing is recorded.
 | phone-touch | one-finger drag, then a two-finger pinch out and in, at 390x844@3 with the CPU slowed 4x |
 | zoom-steps, zoom-steps-dpr1 | one zoom step at a time with 0.7 s after each: three wheel notches in, three out, the + and - keys, the + and - buttons; at the Retina size (starting from `z=1`) and at 1920x1080@1 |
 | zoom-pinch | a trackpad pinch in, a pause, and out again (30 small ctrl+wheel steps each way); very slow under `--swgpu` |
+| tiles-night, tiles-day | the Retina size from `z=1`, three wheel notches in and three out, at night (three layers a tile) and by day: for the per-tile table |
 
 Columns: **fps**; **frame p50/p95/max**, the time between frames (ms); **work p50/p95**, the time spent inside the
 model's `frame()` (ms); **long**, long tasks (over 50 ms); **tiles**, static tiles drawn while measuring; **heap MB**, JS
@@ -79,6 +81,15 @@ canvas methods; the model is not involved): **src**, `drawImage` with a canvas a
 source had been drawn on since it was last used as a source (the browser must finish drawing it, and WebKit often
 copies it, before it can be read); **full**, draws, fills and clears covering half or more of a model-sized canvas;
 **clip**, `clip()` calls; **filter**, draws with a canvas `filter` set.
+
+A fifth table is per static tile drawn while measuring, counting only canvas calls whose destination is a canvas
+that is not in the page (a tile or a scratch card): **copies**, `drawImage` from a canvas, and **dirty**, those from a
+canvas just drawn on; **made**, canvases created; **sized**, canvases given a new size; **zeroed**, canvases set to
+zero size (freed); **cards**, scratch cards used, as the model counts them; **ms**, JavaScript time per tile;
+**late/ms**, how many ms later than due the next frame started per ms of tile drawing (only means something with a
+graphics card); **cut**, how static things behind buildings were cut. It works on older builds (the columns they do
+not record show `-`). Headless Chromium picks the software path, where tiles are cut on cards as before; add
+`--query "compose=layers&cut=clip"` to count what a machine with a graphics card does.
 
 The zoom scenarios add a table with a row per zoom step, covering the 0.7 s after it: **p50**, the usual time between
 frames in that stretch; **worst**, the longest; **in frame()** and **outside**, how much of the worst one was the
@@ -107,17 +118,24 @@ Line by line:
 2. the parts of `frame()`.
 3. the time spent in the model's input handlers in the last half second (wheel, pointer, keys, the buttons, a
    resize) and the longest; the time in `fit()` (of it, `layers`: sizing canvases, `place`: styling the stacked
-   elements); the tile allowance (how many ms a frame may spend drawing tiles just now, 3 to 12) and how many frames
-   started late.
-4. the worst frame of the last five seconds, taken apart: the `frame()` time by part, the handlers, the rest (time
+   elements).
+4. tiles: how static things behind buildings are cut (`clip` or `card`) and how many scratch cards a tile took (the
+   last 20 tiles); whether drawing ahead is on; tile canvases made, freed and reused in the last five seconds, and
+   how many are spare.
+5. what tile drawing costs the browser: the tile drawing done in the last five seconds and in how many frames; the
+   **extra rest** after those frames (how much later than due the next frame started, over what frames without tile
+   drawing show), in total and **per ms of tile work**; the same per frame, against frames without tile work; the
+   tile allowance (how many ms a frame may spend drawing tiles just now, 1.5 to 12, and `every N frames` when it is
+   spaced out) and how many frames it counted as stalled by tile drawing in the last half second.
+6. the worst frame of the last five seconds, taken apart: the `frame()` time by part, the handlers, the rest (time
    that was nobody's on the page: the browser), `fit()`, and what happened in it: a zoom step (`zoom 1>1.5`), a
    landing (`landed`), a canvas resized (`canvas 714x556`), the blur restyled (`blur(1.92px)`), tiles drawn or
    finished, squares shown stretched, a glide in progress.
-5. the last zoom: how many frames its glide had, in how long, and the longest of them; how long the frame that landed
+7. the last zoom: how many frames its glide had, in how long, and the longest of them; how long the frame that landed
    took; and the longest frame in the 0.6 s after the landing, with what happened in it.
-6. to 8. moving things, the tile cache, the browser, canvas size, scale and zoom, and the drawing path.
+8. to 10. moving things, the tile cache (megabytes include spare canvases), the browser, canvas size, scale and zoom, and the drawing path.
 
-Two more flags pick the drawing path, for comparing on the same machine:
+More flags pick the drawing path or switch one thing off, for comparing on the same machine:
 
 | Address | What it does |
 | --- | --- |
@@ -126,6 +144,9 @@ Two more flags pick the drawing path, for comparing on the same machine:
 | `?fps&compose=canvas&cut=card` | all the old way: pixel for pixel what the model drew before the third pass |
 | `?fps&compose=layers&cut=clip` | all the new way, even where the model would not choose it (a software renderer) |
 | `?fps&tilemb=64` | tile cache capped at 64 MB (the default is 160, or 64 on touch devices) |
+| `?fps&tilecut=card` | static things behind buildings cut on scratch cards when a tile is drawn (the old way; `tilecut=clip` forces the new way) |
+| `?fps&ahead=0` | no drawing ahead: tiles are drawn only when the view needs them |
+| `?fps&tilems=4` | the tile allowance pinned at 4 ms a frame (any number), whatever the frames do |
 
 ## The graphics card caveat
 
@@ -411,7 +432,7 @@ what a zoom step did and `?fps` is there to check it.
 | the canvas box was measured again after those writes (`offsetWidth` and friends, then `getBoundingClientRect` from the buttons' `canZoom`), so the browser laid the page out inside the handler; and once more every frame for drawing ahead | measured once and again only when the box or the pixel ratio changes (`geo()`): no layout read in a zoom step or in a frame |
 | the glow canvas was shrunk to 1x1 and made full size again whenever the last glowing thing left and re-entered the view | keeps its size for ten seconds after the last glow |
 | every tile in view was new (another scale): the view at the next level was mostly never drawn ahead, because the ring round the view came first and used up the allowance (at the recorded size: room for 3 of the ~18 tiles of the two neighbouring levels). So each step drew 6 to 12 tiles in the frames after it, 12 ms a frame in `frame()` and more in the browser's graphics process | the cache has room for the ring and the view at both neighbouring levels; after a zoom step the next level the same way is drawn before the ring; and while a zoom glides, the tiles it will land on come first |
-| tile drawing took up to 12 ms of every frame (10 ahead) whatever the browser's graphics process made of it | the allowance follows the frames: a frame that starts late (more than a frame and a half after the last one ended) halves it, down to 3 ms; each frame on time gives 0.5 ms back, up to 12 (`tileBudget`) |
+| tile drawing took up to 12 ms of every frame (10 ahead) whatever the browser's graphics process made of it | the allowance follows the frames: a frame that starts late (more than a frame and a half after the last one ended) halves it, down to 3 ms; each frame on time gives 0.5 ms back, up to 12 (`tileBudget`); reworked in the fifth pass, below |
 
 Measured in Chromium (layers path, 1335x805@2, counting calls for one wheel notch and the 0.9 s after it): canvas size
 assignments 2 → 0, layout reads 15 to 27 → 0 (one of them forced straight after writes → 0). In Chromium none of this
@@ -507,7 +528,108 @@ To check in Safari: open the site with `?fps`, zoom a step, and screenshot the b
 frame count and longest frame, the landing frame, and the longest frame after it with what happened in it; "worst
 frame of the last 5 s" gives the same breakdown for whatever was longest.
 
+## Tile drawing and the browser's graphics process (fifth pass)
+
+With `?fps` on, Safari 27.2 on a Retina MacBook at night held 60 fps standing still and through zoom glides, and
+every bad frame that was left was "rest": time in nobody's JavaScript, in frames where a little tile drawing had been
+done (43 ms with 2 ms of tile work, 90 ms after a landing with 4 ms, 72 ms with 2 ms and no tile finished), the tile
+allowance sitting at its floor of 3 ms with 23 to 31 late frames after each zoom. So 2 to 4 ms of tile drawing in
+`frame()` bought 40 to 85 ms of work in Safari's graphics process, and backing the allowance off in JavaScript
+milliseconds could not fix that. This pass makes a millisecond of tile drawing cheaper for the browser, and keeps it
+out of frames the user is watching. There is no Safari on the machine this was written on: what follows was measured
+in Chromium, and the list at the end says what that leaves open.
+
+**What a tile cost, and what it costs now**
+
+| What a tile did | Now |
+| --- | --- |
+| every tree, lamp, parked car, string of lights or fountain partly behind a building was drawn on a scratch card, the buildings rubbed out of it, and the card copied onto the tile's layers: at night about 110 canvas-to-canvas copies a tile, 45 of them from a card drawn on a moment before (the pattern that makes WebKit finish and copy the source first), three layers | drawn straight onto the tile under a clip: its box, less each building in front whose outline really reaches it (`clipPoint`; the same test and the same inverse outlines the moving things have used since the third pass). No card, no copy. What is left is one copy of the ground texture and, by day, one of the shadow mask per tile, from canvases that are never drawn on again |
+| each new tile made three 512x512 canvases, and each tile dropped from the cache set its three to zero size: with the cache at its cap (it sat at 127 to 158 MB of 160), three made and three freed for every tile drawn | canvases are pooled (`takeCanvas`, `dropTile`): at the cap the oldest tile hands its canvases over before the new tile starts (`makeRoom`), so the new one is drawn on those. Up to 24 spares are kept; they count toward the cap |
+| a layer with nothing on it (no lit window, no glow) was resized to 1x1, and back when the tile was redrawn | its canvas goes back to the pool as it is, and the tile points at one shared blank (`NIL`) |
+| in a cache too small for what drawing ahead asked for (found with `?tilemb=56`: the tiles at the half-scale copy's scale are never dropped and had most of the room), drawing ahead pushed out its own tiles and drew them again, a tile every few frames for as long as the page stood still | drawing ahead stops when the tile it would push out is one it is asking for (`roomAhead`) |
+| a tile standing in for one not drawn yet could be dropped to make room for it | tiles laid on the screen in this frame or the last are not dropped (`t.use`) |
+
+Where the model finds a software renderer it still cuts on cards, as it does for moving things (clipping is the slow
+way there); `?tilecut=card` or `?tilecut=clip` forces either.
+
+**When tiles are drawn** (`tileBudget`, and the end of `frame()`):
+
+- *Dragging:* nothing is drawn ahead while the pointer is down. Ground the drag uncovers is still drawn in the
+  frame, within the allowance, with a stand-in until it is done.
+- *A zoom glide:* only the tiles it will land on, 2 ms a frame at most, and none for the rest of the glide once a
+  frame of it has stalled.
+- *After a landing or a drag:* the allowance starts again from 2 ms and grows a quarter of a millisecond for every
+  frame of tile drawing that does not stall, up to 12.
+- *A stall* is judged by the rest, not by lateness alone: for every frame the model works out how much later than
+  due the next one started, given how long `frame()` itself took (the "extra rest"). After a frame that drew tiles,
+  extra rest of more than half a frame over what frames without tile drawing show halves the allowance, down to
+  1.5 ms; at 1.5 ms, tile drawing is spaced out instead: every second frame, every fourth, up to every ninth.
+- The allowance is also kept to what fits in a frame beside the rest of `frame()`'s work.
+
+The readout shows all of it: `tile work X ms in N frames of the last 5 s, extra rest after them Y ms = Z ms of rest
+per ms of tile work`. On a machine where tile drawing is free for the browser Z is near 0; Safari before this pass
+was at about 20 to 40.
+
+**The picture.** Stepping frames by hand with a fixed clock and seeded random numbers, 15 views (day, dusk, night,
+November, March, five zoom levels, pixel ratio 1, 2 and 3, after wheel and drag sequences): with static things cut
+by clip, 0.1 to 0.4 % of the pixels differ from main, all along the cut edges of things behind buildings (a clip
+edge is antialiased slightly differently from a rubbed-out card edge): at most 64 pixels in a view differ by more
+than 32 levels of 255, the largest single difference 82. With `?tilecut=card` on the same path (8 views) and on the
+software path (4 views) the picture is main's pixel for pixel, except 11 pixels by one level in one view after three
+wheel notches (tiles were drawn ahead in a different order).
+
+**Numbers** (same container; before = main at cc1b6bd run with the new benchmark; `npm run bench -- --only tiles
+--query "compose=layers&cut=clip"`, so the path a graphics card gets, drawn in software: the counts do not depend on
+the renderer):
+
+| per static tile drawn | before | after |
+| --- | --- | --- |
+| tiles-night: canvas-to-canvas copies, of them from a canvas just drawn on | 113.7, 45.3 | 1.0, 0 |
+| tiles-day: the same | 37.4, 35.4 | 2.0, 0 |
+| tiles-night: canvases made / resized / freed | 3.2 / 0.2 / 1.7 | 2.2 / 0 / 0 (the cache still filling) |
+| tiles-day: canvases made / resized / freed | 3.0 / 2.0 / 2.3 | 0.5 / 0 / 0 |
+| tiles-night with `tilemb=56` (the view alone near the cap): copies, made / freed | 197, 3.3 / 2.6 | 1.3, 1.6 / 0.8 |
+| the same, standing still after one zoom step: tiles drawn | about 13 every 2 s, without end | none |
+| JavaScript ms per tile, night / day | 17.2 / 14.3 | 13.3 / 9.1 |
+| after, with `?tilecut=card`: copies, from a canvas just drawn on, cards a tile (night) | | 154.7, 62.9, 46.5 |
+
+Under `--swgpu` only three to five tiles get drawn in a run (SwiftShader takes seconds over each), with the same
+counts: 113 copies a tile, 43 of them dirty, before; 1.8 and none after. On the software path the model picks for
+itself nothing changes in how a tile is drawn. Dragging there now shows more frames with a stand-in square (20
+against 6 in the `drag` scenario) because nothing is drawn ahead while the pointer is down, and the most tile
+drawing in one frame of a drag fell from 17 ms to 5; wheel and zoom-step intervals are the same within noise
+(wheel p95 70 ms against 86, zoom-steps 64 against 69).
+
+**Visible differences:** edges of trees, lamps and parked cars where a building cuts them may differ by a faint
+antialiasing pixel. After a long drag onto ground not seen before, the rim of the view can be soft (a stand-in) for
+a few frames more than before, since drawing ahead waits for the pointer to lift. Nothing else.
+
+**Not verified** (no Safari here):
+
+- that WebKit's graphics process finds a few hundred clipped fills cheaper than the card copies. It is the same
+  kind of drawing the moving things have done every frame since the third pass, at 60 fps in Safari, which is the
+  reason to expect so; the readout's "ms of rest per ms of tile work" is the number that says. If it is still high,
+  compare `?fps&tilecut=card` (the old cut, with the pool and the new timing), `?fps&ahead=0` (does the stall come
+  from drawing ahead at all) and `?fps&tilems=2` against `?fps&tilems=8` (is a stall a matter of how much is drawn
+  in a frame, or of drawing on a tile canvas at all: if the second, fewer and bigger helpings are the answer, and
+  the spacing already does that at the floor);
+- that reusing a canvas is cheaper in WebKit than making one (it avoids allocating and freeing an accelerated
+  backing store per tile, which is the usual cost), and that 24 spare canvases (24 MB) sit well with Safari's canvas
+  memory limit: they are inside `TILE_MB`;
+- the stall test against Safari's real frame pacing (ProMotion, a throttled tab, low power mode). The baseline it
+  compares with is measured, not assumed, so a display that is not 60 Hz should be fine; not seen;
+- two suspects left alone: each lamp's glow is a radial gradient made when its tile is drawn (a handful per tile, at
+  night only), and a tile is three layers at night. If "rest per ms of tile work" stays high by night and not by
+  day, those are next.
+
+To check in Safari: open the site at night with `?fps`, zoom a step or two, drag, and screenshot the box. Lines 4
+and 5 carry what this pass is about.
+
 ## What is left, and whether to change engines
+
+- **After the fifth pass** a tile is drawn without copying from a canvas just drawn on and without making or freeing one, and
+  tile drawing keeps out of drags and glides. If Safari still stalls after tile drawing, the `?fps` box says how
+  much per millisecond, and `?tilecut=card`, `?ahead=0` and `?tilems=N` narrow down why.
 
 - **Tilt-shift blur** is the biggest software cost (30+ ms a frame). On a graphics card it is cheap. Making it cheaper
   in software would mean blurring at half resolution or a different blur, which changes the picture slightly, so it
