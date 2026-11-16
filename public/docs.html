@@ -275,7 +275,7 @@
     <li><b>Tiles.</b> The still parts of the model are drawn once into 512-pixel tiles at the current zoom, only where the camera looks, and kept until the light or the scene changes. Tiles just outside the view and at the next zoom levels are drawn ahead in spare frame time, so drags and zooms rarely wait.</li>
     <li><b>Draw order.</b> Buildings are ordered back to front by line of sight, not by their centre points, so long and L-shaped buildings sort correctly.</li>
     <li><b>What hides what.</b> Anything partly behind a building, tree, lamp or parked car is drawn on a small scratch card, the outlines in front are cut out of it, and the rest is laid onto the picture. Nothing in front is ever repainted.</li>
-    <li><b>Light.</b> Shadows are cast from the real position of the sun. The colour grade, lit windows, glow and a tilt-shift blur are laid on top each frame.</li>
+    <li><b>Light.</b> Shadows are cast from the real position of the sun. The colour grade, lit windows, glow and a tilt-shift blur are laid on top each frame. After dark, light only ever comes from a window, one bay of a shopfront or one bay of a parking deck: homes and hotels light window by window, tall offices in runs along a few floors, and a shopfront is fully lit only while the place is open.</li>
   </ul>
 
   <h3>Trees, seasons and wind</h3>
