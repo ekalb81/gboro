@@ -1,7 +1,7 @@
-"""Read what is on the ground from the 2024 aerial, once, into a small file prep.py can use every week.
+"""Read what is on the ground from the 2022 aerial, once, into a small file prep.py can use every week.
 
 Usage: python3 tools/model/ground.py [inputs-dir] [out.json]
-Reads <inputs-dir>/imagery/ortho-downtown-15cm.jpg (NC OneMap orthoimagery, flown 2024-02-03, plain lon/lat grid over the
+Reads <inputs-dir>/imagery/ortho-downtown-15cm.jpg (NC OneMap orthoimagery, flown 2022-02-09, plain lon/lat grid over the
 model's bounds) and writes <inputs-dir>/imagery/ground.json with
   gc:      a ground-class grid, one cell per 1.5 m (6 per model tile):
            0 light paving/concrete, 1 asphalt, 2 lawn, 3 planted/wooded ground, 4 bare earth or mulch, 5 water (unused downtown), 6 shade (only while building the grid)
@@ -94,7 +94,7 @@ strength = np.clip(np.round(coh * 9 * np.clip(E / .01, 0, 1)), 0, 9).astype(int)
 srows = []
 for j in range(line_ang.shape[0]):
     srows.append(''.join(b36(int(a // 5)) + str(s) if s >= 2 else '--' for a, s in zip(line_ang[j], strength[j])))
-json.dump({'source': 'NC OneMap orthoimagery, flown 2024-02-03', 'gc': {'r': R, 'w': gc.shape[1], 'h': gc.shape[0], 'rows': rows},
+json.dump({'source': 'NC OneMap orthoimagery, flown 2022-02-09', 'gc': {'r': R, 'w': gc.shape[1], 'h': gc.shape[0], 'rows': rows},
            'stripes': {'r': R2, 'w': line_ang.shape[1], 'h': line_ang.shape[0], 'rows': srows, 'note': 'per cell: angle bin (5 deg, base 36) then strength digit; -- = none'}},
           open(OUT, 'w'), separators=(',', ':'))
 print('classes', np.bincount(gc.ravel(), minlength=7), 'stripe cells', int((strength >= 2).sum()), 'bytes', os.path.getsize(OUT))
