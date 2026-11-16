@@ -344,6 +344,41 @@ try:
     try:
         gd=gd if 'gd' in dir() else json.load(open(INP+'imagery/ground.json'))
         GC=gd['gc']
+        # Tidy the aerial's ground classes: a 1.5 m cell on its own (a car, a shadow, one bare branch) is noise, so each
+        # cell takes the commonest class around it and specks of green in paving (or paving in green) under 25 m2 go.
+        # The ground along and between railroad tracks is ballast (class 7), whatever the weeds looked like in February.
+        try:
+            import numpy as np
+            from scipy import ndimage as ndi
+            gw,gh,gr=GC['w'],GC['h'],GC['r'];ga=np.zeros((gh,gw),np.uint8)
+            for j,row in enumerate(GC['rows']):
+                i=0
+                for t in row.split(','):
+                    n=int(t[1:],36);ga[j,i:i+n]=int(t[0],36);i+=n
+            def mode(a,size):
+                best=np.zeros(a.shape,np.float32);out=a.copy()
+                for c in np.unique(a):
+                    f=ndi.uniform_filter((a==c).astype(np.float32),size)
+                    out[f>best]=c;best=np.maximum(best,f)
+                return out
+            ga=mode(ga,3);wide=mode(ga,9);veg=(ga==2)|(ga==3)
+            for msk in (veg,~veg):
+                lab,n=ndi.label(msk);small=np.isin(lab,1+np.nonzero(ndi.sum(msk,lab,range(1,n+1))<11)[0])
+                ga[small]=wide[small]
+            from PIL import Image,ImageDraw
+            rm=Image.new('L',(gw,gh),0);dr=ImageDraw.Draw(rm)
+            for r in RL: dr.line([(r['p'][i]*gr,r['p'][i+1]*gr) for i in range(0,len(r['p']),2)],fill=1,width=1)
+            near=ndi.distance_transform_edt(np.asarray(rm)==0)*M/gr          # metres to the nearest track
+            yard=ndi.binary_erosion(near<10,iterations=3)|(near<4.2)          # between tracks up to 20 m apart, and the bed itself
+            bm=Image.new('L',(gw,gh),0);dr=ImageDraw.Draw(bm)
+            for b_ in B: dr.polygon([(b_['p'][i]*gr,b_['p'][i+1]*gr) for i in range(0,len(b_['p']),2)],fill=1)
+            ga[yard&(np.asarray(bm)==0)]=7
+            rows=[]
+            for j in range(gh):
+                row=ga[j];cut=np.flatnonzero(np.diff(row))+1;st_=np.concatenate(([0],cut));en=np.concatenate((cut,[gw]))
+                rows.append(','.join(np.base_repr(int(row[a_]),36).lower()+np.base_repr(int(b__-a_),36).lower() for a_,b__ in zip(st_,en)))
+            GC={'r':gr,'w':gw,'h':gh,'rows':rows}
+        except ImportError as ex: print('ground classes left as read:',ex)
     except (FileNotFoundError,NameError): pass
 except FileNotFoundError: pass
 # ---- bridges and railroad crossings (OpenStreetMap bridge=yes ways and railway=level_crossing nodes) ----

@@ -12,8 +12,9 @@
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
+import { makeDetails } from './details.js';
 
-export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
+export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, details: DET = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
@@ -289,7 +290,7 @@ function drawDeck(c,b){const d=b.dk,top=b.hpx,conc=gcol('#d6cfbf','walk'),asph=g
   else{const glass=mix(C['Haw River'],HI,.25);
     drawPrism(c,b.pts,b.z0,top-b.z0,d.cv?glass:conc,d.cv?'#d9d6cf':'#cfc8b8');
     if(d.cv)for(const s of visWalls(b.pts)){line(c,P(s.a[0],s.a[1],b.z0+1),P(s.q[0],s.q[1],b.z0+1),mix(C.Concrete,SH,.2),1.4);line(c,P(s.a[0],s.a[1],top-.5),P(s.q[0],s.q[1],top-.5),'#f1ede4',1);if(evening()){const n=Math.max(1,Math.round(s.L*M/3));for(let k=0;k<n;k++){const u0=(k+.12)/n,u1=(k+.88)/n,A=u=>[s.a[0]+(s.q[0]-s.a[0])*u,s.a[1]+(s.q[1]-s.a[1])*u],p0=A(u0),p1=A(u1);eq([P(p0[0],p0[1],b.z0+2),P(p1[0],p1[1],b.z0+2),P(p1[0],p1[1],top-1),P(p0[0],p0[1],top-1)],'#ffe9b0',.5)}}}}}
-function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b)}
+function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b);DT.roof(c,b)}
 // stepped roof levels measured by the lidar survey: each tier sits on the one below it
 function drawTiers(c,b){let z0=b.hpx;const fr_=litFrac(b);let wi=7;
   for(const t of b.tiers){const z1=Math.min(250,t.h*ZPM);if(z1<z0+3)continue;
@@ -439,13 +440,15 @@ function gcol(base,kind){let c=base;if(S.wx==='snow')c=mix(c,'#f5f7fb',kind==='r
 const bbOf=f=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(let i=0;i<f.length;i+=2){const x=f[i],y=f[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-2,y0-2,x1+2,y1+2]};
 for(const r of MAP.R)r._bb=bbOf(r.p);for(const r of MAP.RL)r._bb=bbOf(r.p);for(const p of MAP.PK)p._bb=bbOf(p.p);for(const p of MAP.PL)p._bb=bbOf(p);for(const f of (MAP.FW||[]))f._bb=bbOf(f.p);for(const a of (MAP.GA||[]))a._bb=bbOf(a.p);
 let TG=null;const inTG=bb=>!TG||!(bb[0]>TG[2]||bb[2]<TG[0]||bb[1]>TG[3]||bb[3]<TG[1]);
+// pools, courts, playgrounds, brick paving, benches and the like (public/details.js, from public/model/details.json)
+const DT=makeDetails(DET,{P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,snowy:()=>S.wx==='snow',HI,SH});
 // The ground texture: one texel per 1.5 m. Where the 2024 aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
-const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a'];
+const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
 let GTEX=null;
 function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),gh=Math.ceil(GY*R);const cnv=mk(gw,gh),g=cnv.getContext('2d');const img=g.createImageData(gw,gh),d=img.data;
   const GCa=MAP.GC?(()=>{const v=MAP.GC,a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0;row.split(',').forEach(t=>{const cls=parseInt(t[0],36),n=parseInt(t.slice(1),36);a.fill(cls,j*v.w+i,j*v.w+i+n);i+=n})});return a})():null;
-  const kinds=['walk','road','grass','grass','grass','road','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
+  const kinds=['walk','road','grass','grass','grass','road','walk','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
   for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){let cls;if(GCa)cls=GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)];else cls=VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
     let col=pal[cls];if(cls===2&&hash(i+7,j+3)<.4)col=lawn2;const n=(hash(i*.37+11,j*.71+5)-.5)*(cls===0||cls===6?10:cls===1?6:14);const o=(j*gw+i)*4;d[o]=col[0]+n;d[o+1]=col[1]+n;d[o+2]=col[2]+n;d[o+3]=255}
   g.putImageData(img,0,0);GTEX={c:cnv,R}}
@@ -465,6 +468,7 @@ function drawGround(c){
   // OSM areas the aerial can't name on its own: lawns, planted beds and plazas
   for(const a of (MAP.GA||[])){if(!inTG(a._bb))continue;polyPath(c,a.p);c.closePath();c.fillStyle=gcol(a.k==='grass'?C.Bermuda:a.k==='wood'?'#5a8a46':a.k==='bed'?'#7a5a3e':'#d2ccbf',a.k==='plaza'?'walk':'grass');c.fill();if(a.k==='plaza'){c.strokeStyle=gcol('#c4bdb0','walk');c.lineWidth=.6/M;c.stroke()}}
   MAP.PK.forEach(p=>{if(!inTG(p._bb))return;polyPath(c,p.p);c.closePath();c.fillStyle=gcol(p.k==='pitch'?'#79cf5e':C.Fescue,'grass');c.fill()});
+  DT.under(c);
   // footpaths (OSM footways and paths), drawn under the streets so crossings stay painted
   c.lineCap='round';c.lineJoin='round';
   for(const f of (MAP.FW||[])){if(!inTG(f._bb))continue;polyPath(c,f.p);c.strokeStyle=gcol(f.k==='steps'?'#c9c2b4':'#dcd6ca','walk');c.lineWidth=(f.k==='cycleway'?2.4:1.8)/M;c.stroke()}
@@ -496,11 +500,12 @@ function drawGround(c){
     paintRails(c,RLs.map(r=>r.p),0);c.restore();
     if(cl<=4){const sb=(e+2.4/M);c.strokeStyle=gcol('#f4f1ea','road');c.lineWidth=.6/M;
       c.beginPath();c.moveTo(ax-ux*sb,ay-uy*sb);c.lineTo(ax-ux*sb-uy*hw,ay-uy*sb+ux*hw);c.moveTo(bx+ux*sb,by+uy*sb);c.lineTo(bx+ux*sb+uy*hw,by+uy*sb-ux*hw);c.stroke()}}
+  DT.over(c);
   // a street dipping under a rail bridge darkens toward the portal; the ground under a raised span is in shade
   for(const b of DECKS){if(!inTG([b.minx-2,b.miny-2,b.maxx+2,b.maxy+2]))continue;
     if(b.deck==='rail')for(const[ln,cl] of b.dk.dip||[]){polyPath(c,ln);c.strokeStyle='rgba(30,22,52,.26)';c.lineWidth=RW[cl]/M;c.lineCap='butt';c.stroke();c.lineCap='round'}
     else if(b.z0>0){c.beginPath();b.pts.forEach((q,i)=>i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]));c.closePath();c.fillStyle='rgba(30,22,52,.3)';c.fill()}}
-  c.restore();setT(c);c.lineCap='round';
+  c.restore();setT(c);c.lineCap='round';DT.low(c);
 }
 // Parking stalls: [x, y, stall axis (deg), aisle direction (deg), spacing along the aisle, depth (tiles), seed], from
 // the rows prep.py lays out (MAP.SR: start, step, count, angles, spacing, depth).
@@ -552,9 +557,10 @@ const pts0=[];
     if(!at(bpx,cx,cy))return;pts0.push({kind:'car',gx:cx,gy:cy,r:rect(cx,cy,ux,uy,L,Wd),col:carCols[Math.floor(hash(i,st[6]+1)*carCols.length)],u,row:st[7]})});
   else MAP.PL.forEach((pl,li)=>{const q=pairs(pl);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const horiz=hash(li,5)<.5;const sx=(horiz?5.6:2.8)/M,sy=(horiz?2.8:5.6)/M;for(let y=Math.min(...ys)+sy;y<Math.max(...ys)-sy/2;y+=sy)for(let x=Math.min(...xs)+sx;x<Math.max(...xs)-sx/2;x+=sx){const ri=Math.round(((horiz?x-Math.min(...xs):y-Math.min(...ys)))/(5.6/M));if(ri%3===2)continue;if(!pip(x,y,q)||!at(bpx,x,y)||rnd()>.5)continue;const r=rect(x,y,horiz?1:0,horiz?0:1,4.3/M,1.9/M);pts0.push({kind:'car',gx:x,gy:y,r,col:carCols[Math.floor(rnd()*carCols.length)]})}});
   // landmarks
-  const ccp=MAP.PK.find(p=>p.n==='Center City Park');if(ccp){const q=pairs(ccp.p);pts0.push({kind:'fountain',gx:q.reduce((a,p)=>a+p[0],0)/q.length,gy:q.reduce((a,p)=>a+p[1],0)/q.length})}
+  const ccp=MAP.PK.find(p=>p.n==='Center City Park');if(ccp&&!DT.points.some(o=>o.what==='jet')){const q=pairs(ccp.p);pts0.push({kind:'fountain',gx:q.reduce((a,p)=>a+p[0],0)/q.length,gy:q.reduce((a,p)=>a+p[1],0)/q.length})}
   const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(lb){const q=pairs(lb.p);let best=null;for(let i=0;i<q.length-1;i++){const a=q[i],b=q[i+1];const nx=b[1]-a[1],ny=-(b[0]-a[0]);if(nx+ny>0){const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(!best||L>best.L)best={a,b,L}}}if(best)pts0.push({kind:'string',a:best.a,b:best.b,gx:(best.a[0]+best.b[0])/2,gy:(best.a[1]+best.b[1])/2})}
-  for(let i=pts0.length-1;i>=0;i--){const o=pts0[i];if(DECKS.some(b=>b.deck!=='foot'&&o.gx>b.minx&&o.gx<b.maxx&&o.gy>b.miny&&o.gy<b.maxy&&pip(o.gx,o.gy,b.pts)))pts0.splice(i,1)}
+  pts0.push(...DT.points);
+  for(let i=pts0.length-1;i>=0;i--){const o=pts0[i];if((o.kind==='car'||o.kind==='tree')&&DT.wet(o.gx,o.gy)){pts0.splice(i,1);continue}if(DECKS.some(b=>b.deck!=='foot'&&o.gx>b.minx&&o.gx<b.maxx&&o.gy>b.miny&&o.gy<b.maxy&&pip(o.gx,o.gy,b.pts)))pts0.splice(i,1)}
   pts0.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
 })();
 const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);return{cx:q.reduce((a,p)=>a+p[0],0)/q.length,cy:q.reduce((a,p)=>a+p[1],0)/q.length,rx:16/M,ry:11/M}})();
@@ -564,7 +570,7 @@ function drawLamp(c,o){const[x,y]=P(o.gx,o.gy);const on=lampsOn();if(on)eg(x+.5,
 function drawString(c,o){[o.a,o.b].forEach(p=>line(c,P(p[0],p[1]),P(p[0],p[1],22),SH));if(!lampsOn())return;for(let k=0;k<=56;k++){const t=k/56;const gx=o.a[0]+(o.b[0]-o.a[0])*t,gy=o.a[1]+(o.b[1]-o.a[1])*t;ed(P(gx,gy,22-Math.sin(t*Math.PI*4)**2*5),k%2?'#ffe9a8':'#ffb98a')}}
 function drawCarS(c,o){drawPrism(c,o.r,0,4,o.col,o.col);const[ax,ay]=[(o.r[0][0]+o.r[2][0])/2,(o.r[0][1]+o.r[2][1])/2];const r2=o.r.map(p=>[ax+(p[0]-ax)*.6,ay+(p[1]-ay)*.8]);drawPrism(c,r2,4,2.5,mix(C['Haw River'],SH,.3),mix(o.col,HI,.2))}
 function drawFountain(c,o){const r=7/M;const ring=[...Array(16)].map((_,k)=>[o.gx+Math.cos(k*Math.PI/8)*r,o.gy+Math.sin(k*Math.PI/8)*r]);drawPrism(c,ring,0,3,C.Concrete,C.Concrete,true);poly(c,ring.map(p=>P(p[0],p[1],3)),surf(mix(C['Haw River'],HI,.25),true));const ring2=ring.map(p=>[o.gx+(p[0]-o.gx)*.3,o.gy+(p[1]-o.gy)*.3]);drawPrism(c,ring2,0,7,C.Concrete,C.Concrete)}
-function drawPoint(c,o){switch(o.kind){case'tree':drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break}}
+function drawPoint(c,o){switch(o.kind){case'tree':drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break}}
 // LeBauer Park's suspended net sculpture, drawn above everything
 function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(1-u*u)*(1-v*v);const pt=(u,v)=>P(cx+u*rx,cy+v*ry,z(u,v));const lit=lampsOn();
   [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v])=>line(c,P(cx+u*rx*1.15,cy+v*ry*1.15),P(cx+u*rx*1.15,cy+v*ry*1.15,34),'#e8e4dc',1));
@@ -658,6 +664,7 @@ let occFor='';
     else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=20;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-16),1,16);q.rect(Math.round(x-1),Math.round(y-17),3,2);o.occ=q;o.occParts=[[['r',Math.round(x),Math.round(y-16),1,16],0,0],[['r',Math.round(x-1),Math.round(y-17),3,2],0,0]]}
     else if(o.kind==='car'){fp=o.r;zmax=7;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],6.5))));o.occ=path(h);o.occParts=[[['p',h],0,0]]}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
+    else if(o.kind==='prop'){const r=o.pr/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=o.ph+4;pad=3;smp=[[o.gx,o.gy,0]]}
     else{fp=[o.a,o.b];zmax=24;pad=4;smp=[[o.a[0],o.a[1],0],[o.b[0],o.b[1],0],[o.gx,o.gy,0]]}
     o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,parts:o.occParts,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
 const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)*4096+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}

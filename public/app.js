@@ -437,14 +437,14 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null)]);
+const [map, info, eatsData, trees, details] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/details.json', null)]);
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
 model = startModel({
   canvas: $('village'),
   map,
-  trees,
+  trees, details,
   onPick: (b) => {
     if (b && b.sign) {
       const d = $(`area-${b.sign}`);
