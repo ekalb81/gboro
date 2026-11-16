@@ -24,7 +24,7 @@ npm test         # parser, date, placement and privacy-rule tests
 
 - **Ingest** (`scripts/ingest.mjs`, `scripts/lib.mjs`): reads every `data/raw/*.txt`, pulls out the `ITEM | ...` lines (12 pipe-separated fields, `n/a` for blanks), normalizes dates to Eastern time, dedupes by post URL, and places each item in a village district by address, venue or title.
 - **Public-site rules** (in `applyRules`): individuals' names are never shown (their items read as "a local post"), personal posts from individuals are held back, and unverified news is held back. Held items go to `data/held.json`, which is outside `public/` and ignored by git.
-- **The model** (`public/index.html`, `public/app.js`, `public/model.js`): an isometric pixel model of downtown, from Bellemeade St to just south of Gate City Blvd, built from `public/model/downtown.json`. `app.js` loads the live data, places it (`public/place.js`) and hands `model.js` a scene; it also writes the almanac strip under the model and the paper beside it. See "The downtown model" below.
+- **The model** (`public/index.html`, `public/app.js`, `public/model.js`): an isometric pixel model of downtown and the neighbourhood north of it, from Wendover Ave to just south of Gate City Blvd, built from `public/model/downtown.json`. `app.js` loads the live data, places it (`public/place.js`) and hands `model.js` a scene; it also writes the almanac strip under the model and the paper beside it. See "The downtown model" below.
 - **Citywide sketch map** (`public/classic.html`, `public/village.js`): the first slice's schematic map of the whole city, still served at `classic.html`.
 
 ## Weather

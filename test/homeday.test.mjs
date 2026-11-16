@@ -63,7 +63,7 @@ test('the line for the page names nobody', () => {
   assert.ok(dayRand(sat, 1) >= 0 && dayRand(sat, 1) < 1);
 });
 
-test('the house files give no address, street name or position', () => {
+test('the house files give no name, address, street name or coordinates', () => {
   for (const f of ['public/model/house.json', 'public/house.js', 'public/house.html', 'public/homeday.js']) {
     const s = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     assert.ok(!/carolina|wendover|bessemer|fisher park|\b1013\b/i.test(s), f + ' names a place');
@@ -81,4 +81,20 @@ test('the mowing round keeps clear of every trunk and the fire ring', async () =
     const q = route.at(d);
     for (const o of keep) assert.ok(Math.hypot(q.x - o.x, q.y - o.y) >= o.r, `too close to (${o.x}, ${o.y}) at ${d.toFixed(1)} m`);
   }
+});
+
+test('the lot sits on the downtown model, on a mapped building, beside a mapped street', () => {
+  const lot = JSON.parse(readFileSync(new URL('../public/model/house.json', import.meta.url)));
+  const map = JSON.parse(readFileSync(new URL('../public/model/downtown.json', import.meta.url)));
+  const g = ([x, y]) => [lot.at[0] + x / map.M, lot.at[1] + y / map.M];
+  const [a, b, c, d] = lot.base, m = lot.house.main;
+  for (const p of [g([a, b]), g([c, d])]) assert.ok(p[0] > 0 && p[0] < map.GX && p[1] > 0 && p[1] < map.GY, 'the lot is inside the model');
+  const [cx, cy] = g([(m[0] + m[2]) / 2, (m[1] + m[3]) / 2]);
+  const inside = (pts) => { let ins = false; for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) { const xi = pts[i], yi = pts[i + 1], xj = pts[j], yj = pts[j + 1]; if ((yi > cy) !== (yj > cy) && cx < (xj - xi) * (cy - yi) / (yj - yi) + xi) ins = !ins; } return ins; };
+  const on = map.B.filter((q) => inside(q.p));
+  assert.equal(on.length, 1, 'one mapped building stands where the house is');
+  assert.ok(!on[0].n && !on[0].ad && !(on[0].tn || []).length, 'and it carries no name, tenant or address');
+  const [sx, sy] = g([lot.street[0] + 3, lot.walk[lot.walk.length - 1][1]]);
+  const near = Math.min(...map.R.filter((r) => !r.ar && r.c <= 4).flatMap((r) => r.p.filter((_, i) => i % 2 === 0).map((x, i) => Math.hypot(x - sx, r.p[i * 2 + 1] - sy))));
+  assert.ok(near < 6, `a street runs past the front of the lot (${near.toFixed(1)} tiles to its nearest corner)`);
 });
