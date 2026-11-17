@@ -25,7 +25,7 @@ const trace = (c, q, close = true) => { c.beginPath(); q.forEach((p, i) => (i ? 
 const mid = (q) => [q.reduce((a, p) => a + p[0], 0) / q.length, q.reduce((a, p) => a + p[1], 0) / q.length];
 
 export function makeDetails(DET, env) {
-  const { P, M, mix, gcol, hash, pip, fr, poly, line, circ, eq, mk, inTG, lampsOn, snowy, HI, SH } = env;
+  const { settle, P, M, mix, gcol, hash, pip, fr, poly, line, circ, eq, mk, inTG, lampsOn, snowy, HI, SH } = env;
   const none = { under() {}, over() {}, low() {}, points: [], drawProp() {}, roof() {}, wet: () => false, has: false };
   if (!DET) return none;
   const m = (v) => v / M; // metres to grid units
@@ -128,7 +128,9 @@ export function makeDetails(DET, env) {
 
   // ---- low things: a few pixels standing on the ground (model pixels) ----
   const LOW = { bench: 1, table: 1, hydrant: 1, bin: 1, bike: 1, postbox: 1, bbq: 1, bookcase: 1, gate: 1 };
-  const pts = (DET.P || []).map(([k, gx, gy, x]) => ({ k, gx, gy, x }));
+  // a hydrant, bin, bike rack or bus stop mapped at the real kerb can fall in the model's wider carriageway: it steps
+  // out onto the sidewalk (env.settle), or is left out where there is no room for it
+  const pts = (DET.P || []).map(([k, gx, gy, x]) => { const s = settle && k !== 'gate' ? settle(gx, gy, 0.2, 0.7) : [gx, gy]; return s && { k, gx: s[0], gy: s[1], x }; }).filter(Boolean);
   const lowPts = pts.filter((p) => LOW[p.k]);
   function low(c) {
     for (const o of lowPts) {
@@ -190,5 +192,5 @@ export function makeDetails(DET, env) {
     for (const a of wetAreas) if (a.k === 'pool' && inTG(a.bb)) eq(a.q.map((p) => P(p[0], p[1])), '#8fe6ff', 0.55);
   }
   const wet = (gx, gy) => wetAreas.some((a) => gx > a.bb[0] && gx < a.bb[2] && gy > a.bb[1] && gy < a.bb[3] && pip(gx, gy, a.q));
-  return { under, over, low(c) { low(c); glow(); }, points, drawProp, roof, wet, has: true, roofIds: roofs };
+  return { under, over, low(c) { low(c); glow(); }, all: pts, points, drawProp, roof, wet, has: true, roofIds: roofs };
 }

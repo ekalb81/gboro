@@ -147,6 +147,9 @@ More flags pick the drawing path or switch one thing off, for comparing on the s
 | `?fps&tilecut=card` | static things behind buildings cut on scratch cards when a tile is drawn (the old way; `tilecut=clip` forces the new way) |
 | `?fps&ahead=0` | no drawing ahead: tiles are drawn only when the view needs them |
 | `?fps&tilems=4` | the tile allowance pinned at 4 ms a frame (any number), whatever the frames do |
+| `?fps&res=safe` | the resolution the model drew at before the sixth pass (no more than 2.6 million canvas pixels, no more than 2 canvas pixels per model pixel) |
+| `?fps&res=sharp` | one canvas pixel per device pixel, whatever the frames do |
+| `?fps&res=auto` | forget a remembered fallback and start over on sharp, watched |
 
 ## The graphics card caveat
 
@@ -624,6 +627,56 @@ a few frames more than before, since drawing ahead waits for the pointer to lift
 
 To check in Safari: open the site at night with `?fps`, zoom a step or two, drag, and screenshot the box. Lines 4
 and 5 carry what this pass is about.
+
+## Resolution (sixth pass)
+
+The complaint: the model looked low-resolution and grainy in a 2519 px wide Chrome window on a 2560x1440 monitor.
+
+**Cause.** The canvas was capped at 2.6 million pixels, and each canvas pixel is a whole number of device pixels, so a
+window whose model area was over the cap (2119x1234 here, 2.61 million) was drawn at half the screen's resolution each
+way, a quarter of the pixels, and stretched. Zoomed out one step from the opening view the model was drawn at half a
+canvas pixel per model pixel and doubled. A second cap (2 canvas pixels per model pixel) did the same at the three
+closest zoom levels on any screen: half resolution at zoom 3 and 4, a third at zoom 6. A Retina MacBook window (about
+1870x1610 device pixels and up) was over the pixel cap too, so it showed one canvas pixel per CSS pixel.
+
+**What changed.** Two resolution plans in `model.js` (see "view size and zoom" there):
+
+- **sharp**, the default where there is a graphics card: one canvas pixel per device pixel at every zoom level, up to
+  6 million canvas pixels (past that, a 4K screen filled edge to edge, it halves as before). Touch devices keep the
+  2.6 million pixel cap (they have less canvas memory) but lose the 2-per-model-pixel cap.
+- **safe**: exactly what the model did before. A software renderer starts here.
+
+Sharp draws up to four times the pixels (nine at the closest zoom). The model's own work per frame does not depend on
+the pixel count (the paths are the same; measured below), but the graphics card's does, and that cannot be measured
+in this container. So a governor (`resGov`) watches the time between frames whenever the two plans differ for the
+view: the middle value of 120 frames at rest or dragging (frames that drew tiles and zoom glides are left out). Two
+windows running over 21 ms (under about 48 fps) and it switches to safe, throws away one window while the canvas
+settles, and compares the next: if safe is at least a fifth faster it stays, and the device remembers that for a week
+(`localStorage` key `gso-res`); if not, the pixels were not what was slow, so it goes back to sharp and stops watching.
+The worst case is therefore a few seconds of slower frames once a week on a machine that cannot afford sharp, and
+after that the same picture and speed as before. A 120 Hz screen held at a steady 60 is not noticed.
+
+A side effect: with one canvas pixel per device pixel at every level, a zoom step no longer changes the size of the
+canvas, so the resize that used to land with some zoom steps (see the fourth pass) is gone under sharp.
+
+**Measured** (headless Chromium with `--swgpu`, 6 s; the frame rates of that software graphics card mean nothing, the
+time inside `frame()` does):
+
+| | safe (before) | sharp |
+| --- | --- | --- |
+| retina, canvas | 935x805 | 1870x1610 |
+| retina, `frame()` p50 / p95 ms | 12.8 / 17.3 | 14.0 / 19.3 |
+| retina, `dyn` ms | 5.48 | 4.79 |
+| retina, canvas memory MB | 50.5 | 102.3 |
+| zoomed-in (z 6), canvas | 507x360 | 1520x1080 |
+| zoomed-in, `frame()` p50 / p95 ms | 2.6 / 8.0 | 2.7 / 7.3 |
+| zoomed-in, canvas memory MB | 39 | 81.7 |
+
+The governor was tried on the software renderer with `?res=auto` at 2519x1234: sharp ran at 176 ms a frame, it
+switched after 9 s, measured safe at 65 ms, stayed on safe and stored it.
+
+**Not checked:** a real graphics card and Safari. `?fps` shows the plan in its last line (`res: sharp (default,
+watching)`), and `?fps&res=safe` against `?fps&res=sharp` compares the two on any machine.
 
 ## What is left, and whether to change engines
 

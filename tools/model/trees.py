@@ -11,10 +11,11 @@ it is, and whether it keeps its leaves in winter. Two steps:
    NC OneMap aerial. A crown still green in that leaf-off aerial, or dark and so dense that almost no pulses
    reached the ground, is an evergreen. Output: a small committed file of crowns.
 
-2. Every model refresh (cheap): python3 tools/model/trees.py <inputs-dir> [out.json]
+2. Every model refresh (cheap): python3 tools/model/trees.py <inputs-dir> [out.json] [model.json]
    Reads <inputs-dir>/osm/trees-lidar.json and <inputs-dir>/osm/downtown-raw.json (OpenStreetMap). Crowns now
    under a building are dropped; OSM natural=tree nodes the lidar does not show (planted since 2015, such as
    LeBauer Park's) are added as young trees; man_made=flagpole nodes become flags.
+   Buildings the lidar found are read from the model (prep.py's output; public/model/downtown.json unless given).
 
 Species: no public inventory of downtown Greensboro's trees exists (the City has only neighbourhood studies),
 so each tree gets a species typical of Piedmont NC plantings for what we do know about it: evergreen or not,
@@ -31,6 +32,7 @@ else:
     INP = sys.argv[1].rstrip('/') + '/'
     OUT = sys.argv[2] if len(sys.argv) > 2 else __file__.rsplit('/', 3)[0] + '/public/model/trees.json'
     osm_raw = INP + 'osm/downtown-raw.json'
+    MODEL = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', 'model', 'downtown.json')
 
 N0, S, Wl, E0 = 36.0768, 36.0660, -79.7954, -79.7856   # the downtown the model began as
 NORTH = 145                                             # model tiles (9 m) added on the north side since, up to the house up the street
@@ -155,7 +157,7 @@ def merge_step():
         if (t.get('leisure') in ('park', 'garden', 'playground') or t.get('landuse') in ('grass', 'recreation_ground', 'cemetery') or t.get('natural') in ('wood', 'scrub')) and len(px) >= 3:
             dp.polygon(px, fill=255)
     try:   # buildings the lidar found that OpenStreetMap lacks are buildings too (the model file is prep.py's output)
-        for b in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', 'model', 'downtown.json')))['B']:
+        for b in json.load(open(MODEL))['B']:
             if b.get('lidar_new') and b.get('t') != 'roof': dr.polygon([(b['p'][i] * R, b['p'][i + 1] * R) for i in range(0, len(b['p']), 2)], fill=255)
     except FileNotFoundError: pass
     bm = np.asarray(bmask) > 0; st = np.asarray(streets) > 0; pk = np.asarray(parks) > 0
