@@ -675,7 +675,20 @@ time inside `frame()` does):
 The governor was tried on the software renderer with `?res=auto` at 2519x1234: sharp ran at 176 ms a frame, it
 switched after 9 s, measured safe at 65 ms, stayed on safe and stored it.
 
-**Not checked:** a real graphics card and Safari. `?fps` shows the plan in its last line (`res: sharp (default,
+**Checked in Chrome on the machine it was reported on** (Chrome 157, device pixel ratio 1, canvas 2160x1271, a
+recording with `?fps`): `res: sharp (default, watching)`, 95 to 101 fps, 7.5 ms in `frame()`, about 0 ms of rest per
+ms of tile work. The governor did not step in.
+
+**A stall that recording showed, and its fix.** After a fast zoom from 0.35 to 2 the frame that landed took 598 ms:
+15 tiles drawn whole in it (460 ms). A square of the view with no complete stand-in at another scale was always drawn
+whole on the spot, however many there were, and sharp has four times the squares. Now such a square is drawn a step
+at a time within the frame's tile allowance like any other, showing what there is to stand in for it meanwhile; only
+the very first frame still draws its tiles whole. So that there is always something to stand in, the whole model is
+also kept at one eighth scale (two tiles, drawn ahead before anything else in the first second or two). The same
+sequence in headless Chromium (zoom 2, five wheel notches out, five in, three out, at 2548x1280): before, five frames
+drew 10 to 20 tiles each (176 to 439 ms of tile drawing in a frame); after, no frame draws more than one (8 to 19 ms).
+
+**Not checked:** Safari. `?fps` shows the plan in its last line (`res: sharp (default,
 watching)`), and `?fps&res=safe` against `?fps&res=sharp` compares the two on any machine.
 
 ## What is left, and whether to change engines

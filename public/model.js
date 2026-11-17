@@ -883,7 +883,7 @@ function drawStandIn({s,r:[r0,r1,r2,r3],rg},cx,cy){
 // at the end of each frame (what is left of the frame's tile allowance, see tileBudget), so a drag or a zoom step
 // usually finds its tiles ready, and otherwise has something to stand in. Not while the pointer is down, and while a
 // zoom glides only the tiles it will land on (landOnly).
-let keepN=24,nVis=12,zdir=0,useNo=0;const OV=.5;
+let keepN=24,nVis=12,zdir=0,useNo=0;const OV=.5,OV0=.125;
 function aheadList(landOnly){const out=[];const{dw,dh}=dev();
   // while a zoom is on its way, "the view" is where it will land: those tiles come first, so it lands sharp
   const R=ZG?ZG.rest:null,VS_=R?R.vs:VS,W_=R?R.W:W,H_=R?R.H:H,cX=R?R.camX:camX,cY=R?R.camY:camY;const mx=cX+W_/VS_/2,my=cY+H_/VS_/2;
@@ -899,7 +899,12 @@ function aheadList(landOnly){const out=[];const{dw,dh}=dev();
   // first the whole model at a small scale (OV), kept for good: then there is always something to stand in
   // ...as far as the memory allows: a tile is one canvas by day and up to three once windows are lit and lamps glow
   const fit_=Math.floor(TILE_MB*262144/(TILE*TILE*(lampsOn()||FT.de?3:1.2))),nx=Math.ceil(BW*OV/TILE)-1,ny=Math.ceil(BH*OV/TILE)-1,nOv=(nx+1)*(ny+1)<=fit_/4?(nx+1)*(ny+1):0;
-  const ov=[];if(VS_!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
+  const ov=[];
+  // before anything else the whole model very small (OV0: two or three tiles, kept for good as well), drawn a
+  // step at a time in the first second or two after the first frame: from then on no square of any view is ever
+  // without a stand-in
+  if(VS_!==OV0)for(let y=0;y<=Math.ceil(BH*OV0/TILE)-1;y++)for(let x=0;x<=Math.ceil(BW*OV0/TILE)-1;x++)ov.push([x,y,OV0]);
+  if(VS_!==OV&&nOv)for(let y=0;y<=ny;y++)for(let x=0;x<=nx;x++)ov.push([x,y,OV]);
   return ov.concat(out.slice(0,Math.max(0,Math.min(keepN,fit_-nOv)-nVis-4)))} // no more than the cache holds next to the view, so drawing ahead never undoes itself
 // Where static things are cut on scratch cards (?tilecut=card, a software renderer), drawing ahead uses cards of its
 // own: how big the shared ones have grown decides some edge antialiasing, so leaving them as they are keeps every
@@ -923,7 +928,7 @@ const usedPx=()=>{let px=sparePx();for(const t of tiles.values())px+=tilePx(t);r
 // the tiles in least-recently-used order that may be dropped: not the last nVis (the view), not a tile laid on the
 // screen in this frame or the last one (the view again, and whatever is standing in for a tile not drawn yet: t.use),
 // and not the small whole-model copy or any other tile at its scale
-const kept=t=>t.vs===OV||t.use>=useNo-1,nLoose=()=>{let n=0;for(const t of tiles.values())if(t.vs!==OV)n++;return n};
+const kept=t=>t.vs===OV||t.vs===OV0||t.use>=useNo-1,nLoose=()=>{let n=0;for(const t of tiles.values())if(t.vs!==OV&&t.vs!==OV0)n++;return n};
 function dropOldest(){if(nLoose()<=nVis)return false;for(const[k,t]of tiles){if(kept(t))continue;tiles.delete(k);dropTile(t);return true}return false}
 // Drawing ahead never throws away what it is itself asking for: when a new tile would push out (by count or by
 // memory) a tile that is on the list too, there is no room for more and it stops, instead of drawing the list round
@@ -1409,8 +1414,11 @@ function frame(ts){const F0=performance.now();
     // a missing tile with something to stand in for it is drawn a step at a time within the budget (see standInAt)
     // a zoom on its way: every square from tiles already made, at whatever scale is nearest
     if(zg){if(si=standInAt(tx,ty,true)||partStandIn(tx,ty)){drawStandIn(si,cx,cy);if(BM)bmF.si=(bmF.si||0)+1}continue}
-    if(!tiles.has(key)&&(si=standInAt(tx,ty))){const t0=performance.now();t=budget.left>0?work(key,tx,ty,VS,t0+budget.left):null;budget.left-=performance.now()-t0;
-      if(!t){drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
+    // (and one with only part of a stand-in, or none, likewise: what there is of it is shown over the ground colour
+    // the frame starts with. Such a tile used to be drawn whole on the spot, and a zoom that uncovered fifteen of
+    // them at once held the frame for half a second. Only the very first frame still draws its tiles whole.)
+    if(!tiles.has(key)&&((si=standInAt(tx,ty)||partStandIn(tx,ty))||frame.once)){const t0=performance.now();t=budget.left>0?work(key,tx,ty,VS,t0+budget.left):null;budget.left-=performance.now()-t0;
+      if(!t){if(si)drawStandIn(si,cx,cy);frame.stale=true;budget.left=0;if(BM)bmF.si=(bmF.si||0)+1;continue}}
     else t=getTile(tx,ty,budget);
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
