@@ -431,12 +431,12 @@ try:
 except FileNotFoundError: pass
 # ---- bridges and railroad crossings (OpenStreetMap bridge=yes ways and railway=level_crossing nodes) ----
 # The model's ground is flat, so each bridge is a slab ("deck") the renderer stands on it:
-#   road over rail or road: the span is a slab on piers, and the road climbs to it on stepped ramps of fill
+#   road over rail or road: the span is a slab on piers, and the road climbs to it on ramps of fill (bridges.py)
 #   rail over road: the tracks stay at ground level on a low girder plate and the road passes under it (DK 'dip'
 #     pieces are the road's last metres each side, shaded as the dip into the underpass)
 #   covered footbridges between buildings: a glazed box above the street
-# DK: {k:'road'|'rail'|'foot', p: outline, z0,z1: underside and top in metres, cl: centre line (road), w: road width,
-#      sp: 1 for a span, pr: piers, rl: the tracks on a rail deck, dip: [[line, road class], ...]}
+# DK: {k:'road'|'rail'|'foot', p: outline, z0,z1: underside and top in metres, rl: the tracks on a rail deck,
+#      dip: [[line, road class], ...]; a road deck's other fields are listed in bridges.py}
 # LX: level crossings [ax,ay,bx,by,road class,gates]: where a street crosses the tracks at grade, from the first rail to the last
 DK=[];LX=[]
 try:
@@ -450,41 +450,9 @@ try:
     rails=[LineString(list(zip(r['p'][0::2],r['p'][1::2]))) for r in RL]
     roadl=[(LineString(list(zip(r['p'][0::2],r['p'][1::2]))),r) for r in R if not r['ar']]
     board=Polygon([(0,0),(GX,0),(GX,GY),(0,GY)])
-    # road bridges
-    for ln,r in roadl:
-        if not r.get('br') or r['c']>4 or ln.length*M<12 or not ln.intersects(board): continue
-        try: lanes_=float(r.get('ln') or 0)
-        except ValueError: lanes_=0
-        wd=max(RWm[r['c']],lanes_*3.0);half=(wd/2+2.8)*Mi;hg=(RWm[r['c']]/2+2.8)*Mi
-        def edges(q,h_,lanes_w): return {'ed':[flat(list(m.coords)) for sd in (1,-1) for m in lines(q.offset_curve(sd*(h_-.9*Mi)))],'ln':[flat(list(m.coords)) for sd in (1,-1) for m in lines(q.offset_curve(sd*lanes_w/4*Mi))] if lanes_w>=17 else []}
-        # what the span crosses must clear it: keep piers away from tracks and from the streets underneath
-        under=[q for q in rails if q.distance(ln)<half]+[q.buffer((RWm[o['c']]/2)*Mi) for q,o in roadl if o is not r and not o.get('br') and o['c']<=5 and q.crosses(ln)]
-        piers=[];n_=max(1,round(ln.length*M/24))
-        for i in range(1,n_):
-            pt=ln.interpolate(i/n_,normalized=True);a_=ln.interpolate(max(0,i/n_-.01),normalized=True);dx,dy=pt.x-a_.x,pt.y-a_.y;L_=math.hypot(dx,dy) or 1;ux,uy=dx/L_,dy/L_
-            q=Polygon([(pt.x-uy*half*.62-ux*.07,pt.y+ux*half*.62-uy*.07),(pt.x+uy*half*.62-ux*.07,pt.y-ux*half*.62-uy*.07),(pt.x+uy*half*.62+ux*.07,pt.y-ux*half*.62+uy*.07),(pt.x-uy*half*.62+ux*.07,pt.y+ux*half*.62+uy*.07)])
-            if all(q.distance(u)>2.2*Mi for u in under): piers.append(ring(q))
-        span=ln.buffer(half,cap_style='flat',join_style='mitre').intersection(board)
-        if span.is_empty: continue
-        DK.append({'k':'road','p':ring(span),'z0':SPAN_UNDER,'z1':SPAN_TOP,'cl':r['p'],'w':wd,'sp':1,'pr':piers,'n':r['n'],**edges(ln,half,wd)})
-        # the approaches: along the same street away from each end, down to the ground before the next junction
-        same=[q for q,o in roadl if o is not r and o['n']==r['n'] and o['c']==r['c'] and not o.get('br')]
-        merged=lines(linemerge(MultiLineString([list(q.coords) for q in same]))) if same else []
-        junc=[Point(x[0],x[1]) for x in X]
-        for end in (Point(ln.coords[0]),Point(ln.coords[-1])):
-            ch=next((q for q in merged if Point(q.coords[0]).distance(end)<.02 or Point(q.coords[-1]).distance(end)<.02),None)
-            if ch is None: continue
-            if Point(q_:=ch.coords[-1]).distance(end)<.02: ch=LineString(list(ch.coords)[::-1])
-            run=min(RAMP*Mi,ch.length)
-            js=[ch.project(j) for j in junc if j.distance(ch)<.05 and ch.project(j)>3*Mi]
-            if js: run=min(run,max(30*Mi,min(js)-(RWm[r['c']]/2+9)*Mi))
-            n_=max(2,round(SPAN_TOP/STEP))
-            for i in range(n_):
-                a_,b_=run*i/n_,run*(i+1)/n_;piece=substring(ch,a_,b_);t_=(i+.5)/n_
-                if piece.length<=0: continue
-                h_=half+(hg-half)*t_;wd_=RWm[r['c']]+(wd-RWm[r['c']])*(1-t_);poly_=piece.buffer(h_,cap_style='flat',join_style='mitre').intersection(board)
-                if poly_.is_empty or poly_.area<.01: continue
-                DK.append({'k':'road','p':ring(poly_),'z0':0,'z1':round(SPAN_TOP*(1-(i+1)/(n_+1)),2),'cl':flat(list(piece.coords)),'w':round(wd_,1),**edges(piece,h_,wd_)})
+    # road bridges: spans, the fill between two close bridges, and evenly sloping ramps (see bridges.py)
+    from bridges import road_decks
+    DK+=road_decks(R,RL,X,GX,GY,M)
     # rail bridges: neighbouring tracks share one deck
     rb=[];
     for e in raw_el:
@@ -536,7 +504,7 @@ try:
             LX.append([round(a_.x,2),round(a_.y,2),round(b_.x,2),round(b_.y,2),o['c'],gates])
 except (ImportError,NameError) as ex: print('no bridges or crossings:',ex)
 for r in R: r.pop('ln',None)
-print('decks',[(d_['k'],d_['z1']) for d_ in DK if d_.get('sp') or d_['k']!='road'],'ramp steps',sum(1 for d_ in DK if d_['k']=='road' and not d_.get('sp')),'crossings',LX)
+print('decks',[(d_['k'],d_['z1']) for d_ in DK if d_.get('sp') or d_['k']!='road'],'ramp pieces',sum(1 for d_ in DK if d_['k']=='road' and not d_.get('sp')),'crossings',LX)
 print('footpaths',len(FW),'areas',len(GA),'lots',len(PL),'stall rows',len(SR),'stalls',sum(r[4] for r in SR),'signals/stops',len(SIG))
 
 # names: the building's own, who is inside it, and its street address (tools/model/names.py)

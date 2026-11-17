@@ -20,6 +20,8 @@
     "serve": "node scripts/serve.mjs",
     "crime": "node scripts/fetch-crime.mjs",
     "bench": "node scripts/bench.mjs",
+    "audit:geometry": "node scripts/audit-geometry.mjs",
+    "audit:tiles": "node scripts/audit-tiles.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }
