@@ -44,11 +44,13 @@ for (const f of (await readdir(rawDir)).filter((n) => n.endsWith('.txt'))) {
   saved.set(f, (await readFile(join(rawDir, f), 'utf8')).match(/^Gmail-Id: (\S+)$/m)?.[1] || null);
 }
 
-const { files, skipped } = await newDigests(gmail, ids, saved);
-for (const { name, text } of files) {
-  if (dryRun) console.log(`  would save ${name}`);
-  else await writeFile(join(rawDir, name), text);
-}
+// Each digest is written as it arrives, so a failure part-way keeps what was already downloaded.
+const { files, skipped } = await newDigests(gmail, ids, saved, {
+  save: async ({ name, text }) => {
+    if (dryRun) console.log(`  would save ${name}`);
+    else await writeFile(join(rawDir, name), text);
+  },
+});
 
 console.log(`${ids.length} digest emails matched: ${files.length} ${dryRun ? 'new (dry run)' : 'saved'}, ${skipped} already in data/raw.`);
 

@@ -139,7 +139,9 @@ export function digestFileText(message) {
 // written in it (null for a hand-saved file, which has none). A message whose id is already saved costs no
 // request at all, and every other message costs one: Gmail's quota is counted per request, and the publish
 // run starts with an empty folder, so asking for each message's date first only doubled the work.
-export async function newDigests(gmail, ids, saved = new Map(), warn = console.warn) {
+// `save` is called with each digest as it arrives, so if a later request fails the ones already downloaded
+// are kept.
+export async function newDigests(gmail, ids, saved = new Map(), { save = async () => {}, warn = console.warn } = {}) {
   const have = new Set([...saved.values()].filter(Boolean));
   const files = [];
   let skipped = 0;
@@ -163,6 +165,7 @@ export async function newDigests(gmail, ids, saved = new Map(), warn = console.w
     if (!/^ITEM\s*\|/m.test(text)) warn(`  ${base}: no ITEM lines (saved anyway; ingest will ignore it)`);
     saved.set(name, id);
     have.add(id);
+    await save({ name, text });
     files.push({ name, text });
   }
   return { files, skipped };

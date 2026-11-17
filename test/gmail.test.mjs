@@ -131,10 +131,22 @@ test('a second digest in the same minute is kept, and a hand-saved file counts a
   const inbox = { a: digestMsg('a', '2026-11-17T10:02:10Z'), b: digestMsg('b', '2026-11-17T10:02:50Z', 'nothing today') };
   const gmail = { getMessage: async (id) => inbox[id] };
   const warned = [];
-  const both = await newDigests(gmail, ['a', 'b'], new Map(), (m) => warned.push(m));
+  const both = await newDigests(gmail, ['a', 'b'], new Map(), { warn: (m) => warned.push(m) });
   assert.deepEqual(both.files.map((f) => f.name), ['2026-11-17T1002Z.txt', '2026-11-17T1002Z-b.txt']);
   assert.equal(warned.length, 1);
 
   const byHand = await newDigests(gmail, ['a'], new Map([['2026-11-17T1002Z.txt', null]]));
   assert.deepEqual(byHand, { files: [], skipped: 1 });
+});
+
+test('digests downloaded before a failure are already saved', async () => {
+  const gmail = {
+    getMessage: async (id) => {
+      if (id === 'b') throw new Error('Gmail /messages/b failed (404)');
+      return digestMsg(id, '2026-11-17T10:02:00Z');
+    },
+  };
+  const written = [];
+  await assert.rejects(newDigests(gmail, ['a', 'b'], new Map(), { save: async (f) => written.push(f.name) }), /404/);
+  assert.deepEqual(written, ['2026-11-17T1002Z.txt']);
 });
