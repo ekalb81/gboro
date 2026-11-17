@@ -151,15 +151,22 @@ class Addresses(unittest.TestCase):
              {'id': 5, 'p': sq(40, 0), 't': 'yes', 'n': '', 'ad': '1 Kept St'},       # left alone
              {'id': 6, 'p': sq(50, 0), 't': 'house', 'n': ''},                        # in the quiet box: stays blank
              {'id': 7, 'p': sq(60, 0), 't': 'yes', 'n': ''},                          # nothing known: stays blank
-             {'id': 8, 'p': sq(20, 4), 't': 'house', 'n': ''}]                        # a house on the same lot as the garage
+             {'id': 8, 'p': sq(20, 4), 't': 'house', 'n': ''},                        # a house on the same lot as the garage
+             {'id': 9, 'p': sq(70, 0), 't': 'retail', 'n': 'Shop', 'ad': '527 S Elm St'},  # has its address in its own right
+             {'id': 10, 'p': sq(70, 4), 't': 'yes', 'n': ''},                         # same lot, unnamed: only borrows it
+             {'id': 11, 'p': sq(80, 0, 1), 't': 'yes', 'n': ''},                      # two borrowers on one lot:
+             {'id': 12, 'p': sq(80, 4, 3), 't': 'yes', 'n': ''}]                      # the larger keeps the address as its own
         addr = {'points': [[1, 1, '612', 'Mcadoo Avenue'], [11, 1, '118', 'North Davie Street'], [11.5, 1, '122', 'North Davie Street'],
                            [11, 1.5, '300', 'East Market Street'], [51, 1, '9', 'Quiet Street']],
-                'parcels': [{'a': ['410', 'Olive Street'], 'p': sq(19, -1, 8)}]}
+                'parcels': [{'a': ['410', 'Olive Street'], 'p': sq(19, -1, 8)}, {'a': ['527', 'South Elm Street'], 'p': sq(69, -1, 8)},
+                            {'a': ['5', 'King Street'], 'p': sq(79, -1, 9)}]}
         raw = [{'type': 'way', 'id': 1, 'tags': {'highway': 'residential', 'name': 'McAdoo Avenue'}}]
         n = N.state_addresses(B, addr, self.G, raw, quiet=(49, -1, 53, 3))
-        self.assertEqual(n, 4)
-        self.assertEqual([b.get('ad') for b in B], ['612 McAdoo Ave', '118-122 N Davie St', '410 Olive St', None, '1 Kept St', None, None, '410 Olive St'])
-        self.assertEqual([b.get('ax') for b in B], [None, None, 1, None, None, None, None, None])   # only the garage shares its lot's address
+        self.assertEqual(n, 7)
+        self.assertEqual([b.get('ad') for b in B], ['612 McAdoo Ave', '118-122 N Davie St', '410 Olive St', None, '1 Kept St', None, None, '410 Olive St',
+                                                    '527 S Elm St', '527 S Elm St', '5 King St', '5 King St'])
+        # the garage, the unnamed building beside the shop and the smaller of two borrowers only share their lot's address
+        self.assertEqual([b.get('ax') for b in B], [None, None, 1, None, None, None, None, None, None, 1, 1, None])
 
 
 if __name__ == '__main__':

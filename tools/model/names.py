@@ -10,7 +10,8 @@ The renderer labels a building with the first of these it has. Closed places (di
 
 A building OpenStreetMap leaves with none of the three gets `ad` from the State's address data (tools/model/addresses.py):
 the 911 address points inside its outline, else the site address of the lot most of it stands on. One that only shares
-its lot's address (a garage behind a house, say) is marked ax=1, so the map does not print the same address twice.
+its lot's address (a garage behind a house, or a second building on a lot whose address another building already
+has) is marked ax=1, so the map does not print the same address twice and things at that address go to the main building.
 Nothing is ever made up: a building neither source knows stays without a label.
 """
 import re
@@ -120,7 +121,8 @@ def state_addresses(B,addr,g,raw=(),quiet=None):
         poly=[g({'lon':q['p'][i],'lat':q['p'][i+1]}) for i in range(0,len(q['p']),2)]
         xs=[c[0] for c in poly];ys=[c[1] for c in poly]
         lots.append((min(xs),max(xs),min(ys),max(ys),poly,q['a'][0],fix(q['a'][1])))
-    n=0
+    n=0;lent=[]
+    area=lambda q:abs(sum(q[i][0]*q[i-1][1]-q[i-1][0]*q[i][1] for i in range(len(q))))/2
     for b in B:
         if b.get('n') or b.get('tn') or b.get('ad') or b.get('dk'): continue
         poly=list(zip(b['p'][0::2],b['p'][1::2]))
@@ -149,8 +151,16 @@ def state_addresses(B,addr,g,raw=(),quiet=None):
         if votes[k]*2<=len(samp): continue
         ad=short_address(lots[k][5],lots[k][6])
         if ad:
-            b['ad']=ad;n+=1
+            b['ad']=ad;n+=1;lent.append((b,area(poly)))
             if b.get('t') in OUTBUILDING: b['ax']=1
+    # a lot's address belongs to one building: where another already has it in its own right (from OpenStreetMap or an
+    # address point inside it), or several only borrow it, all but that one (or the largest borrower) are marked ax
+    own={b['ad'] for b in B if b.get('ad') and not any(b is l[0] for l in lent)}
+    seen=set()
+    for b,_ in sorted(lent,key=lambda l:-l[1]):
+        if b.get('ax'): continue
+        if b['ad'] in own or b['ad'] in seen: b['ax']=1
+        seen.add(b['ad'])
     return n
 
 def coverage(B):
