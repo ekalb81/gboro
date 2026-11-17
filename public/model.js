@@ -889,7 +889,12 @@ function work(key,tx,ty,vs,until){let j=jobs.get(key);if(j&&j.ver!==stver){dropJ
   const sv=[BT,TGT,ox,oy,TR],t0=performance.now();let r;do r=j.g.next();while(!r.done&&performance.now()<until);[BT,TGT,ox,oy,TR]=sv;const dt_=performance.now()-t0;j.ms+=dt_;tbTw+=dt_;if(BM&&bmF)bmF.tw=(bmF.tw||0)+dt_;
   if(!r.done)return null;jobs.delete(key);const t=r.value,old=tiles.get(key);if(old&&old!==t)dropTile(old);t.ver=j.ver;tileDone(t,j.ms,tx,ty,false);tiles.set(key,t);return t}
 function getTile(tx,ty,budget){const key=VS+'|'+tx+'|'+ty;let t=tiles.get(key);
-  if(t){tiles.delete(key);tiles.set(key,t);t.use=useNo;if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
+  if(t){tiles.delete(key);tiles.set(key,t);t.use=useNo;
+    // out of date (the light changed): its replacement is drawn a step at a time within the budget, on canvases of
+    // its own, and takes its place when done; the old one is shown meanwhile. (It used to be redrawn whole on the
+    // spot, one tile a frame: a run of 10 to 30 ms frames across the view every time the sun moved on.)
+    if(t.ver!==stver&&budget.left>0&&frame.once){const t0=performance.now(),n=work(key,tx,ty,VS,t0+budget.left);budget.left=n?budget.left-(performance.now()-t0):0;if(n){n.use=useNo;return n}}
+    else if(t.ver!==stver&&budget.left>0){const t0=performance.now();renderTile(tx,ty,t);budget.left-=performance.now()-t0}return t}
   const t0=performance.now();t=jobs.has(key)?work(key,tx,ty,VS,Infinity):renderTile(tx,ty,null);budget.left-=performance.now()-t0;tiles.set(key,t);return t}
 // While a drag or a zoom brings in tiles that are not drawn yet, a frame draws them within its budget and, until each
 // is done, stands in for it with the same ground at another scale already drawn (a zoom step's previous scale, or the
@@ -984,11 +989,16 @@ function trimTiles(keep){let n=nLoose();const cap=TILE_MB*262144;
   while(pool.length>POOL)freeSpare()}
 if(BM){BM.cs=CS;BM.flags={tilecut:TCLIP?'clip':'card',ahead:AHEAD}}
 if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,k:KPX,plan:PLAN.name,planWhy:PLANWHY,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
+// (the ground texture's colours change only with the weather, so it is rebuilt only then: it was most of the
+// 0.4 s this took each time the sun moved on)
+let gtexFor=null;
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}buildGroundTex();buildShadows();stver++;
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}{const k=S.wx;if(k!==gtexFor||!GTEX){gtexFor=k;buildGroundTex()}}buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
-const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),Math.round(SUN.alt/1.5),Math.round(SUN.az/3),evening(),lampsOn()].join('|');
+// What the still picture depends on. The sun's position matters only while it casts shadows (see buildShadows): at
+// night and in rain nothing drawn changes as it moves, so the tiles are left alone until dusk, dawn or the lamps.
+const stateKey=()=>[S.time,S.wx,L.version,dayOfYear(sceneDate0()),windKey(WIND),SUN.alt<2||S.wx==='rain'?'-':Math.round(Math.max(4,SUN.alt)/1.5)+'/'+Math.round(SUN.az/3),evening(),night(),lampsOn()].join('|');
 
 // ---------- traffic ----------
 // Streets run past the edge of the model; cars, people and the train only use the parts on the model.
