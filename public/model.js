@@ -158,7 +158,9 @@ const PART=Object.fromEntries((MAP.PT||[]).map(p=>[p.id,p]));
 // The OSM outline 208115796 covers both towers. Use its real 3D parts instead:
 // Lincoln Financial Tower (1990) and the Jefferson Standard Building (1923), joined by a low connector.
 (()=>{const ob=MAP.B.find(b=>b.id===208115796);if(!ob||!PART[341049142]||!PART[467218959])return;
-  ob.p=[44.85,46.66,46.42,46.72,45.97,50.57,44.6,50.42];ob.l=4;ob.h=16;ob.n='';ob.t='office';
+  // (hand-set outline of the low link between the two towers; y counts from the model's north edge, which moved 145
+  // tiles north when the model grew, so it is given from the tower's own corner)
+  const dy=PART[341049142].p[1]-46.5;ob.p=[44.85,46.66+dy,46.42,46.72+dy,45.97,50.57+dy,44.6,50.42+dy];ob.l=4;ob.h=16;ob.n='';ob.t='office';
   MAP.B.push({id:341049142,p:PART[341049142].p,l:20,h:79,t:'office',n:'Lincoln Financial Tower'});
   MAP.B.push({id:467218959,p:PART[467218959].p,l:18,h:65,t:'office',n:'Jefferson Standard Building'})})();
 // Bridges (MAP.DK, from prep.py): each deck is a slab that takes its place among the buildings, so it is drawn in the
@@ -450,6 +452,23 @@ function rect(cx,cy,dx,dy,len,wid){const L=Math.hypot(dx,dy)||1;const ux=dx/L,uy
 
 // ---------- ground and model base ----------
 const RW=[16,14,12,10,8,4.5,5];
+// What stands where has to agree with what is drawn. Streets are drawn at their class's width (RW), often wider than
+// the real street, so a real tree, hydrant or bench at the real kerb can land in the drawn carriageway, and a sidewalk
+// two metres out from the drawn kerb can run through the shopfronts of a narrow street.
+// BLDG(x,y): the building that covers a spot (not bridges or canopies).
+const BLDG=(()=>{const g=new Map(),K=4;for(const b of blds){if(b.deck||b.canopy)continue;for(let i=Math.floor(b.minx/K);i<=Math.floor(b.maxx/K);i++)for(let j=Math.floor(b.miny/K);j<=Math.floor(b.maxy/K);j++){const k=i*4096+j;let a=g.get(k);if(!a)g.set(k,a=[]);a.push(b)}}
+  return(x,y)=>{const a=g.get(Math.floor(x/K)*4096+Math.floor(y/K));if(a)for(const b of a)if(x>b.minx&&x<b.maxx&&y>b.miny&&y<b.maxy&&pip(x,y,b.pts))return b;return null}})();
+// KERB(x,y,maxc): the drawn carriageway a spot is deepest inside, among streets of class maxc or busier:
+// [depth inside it (grid units; negative: that far outside), the way out (x, y), its class], or null with none near.
+const KERB=(()=>{const g=new Map(),K=2;for(const r of MAP.R){if(r.ar||r.c>5)continue;const q=pairs(r.p),hw=RW[r.c]/2/M;for(let k=0;k<q.length-1;k++){const a=q[k],b=q[k+1],sg=[a[0],a[1],b[0],b[1],hw,r.c];
+      for(let i=Math.floor((Math.min(a[0],b[0])-1.2)/K);i<=Math.floor((Math.max(a[0],b[0])+1.2)/K);i++)for(let j=Math.floor((Math.min(a[1],b[1])-1.2)/K);j<=Math.floor((Math.max(a[1],b[1])+1.2)/K);j++){const kk=i*4096+j;let l=g.get(kk);if(!l)g.set(kk,l=[]);l.push(sg)}}}
+  return(x,y,maxc=5)=>{let best=null;for(const sg of g.get(Math.floor(x/K)*4096+Math.floor(y/K))||[]){if(sg[5]>maxc)continue;const dx=sg[2]-sg[0],dy=sg[3]-sg[1],L=dx*dx+dy*dy;let t=L?((x-sg[0])*dx+(y-sg[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));
+      const ex=x-sg[0]-dx*t,ey=y-sg[1]-dy*t,d=Math.hypot(ex,ey),inn=sg[4]-d;if(!best||inn>best[0]){const l=Math.sqrt(L)||1;best=[inn,d>1e-6?ex/d:-dy/l,d>1e-6?ey/d:dx/l,sg[5]]}}return best}})();
+// settle(x,y,trig,clear): a thing standing more than trig metres inside a drawn carriageway steps out to clear metres
+// beyond its kerb (the side it was nearest); [x,y], or null when there is no room there (a building, another street).
+function settle(x,y,trig=.4,clear=.8){let k=KERB(x,y);if(!k||k[0]*M<=trig)return[x,y];
+  for(let n=0;n<4&&k&&k[0]*M>-clear+.05;n++){const mv=k[0]+clear/M;x+=k[1]*mv;y+=k[2]*mv;k=KERB(x,y)}
+  if(x<.2||y<.2||x>GX-.2||y>GY-.2||(k&&k[0]>0)||BLDG(x,y))return null;return[x,y]}
 function polyPath(c,flat){c.beginPath();c.moveTo(flat[0],flat[1]);for(let i=2;i<flat.length;i+=2)c.lineTo(flat[i],flat[i+1])}
 // vegetation mask from the 2024 NC OneMap aerial (1.5 m cells); everything else downtown is paved
 const VG=(()=>{const v=MAP.VG;if(!v)return null;const a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0,cur=0;row.split(',').forEach(t=>{const n=parseInt(t,16);if(cur)a.fill(1,j*v.w+i,j*v.w+i+n);i+=n;cur^=1})});return{r:v.r,w:v.w,h:v.h,a}})();
@@ -460,7 +479,7 @@ const bbOf=f=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(let i=0;i<f.length;i+=2){co
 for(const r of MAP.R)r._bb=bbOf(r.p);for(const r of MAP.RL)r._bb=bbOf(r.p);for(const p of MAP.PK)p._bb=bbOf(p.p);for(const p of MAP.PL)p._bb=bbOf(p);for(const f of (MAP.FW||[]))f._bb=bbOf(f.p);for(const a of (MAP.GA||[]))a._bb=bbOf(a.p);
 let TG=null;const inTG=bb=>!TG||!(bb[0]>TG[2]||bb[2]<TG[0]||bb[1]>TG[3]||bb[3]<TG[1]);
 // pools, courts, playgrounds, brick paving, benches and the like (public/details.js, from public/model/details.json)
-const DT=makeDetails(DET,{P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,snowy:()=>S.wx==='snow',HI,SH});
+const DT=makeDetails(DET,{settle,P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,snowy:()=>S.wx==='snow',HI,SH});
 // The ground texture: one texel per 1.5 m. Where the 2022 aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
 const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
@@ -469,6 +488,24 @@ function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),g
   const GCa=MAP.GC?(()=>{const v=MAP.GC,a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0;row.split(',').forEach(t=>{const cls=parseInt(t[0],36),n=parseInt(t.slice(1),36);a.fill(cls,j*v.w+i,j*v.w+i+n);i+=n})});return a})():null;
   const kinds=['walk','road','grass','grass','grass','road','walk','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
   const cls=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)cls[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
+  // The aerial's "asphalt" away from anything mapped as paved (a street, a drive, a parking lot) is mostly shadow, bare
+  // soil and leafless crowns: grey blotches across lawns and back yards. Such a cell stays only where the ground is
+  // solidly asphalt for 20 m around (a yard, an unmapped lot); the rest takes the kind of ground next to it.
+  if(GCa){const mc=mk(gw,gh),m=mc.getContext('2d',{willReadFrequently:true});m.setTransform(R,0,0,R,0,0);m.fillStyle=m.strokeStyle='#fff';m.lineCap=m.lineJoin='round';
+    for(const p of MAP.PL){polyPath(m,p);m.closePath();m.fill();m.lineWidth=6/M;m.stroke()}
+    for(const r of MAP.R){polyPath(m,r.p);if(r.ar){m.closePath();m.fill()}else{m.lineWidth=(RW[r.c]+(r.c<=4?8:6))/M;m.stroke()}}
+    const pv=m.getImageData(0,0,gw,gh).data,W1=gw+1;
+    // box(I,x,y,r): the sum of a square window from a summed table
+    const table=f=>{const I=new Int32Array(W1*(gh+1));for(let y=0;y<gh;y++){let row=0;for(let x=0;x<gw;x++){row+=f(y*gw+x);I[(y+1)*W1+x+1]=I[y*W1+x+1]+row}}return I};
+    const box=(I,x,y,r)=>{const x0=Math.max(0,x-r),y0=Math.max(0,y-r),x1=Math.min(gw,x+r+1),y1=Math.min(gh,y+r+1);return[I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0],(x1-x0)*(y1-y0)]};
+    const IA=table(q=>cls[q]===1?1:0),core=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){if(cls[y*gw+x]!==1)continue;const[a,n]=box(IA,x,y,6);if(a>=n*.8)core[y*gw+x]=1}
+    const IC=table(q=>core[q]),out=[];for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const q=y*gw+x;if(cls[q]===1&&pv[q*4]<128&&!box(IC,x,y,4)[0]){cls[q]=255;out.push(q)}}
+    // fill from the edges inwards with whatever lies next to each cell (not water), lawn where nothing does
+    let todo=out;for(let pass=0;pass<60&&todo.length;pass++){const next=[],set=[];for(const q of todo){const x=q%gw,y=(q-x)/gw,cnt=[0,0,0,0,0,0,0,0];let any=0;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const a=x+dx,b=y+dy;if(a<0||b<0||a>=gw||b>=gh)continue;const c=cls[b*gw+a];if(c!==255&&c!==1&&c!==5){cnt[c]++;any++}}
+        if(any){let k=2,best=0;for(let c=0;c<8;c++)if(cnt[c]>best){best=cnt[c];k=c}set.push(q,k)}else next.push(q)}
+      if(!set.length)break;for(let k=0;k<set.length;k+=2)cls[set[k]]=set[k+1];todo=next}
+    for(const q of todo)cls[q]=2}
   // The picture has two texels to each surveyed cell, and where two neighbours of a cell agree with each other but
   // not with it, that corner of the cell takes their kind (the "scale2x" rule), so the edge of a lawn or a patch of
   // paving runs in a line or a curve, not in 1.5 m stair-steps.
@@ -574,12 +611,17 @@ const pts0=[];
   let s=3;const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647};
   // the real trees (public/model/trees.json); without that file, fall back to the old guessed ones
   const real=loadTrees(TREES);
-  if(real.length)pts0.push(...real);
+  const railNear=(x,y,r)=>MAP.RL.some(l=>{const b=l._bb;if(b&&(x<b[0]||y<b[1]||x>b[2]||y>b[3]))return false;const q=l.p;for(let i=0;i<q.length-2;i+=2){const dx=q[i+2]-q[i],dy=q[i+3]-q[i+1],L=dx*dx+dy*dy;let t=L?((x-q[i])*dx+(y-q[i+1])*dy)/L:0;t=Math.max(0,Math.min(1,t));if(Math.hypot(x-q[i]-dx*t,y-q[i+1]-dy*t)*M<r)return true}return false});
+  // a real tree by the real kerb of a street drawn wider than it is steps out to the drawn kerb; one with no room is left out
+  if(real.length){for(const t of real){const q=settle(t.gx,t.gy,.4,.9);if(q&&!railNear(q[0],q[1],1.3)){t.gx=q[0];t.gy=q[1];pts0.push(t)}}}
   else for(let y=0;y<GY;y+=.8)for(let x=0;x<GX;x+=.8){const gx=x+rnd()*.7,gy=y+rnd()*.7;if(!at(px,gx,gy))continue;const inPark=parks.some(p=>pip(gx,gy,p));if(rnd()<(inPark?.5:isVeg(gx,gy)?.32:0))pts0.push({kind:'tree',gx,gy,h:9+rnd()*6,r:3+rnd()*2,sp:rnd()<.3?'loblolly':'willowoak',seed:rnd()})}
+  // (near(): is there a tree within r metres, for the lamps and the parked cars below)
+  const tcell=new Map();for(const t of pts0)if(t.kind==='tree'){const k=Math.floor(t.gx)*4096+Math.floor(t.gy);let a=tcell.get(k);if(!a)tcell.set(k,a=[]);a.push(t)}
+  const treeNear=(x,y,r)=>{for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)for(const t of tcell.get((Math.floor(x)+i)*4096+Math.floor(y)+j)||[])if(Math.hypot(t.gx-x,t.gy-y)*M<r)return true;return false};
   // street trees and lamps along main streets
   MAP.TR.forEach(t=>{const p=pairs(t.p);let acc=0,acc2=0;const offT=(RW[t.c]/2+2.6)/M,offL=(RW[t.c]/2+1.1)/M;for(let i=0;i<p.length-1;i++){const[a,b]=[p[i],p[i+1]];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(!L)continue;const ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L;for(let d=0;d<L;d+=.15){acc+=.15;acc2+=.15;const bx=a[0]+ux*d,by=a[1]+uy*d;
     if(acc2>12/M&&t.c<=3){acc2=0;for(const sd of [-1,1]){const gx=bx-uy*offT*sd,gy=by+ux*offT*sd;if(!real.length&&at(bpx,gx,gy)&&rnd()<.75)pts0.push({kind:'tree',gx,gy,h:7,r:2.5,sp:'willowoak',seed:rnd()})}}
-    if(acc>30/M&&t.c<=3){acc=0;const sd=rnd()<.5?1:-1;const gx=bx-uy*offL*sd,gy=by+ux*offL*sd;if(at(bpx,gx,gy)&&at(rpx,gx,gy))pts0.push({kind:'lamp',gx,gy})}}}});
+    if(acc>30/M&&t.c<=3){acc=0;const sd=rnd()<.5?1:-1;const gx=bx-uy*offL*sd,gy=by+ux*offL*sd;if(at(bpx,gx,gy)&&at(rpx,gx,gy)&&!treeNear(gx,gy,1.4))pts0.push({kind:'lamp',gx,gy})}}}});
   // parked cars in surface lots
   const carCols=['#e6e6ea','#e6e6ea','#ecebe6','#c4c8d0','#b9bec8','#9aa0aa','#6b7280','#4a4f5c','#2f2f38','#2f2f38','#a8483a','#34508c','#6a7f96','#7d8a6a','#8a6a54'];
   // Parked cars sit in the lots' real stalls (tools/model/prep.py lays them out along each lot's painted rows and
@@ -587,7 +629,9 @@ const pts0=[];
   // page says how busy it is (see "how busy it is" below: each car keeps a number u, and is shown while u is under
   // its lot's share of stalls in use). Without stalls, a plain grid.
   if(ST.length)ST.forEach((st,i)=>{const u=hash(i*.731+3,st[6]);if(u>.9)return;const[x,y,ux,uy]=stallFrame(st);const L=4.4/M,Wd=1.85/M,j=(hash(i,9)-.5)*.25/M;const cx=x+ux*j,cy=y+uy*j;
-    if(!at(bpx,cx,cy))return;const ty=carKind(hash(i*1.31,st[6]+5)),nose=hash(i,st[6]+2)<.82?1:-1,K=CARS[ty];pts0.push({kind:'car',gx:cx,gy:cy,ux:ux*nose,uy:uy*nose,ty,r:rect(cx,cy,ux,uy,K[0]/M,K[1]/M),col:carCols[Math.floor(hash(i,st[6]+1)*carCols.length)],u,row:st[7]})});
+    if(!at(bpx,cx,cy))return;const ty=carKind(hash(i*1.31,st[6]+5)),nose=hash(i,st[6]+2)<.82?1:-1,K=CARS[ty],box=rect(cx,cy,ux,uy,K[0]/M,K[1]/M);
+    // the whole car, not just its middle: no corner in a building, no tree growing through it, not on the tracks
+    if(box.some(q=>BLDG(q[0],q[1]))||treeNear(cx,cy,1.5)||railNear(cx,cy,2.2))return;pts0.push({kind:'car',gx:cx,gy:cy,ux:ux*nose,uy:uy*nose,ty,r:box,col:carCols[Math.floor(hash(i,st[6]+1)*carCols.length)],u,row:st[7]})});
   else MAP.PL.forEach((pl,li)=>{const q=pairs(pl);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const horiz=hash(li,5)<.5;const sx=(horiz?5.6:2.8)/M,sy=(horiz?2.8:5.6)/M;for(let y=Math.min(...ys)+sy;y<Math.max(...ys)-sy/2;y+=sy)for(let x=Math.min(...xs)+sx;x<Math.max(...xs)-sx/2;x+=sx){const ri=Math.round(((horiz?x-Math.min(...xs):y-Math.min(...ys)))/(5.6/M));if(ri%3===2)continue;if(!pip(x,y,q)||!at(bpx,x,y)||rnd()>.5)continue;const r=rect(x,y,horiz?1:0,horiz?0:1,4.3/M,1.9/M);pts0.push({kind:'car',gx:x,gy:y,ux:horiz?1:0,uy:horiz?0:1,ty:0,r,col:carCols[Math.floor(rnd()*carCols.length)]})}});
   // landmarks
   const ccp=MAP.PK.find(p=>p.n==='Center City Park');if(ccp&&!DT.points.some(o=>o.what==='jet')){const q=pairs(ccp.p);pts0.push({kind:'fountain',gx:q.reduce((a,p)=>a+p[0],0)/q.length,gy:q.reduce((a,p)=>a+p[1],0)/q.length})}
@@ -891,6 +935,13 @@ function clipLine(p,m=.6){const out=[];let cur=[];const x0=m,y0=m,x1=GX-m,y1=GY-
 const mkChain=(p,extra)=>{const cum=[0];for(let i=1;i<p.length;i++)cum.push(cum[i-1]+Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]));return{...extra,p,cum,L:cum[cum.length-1]}};
 const chains=MAP.TR.flatMap(t=>clipLine(pairs(t.p)).map(p=>mkChain(p,{n:t.n,c:t.c}))).filter(ch=>ch.L>2);
 function along(ch,d){d=Math.max(0,Math.min(ch.L-1e-6,d));let i=1;while(i<ch.cum.length-1&&ch.cum[i]<d)i++;const a=ch.p[i-1],b=ch.p[i];const seg=ch.cum[i]-ch.cum[i-1]||1;const t=(d-ch.cum[i-1])/seg;return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,(b[0]-a[0])/seg,(b[1]-a[1])/seg]}
+// Walkers keep to the sidewalk, two metres out from the drawn kerb; where a narrow street's shopfronts stand closer
+// than that (the street is drawn wider than it is), they keep in to the kerb instead of walking through the walls.
+// ch.wo[side]: the offset every 0.4 grid units along the chain, eased so nobody sidesteps.
+const WSTEP=.4;for(const ch of chains){const hw=RW[ch.c]/2;ch.wo={};for(const side of [-1,1]){const n=Math.ceil(ch.L/WSTEP)+1,o=new Float32Array(n);
+    for(let i=0;i<n;i++){const[gx,gy,ux,uy]=along(ch,i*WSTEP);let best=(hw+.5)/M;for(const m of [2,1.4,.9,.5]){const f=(hw+m)/M,x=gx-uy*f*side,y=gy+ux*f*side,g=(hw+m+.6)/M;if(!BLDG(x,y)&&!BLDG(gx-uy*g*side,gy+ux*g*side)){best=f;break}}o[i]=best}
+    const e=Float32Array.from(o,(v,i)=>Math.min(v,o[Math.max(0,i-1)],o[Math.min(n-1,i+1)]));ch.wo[side]=Float32Array.from(e,(v,i)=>(e[Math.max(0,i-1)]+2*v+e[Math.min(n-1,i+1)])/4)}}
+function walkOff(ch,d,side){const o=ch.wo[side],t=Math.max(0,Math.min(o.length-1.001,d/WSTEP)),i=Math.floor(t);return o[i]+(o[i+1]-o[i])*(t-i)}
 const carCols=['#e6e6ea','#ecebe6','#c4c8d0','#9aa0aa','#5c6270','#2f2f38',C.Brick,'#a8483a',C['Aggie blue'],C.Slate,'#3c8a9c',C.Tobacco,'#4f9a5c','#8a6a54'];
 const skins=['#f5d0ad','#e2a87e','#c3825a','#9a6040','#76462e','#553220'];
 const shirts=[C.Tobacco,C['Aggie blue'],C.Brick,C.Pine,C.Paper,C['Haw River'],'#b04ec0',C.Slate,'#ff7a9a'];
@@ -944,7 +995,8 @@ const XWALK=(()=>{const cw=[],bars=[];
       const gives=a.i&&(a.i.sign==='stop'||a.i.sign==='yield');if(!n.signal&&!gives&&!(n.rb&&!l.rb))continue;
       // a point d (grid units) out along the arm, with the direction pointing away from the junction
       const at=d=>{d=Math.min(d,l.L*.45);if(a.o){return along(l.ch,d)}const q=along(l.ch,l.L-d);return[q[0],q[1],-q[2],-q[3]]};
-      const w=RW[l.c],[x,y,ux,uy]=at((wmax/2+(n.rb?3.4:2.2))/M);cw.push([x,y,ux,uy,w]);
+      const w=RW[l.c],[x,y,ux,uy]=at((wmax/2+(n.rb?3.4:2.2))/M);if(rideZ('road',x,y))continue; // none painted on a bridge deck (it is drawn above the ground's paint)
+      cw.push([x,y,ux,uy,w]);
       if(a.i&&(n.signal||a.i.sign==='stop')){const[bx,by,bu,bv]=at((wmax/2+(n.rb?5.5:4.3))/M),rx=bv,ry=-bu,h0=a.o?.25/M:-(w/2-.4)/M,h1=(w/2-.4)/M;
         bars.push([bx+rx*h0,by+ry*h0,bx+rx*h1,by+ry*h1])}}}
   return{cw,bars}})();
@@ -957,6 +1009,9 @@ function light(l){if(!l.to.signal||l.inner)return null;let t=((T+l.to.offset)%CY
 // widest street at the junction, the stop bar at 4.3 m); on a piece of street shorter than that, at its start.
 // SHORT: a piece of street too short to wait on (the link between a divided street's carriageways, a roundabout's ring).
 const CARL=4.6/9,stopBack=l=>Math.min((RW[l.to.cls]/2+6.9)/M,Math.max(0,l.L-.15));
+// Where each approach's signal or stop sign stands: at the stop line, on the right. On a short approach that spot can
+// fall in the cross street's carriageway: there the post steps out to the kerb, or is left out when there is no room.
+for(const l of TF.lanes){const s_=Math.max(0,l.L-Math.min((RW[l.to.cls]/2+4.3)/M,l.L*.45)),[gx,gy,ux,uy]=along(l.ch,s_),off=(RW[l.c]/2+1.4)/M;l.post=settle(gx-uy*off,gy+ux*off,.3,.7);if(l.post&&BLDG(l.post[0],l.post[1]))l.post=null}
 const tcars=[];if(new URLSearchParams(location.search).has('debug'))window.__tf={TF,tcars,light,train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
 (function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s)}}})();
 function addCar(l,s){const c={lane:l,s,v:.6,ty:carKind(Math.random()),col:carCols[Math.floor(Math.random()*carCols.length)],v0:(l.c<=2?1.5:1.15)*(.88+Math.random()*.24),wait:0,go:false,off:null};l.cars.push(c);l.cars.sort((a,b)=>b.s-a.s);tcars.push(c);return c}
@@ -1092,6 +1147,9 @@ people.forEach((p,i)=>{p.rk=hash(i*.37+1,5)/(/Elm Street/.test(p.ch.n||'')?1:p.c
 /** Take the page's estimate (scene.act) and street counts (scene.volumes). True if the still tiles must be redrawn. */
 function setActivity(scene){if(scene.volumes!==undefined)setVolumes(scene.volumes);const a=scene.act;if(!a)return false;const first=!ACT;ACT=a;
   walkLv=a.walk;setTraffic(a.hourShare,first);return setParking(a)}
+// ?debug: the model's own lists, for scripts/audit-geometry.mjs (what stands where, after all placement rules have run)
+if(DBG)window.__audit={MAP,DET,blds,pts0,people,chains,TF,XWALK,XING,ST,RW,M,GX,GY,DECKS,DT,along,pip,rideZ,walkOff,
+  view:()=>{const g=(mx,my)=>{const a=(mx-BOX)/TW,b=(my-BOY)/TH;return[(a+b)/2,(b-a)/2]};return{c:g(camX+VWm()/2,camY+VHm()/2),tl:g(camX,camY),br:g(camX+VWm(),camY+VHm()),vs:VS}}};
 if(DBG)window.__busy=()=>({cars:tcars.length,carTarget,seed:SEED,walkers:people.filter(p=>p.rk<walkLv).length,walkersAll:people.length,parked:lotCars.filter(o=>!o.hid).length,stalls:ST.length,act:ACT});
 
 // ---------- the house up the street: her day ----------
@@ -1291,6 +1349,8 @@ function tileBudget(now){const iv=now-tbLast,inF=tbEnd-tbLast,tw=tbTw;tbLast=now
   tbSince=tw>.3?0:tbSince+1;if(tbSince<tbGap)return 0;
   return other<base*.5?Math.min(TB,Math.max(1.5,base-other-3)):TB}
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
+// ?flat: no tilt-shift blur and no vignette, so every part of a screenshot is equally sharp (scripts/audit-tiles.mjs)
+const FLAT=QS.has('flat');if(FLAT&&LY)for(const e of [LY.bt,LY.bb,LY.vig])e.style.visibility='hidden';
 function frame(ts){const F0=performance.now();
   if(BM){bmT=performance.now();bmF={t:bmT,fit:tm.fit,inp:tm.inp,ml:tm.ml,pl:tm.pl,ev:evs.splice(0)};tm.fit=tm.inp=tm.ml=tm.pl=0}
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;if(!reduce)T+=dt;
@@ -1324,10 +1384,10 @@ function frame(ts){const F0=performance.now();
   for(const c of tcars){let[px,py,ux,uy]=lanePos(c.lane,Math.min(c.s,c.lane.L));if(c.off){let k=Math.max(0,1-c.s/c.off[2]);k=k*k*(3-2*k);px+=c.off[0]*k;py+=c.off[1]*k;if(c.off[3]!=null){const hx=ux+(c.off[3]-ux)*k,hy=uy+(c.off[4]-uy)*k,hl=Math.hypot(hx,hy);if(hl>.2){ux=hx/hl;uy=hy/hl}}if(k<=0)c.off=null}if(!vis(px,py))continue;
     dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,ty:c.ty,stopped:c.stopped,z:rideZ('road',px,py)})}
   // the lights themselves, and stop signs, at the stop line on the right of each approach
-  for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;const s_=Math.max(0,l.L-Math.min((RW[l.to.cls]/2+4.3)/M,l.L*.45));const[gx,gy,ux,uy]=along(l.ch,s_);const off=(RW[l.c]/2+1.4)/M;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
+  for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;if(!l.post)continue;const[px,py]=l.post;if(!vis(px,py))continue;
     dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
   for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;const d0=p.ch.d0||0,d1=p.ch.d1==null?p.ch.L:p.ch.d1;if(p.d>d1||p.d<d0){p.dir=p.d>d1?-1:1;p.d=Math.max(d0,Math.min(d1,p.d))}}if(p.rk>=walkLv)continue;
-    const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py)})}
+    const[gx,gy,ux,uy]=along(p.ch,p.d);const off=walkOff(p.ch,p.d,p.side)*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py)})}
   if(HD)HD.add(dyn,vis);
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
   // crowds only where something is actually on: events at a venue, council in session, open bars after dark
@@ -1431,7 +1491,7 @@ function frame(ts){const F0=performance.now();
   if(FT.de)ctx.drawImage(Ec,0,0);if(FT.dg){ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over'}
   BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
-  if(HASFILTER){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
+  if(HASFILTER&&!FLAT){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
     // the mask is clear between 30% and 68% of the height, so only the two bands are laid on
     const m1=Math.ceil(H*.3)+1,m2=Math.floor(H*.68)-1;ctx.drawImage(Tc,0,0,W,m1,0,0,W,m1);ctx.drawImage(Tc,0,m2,W,H-m2,0,m2,W,H-m2)}
   }
@@ -1440,7 +1500,7 @@ function frame(ts){const F0=performance.now();
   const tw=byId.tower,pnls=[];if(tw&&tw.lantern){const txt=blink(T,5,3)||reduce||L.tempF==null?fmtTime(D):(Math.round(L.tempF)+'°F');oc.setTransform(VS,0,0,VS,0,0);for(const wl of visWalls(tw.lantern))pnls.push(lanternSign(oc,wl,tw.lanternZ,tw.lanternTop,txt));oc.setTransform(1,0,0,1,0,0)}
   if(!VGR||VGR.W!==W||VGR.H!==H){VGR=oc.createRadialGradient(W/2,H/2,H*.45,W/2,H/2,W*.62);VGR.addColorStop(0,'rgba(20,10,30,0)');VGR.addColorStop(1,'rgba(20,10,30,.22)');VGR.W=W;VGR.H=H}
   // layers mode: the vignette is an element under this canvas, so the sign (which the vignette used to cover) gets its share here
-  if(!LY){oc.fillStyle=VGR;oc.fillRect(0,0,W,H)}else if(pnls.length){oc.save();oc.setTransform(VS,0,0,VS,0,0);const cp=new Path2D();for(const q of pnls){q.forEach(([x,y],i)=>i?cp.lineTo(x,y):cp.moveTo(x,y));cp.closePath()}oc.clip(cp);oc.setTransform(1,0,0,1,0,0);oc.fillStyle=VGR;oc.fillRect(0,0,W,H);oc.restore()}
+  if(FLAT){}else if(!LY){oc.fillStyle=VGR;oc.fillRect(0,0,W,H)}else if(pnls.length){oc.save();oc.setTransform(VS,0,0,VS,0,0);const cp=new Path2D();for(const q of pnls){q.forEach(([x,y],i)=>i?cp.lineTo(x,y):cp.moveTo(x,y));cp.closePath()}oc.clip(cp);oc.setTransform(1,0,0,1,0,0);oc.fillStyle=VGR;oc.fillRect(0,0,W,H);oc.restore()}
   BM&&bm('sign');
   // labels, signposts and the highlight keep a steady size on screen: drawn in label pixels (LS canvas pixels each)
   {const ctx=lx,LS=LSO,kx=lc.width/W,ky=lc.height/H;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,lc.width,lc.height);

@@ -355,6 +355,8 @@ npm run serve</code></pre>
     <tr><td><code>npm run civic</code>, <code>npm run crime</code>, <code>npm run eats</code></td><td>One collector on its own</td></tr>
     <tr><td><code>node scripts\serve.mjs 9000</code></td><td>Serves on another port</td></tr>
     <tr><td><code>npm run bench</code></td><td>The performance benchmark (needs Playwright; see docs/PERFORMANCE.md)</td></tr>
+    <tr><td><code>npm run audit:geometry</code></td><td>Lists things standing where they cannot be: trees, lamps, props, parked cars, walkers and signal posts in a street, on the tracks or inside a building, crosswalks on bridges, buildings that overlap (needs Playwright)</td></tr>
+    <tr><td><code>npm run audit:tiles -- --out dir</code></td><td>Screenshots the whole model close up, tile by tile, day and night, for a visual check (needs Playwright; <code>?flat</code> turns the blur and vignette off)</td></tr>
   </table></div>
   <p>To set a single key for one Command Prompt window without a file, use <code>set DRIVENC_KEY=your-key</code> and then run the command.</p>
 </section>
