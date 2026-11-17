@@ -46,6 +46,8 @@ for e in d['elements']:
         if not any(inreg(x,y,3) for x,y in pts): continue
         area=t.get('area')=='yes' or (t['highway']=='pedestrian' and pts[0]==pts[-1])
         R.append({'c':rcls[t['highway']],'n':t.get('name',''),'p':flat(pts),'ar':1 if area else 0,'ow':1 if t.get('oneway')=='yes' else 0})
+        # a roundabout's ring: one way round (OpenStreetMap leaves the oneway tag off), and no crosswalks painted on it
+        if t.get('junction') in ('roundabout','circular') and not area: R[-1]['rb']=1
         if t.get('bridge') in ('yes','viaduct') and not area: R[-1]['br']=1;R[-1]['ln']=t.get('lanes','')
     elif t.get('railway')=='rail':
         if not any(inreg(x,y,3) for x,y in pts): continue

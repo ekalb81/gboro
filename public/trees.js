@@ -133,7 +133,7 @@ export function drawTree(c, o, h) {
   // leaves on the ground, blown a little downwind
   if (lk.litter > 0.05) {
     // a soft carpet under the crown (an iso ellipse), a few loose leaves around its edge
-    const lc = mix(lk.litterCol, '#a8865a', 0.35), n = Math.round(rp * rp * 0.35 * lk.litter);
+    const lc = mix(lk.litterCol, '#a8865a', 0.35), n = Math.round(rp * rp * 0.26 * lk.litter);
     for (let k = 0; k < n; k++) {
       const a = hash(s * 91 + k, 3.3) * 7, d = Math.pow(hash(k, s * 17), 0.8) * rp * 0.95;
       const gx = x + Math.cos(a) * d + lx * 0.5, gy = y + Math.sin(a) * d * 0.5 + 1;
@@ -191,23 +191,38 @@ export function drawTree(c, o, h) {
   ry = Math.min(ry, hp * 0.48);
   const top = L(cy), ccx = top[0], ccy = top[1] - hp * cy;
 
-  // trunk(s) and the branches you see when the leaves are off
+  // The tree's frame: a trunk up to the fork, then a few limbs that reach out and turn up to the edge of the crown,
+  // each ending in a couple of twigs. It is drawn whenever the crown is thin enough to see through, and the leaf
+  // clumps below sit on the limb ends and twigs, so a tree losing its leaves keeps tufts on its branches (not a ball
+  // on a stick) and a bare one reads as a tree (not a fan of spikes).
   const bare = 1 - lk.leaf;
-  for (let k = 0; k < stems; k++) {
-    const off = stems > 1 ? (k - 1) * 1.5 : 0;
-    line(c, [x + 0.5 + off * 0.5, y], [ccx + 0.5 + off, ccy + ry * 0.4], k ? trunk : trunkD, stems > 1 ? 1 : hp > 30 ? 2 : 1.5);
-  }
-  if (bare > 0.15) {
-    const nb = shape === 'small' || shape === 'crape' ? 5 : 7;
-    for (let k = 0; k < nb; k++) {
-      const a = (-160 + (k / (nb - 1)) * 140 + (hash(s, k) - 0.5) * 20) * rad;
-      const bx = ccx + Math.cos(a) * rx * 0.95, by = ccy + Math.sin(a) * ry * 0.95 + ry * 0.15;
-      const sx = ccx + (bx - ccx) * 0.15, sy = ccy + ry * 0.35;
-      line(c, [sx, sy], [bx, by], mix(trunk, '#b8a898', 0.25 + 0.2 * (k % 2)), 1);
-      // twigs
-      line(c, [bx, by], [bx + Math.cos(a - 0.5) * 2.5, by + Math.sin(a - 0.5) * 2.5], mix(trunk, '#c8bcb0', 0.4), 1);
+  const low = shape === 'small' || shape === 'crape' || shape === 'multi';
+  const fk = low ? 0.2 : shape === 'vase' ? 0.3 : 0.36;
+  const fx = x + lx * fk + 0.5, fy = y - hp * fk;
+  const tw = hp > 30 ? 2.4 : hp > 18 ? 1.8 : 1.3;
+  const wood = mix(trunk, SH, 0.2), twigC = mix(trunk, '#a89886', 0.35);
+  const nL = low ? 3 + (rp > 6 ? 1 : 0) : 3 + (rp > 7 ? 1 : 0) + (rp > 11 ? 1 : 0);
+  const limbs = [];
+  for (let k = 0; k < nL; k++) {
+    const a = (-152 + ((k + 0.5) / nL) * 124 + (hash(s, k) - 0.5) * 16) * rad;
+    const ex = ccx + Math.cos(a) * rx * 0.62, ey = ccy + Math.sin(a) * ry * 0.66;
+    const mx = fx + (ex - fx) * 0.62, my = fy + (ey - fy) * 0.34;      // out first, then up
+    const tips = [];
+    for (const da of hp > 13 ? [-0.55, 0.5] : [0]) {
+      const b = a + da + (hash(k, s * 3 + da) - 0.5) * 0.3, tl = 0.3 + hash(s * 5, k + da) * 0.16;
+      tips.push([ex + Math.cos(b) * rx * tl, ey + Math.sin(b) * ry * tl]);
     }
+    limbs.push({ ex, ey, mx, my, tips });
   }
+  if (stems > 1) for (let k = 0; k < nL; k++) line(c, [x + 0.5 + (k - (nL - 1) / 2) * 0.9, y], [limbs[k].mx, limbs[k].my], k % 2 ? trunk : trunkD, 1);
+  else line(c, [x + 0.5, y], [fx, fy], trunkD, tw);
+  if (bare > 0.08) {
+    for (const q of limbs) {
+      if (stems === 1) line(c, [fx, fy], [q.mx, q.my], wood, Math.max(1, tw * 0.6));
+      line(c, [q.mx, q.my], [q.ex, q.ey], wood, 1);
+      for (const t of q.tips) line(c, [q.ex, q.ey], t, twigC, 0.8);
+    }
+  } else if (stems === 1) line(c, [fx, fy], [ccx + 0.5, ccy + ry * 0.4], trunkD, Math.max(1, tw * 0.7));
   // blossom on bare branches (red maple, pear, redbud)
   if (lk.bloomAmt > 0 && lk.bloomBare) {
     const n = Math.round(rx * ry * 1.1 * lk.bloomAmt);
@@ -220,10 +235,14 @@ export function drawTree(c, o, h) {
   if (lk.leaf > 0.02) {
     const shade = mix(lk.col, SH, 0.28);
     const nC = Math.max(5, Math.round((rx * ry) / 9));
-    const clumps = [];
-    for (let k = 0; k < nC; k++) {
-      const a = hash(s * 13 + k, 2.7) * 7, d = Math.sqrt(hash(k + 0.5, s * 5)) * 0.72;
-      clumps.push({ cx: ccx + Math.cos(a) * d * rx, cy: ccy + Math.sin(a) * d * ry, r: Math.max(2, Math.min(rx, ry) * (0.42 + hash(k, 4.4) * 0.2)), u: hash(k * 1.7, s * 9), alt: hash(k, s * 11) < 0.4 });
+    // the clumps: one on each limb end and twig (the last to go), the rest filling the crown (the first to fall)
+    const clumps = [], r0 = Math.min(rx, ry), thin = 0.72 + 0.28 * lk.leaf;
+    const anch = limbs.flatMap((q) => [[q.ex, q.ey, 0.3]]).concat(limbs.flatMap((q) => q.tips.map((t) => [t[0], t[1], 0.62])));
+    for (let k = 0; k < Math.max(nC, anch.length); k++) {
+      const an = anch[k];
+      if (an) { clumps.push({ cx: an[0], cy: an[1], r: Math.max(1.8, r0 * (0.36 + hash(k, 4.4) * 0.14) * thin), u: hash(k * 1.7, s * 9) * an[2], alt: hash(k, s * 11) < 0.4 }); continue; }
+      const a = hash(s * 13 + k, 2.7) * 7, d = Math.sqrt(hash(k + 0.5, s * 5)) * 0.6;
+      clumps.push({ cx: ccx + Math.cos(a) * d * rx, cy: ccy + Math.sin(a) * d * ry, r: Math.max(2, r0 * (0.42 + hash(k, 4.4) * 0.2) * thin), u: 0.45 + hash(k * 1.7, s * 9) * 0.55, alt: hash(k, s * 11) < 0.4 });
     }
     clumps.sort((a, b) => a.cy - b.cy);
     // dark underside first, then the lit clumps, then highlights toward the sun (upper left)
