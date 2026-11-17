@@ -163,8 +163,9 @@ const PART=Object.fromEntries((MAP.PT||[]).map(p=>[p.id,p]));
   MAP.B.push({id:467218959,p:PART[467218959].p,l:18,h:65,t:'office',n:'Jefferson Standard Building'})})();
 // Bridges (MAP.DK, from prep.py): each deck is a slab that takes its place among the buildings, so it is drawn in the
 // right order and hides what passes under or behind it. A road bridge's span stands on piers and its approaches are
-// stepped ramps of fill; a rail bridge is a low girder plate the tracks cross on while the street dips under it; a
-// skywalk is a glazed box above the street. Cars, people and trains on a deck ride at its height (rideZ).
+// ramps of fill whose tops slope evenly down to the street (tools/model/bridges.py; a ramp piece carries its slope
+// in dk.sl); a rail bridge is a low girder plate the tracks cross on while the street dips under it; a skywalk is a
+// glazed box above the street. Cars, people and trains on a deck ride at its height (rideZ).
 (MAP.DK||[]).forEach((d,i)=>MAP.B.push({id:9200000000+i,p:d.p,t:'bridge',n:'',dk:d}));
 // The house up the street (model/house.json, drawn close up by house.js): here its outline is the measured one, it gets
 // its own walls and roof, and the one who lives there goes about her made-up day on the lot (see HD below). It carries
@@ -193,7 +194,9 @@ const blds=MAP.B.map((b,i)=>{
   const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
   const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
-  if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt}
+  if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt;if(b.dk.cl&&Array.isArray(b.dk.cl[0]))o.cls=b.dk.cl.map(pairs);
+    // a ramp's top is a tilted plane: z = sl[0] + sl[1]*gx + sl[2]*gy (model pixels), kept between its two end heights
+    if(b.dk.sl){const[ax,ay,za,bx,by,zb]=b.dk.sl,dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1,kx=(zb-za)*ZPM*dx/L2,ky=(zb-za)*ZPM*dy/L2,k0=za*ZPM-kx*ax-ky*ay,lo=Math.min(za,zb)*ZPM,hi=Math.max(za,zb)*ZPM;o.sl=[k0,kx,ky];o.zf=(x,y)=>Math.max(lo,Math.min(hi,k0+kx*x+ky*y))}}
   else if(o.special==='tower'){o.wall='#ece4d2';o.roof='#cfc6b3';o.win=3.2;o.cornice=1}
   else if(o.special==='home'){o.wall=HOME.house.wall;o.roof=HOME.house.roof;o.hip=1}
   else if(o.special==='homeshed'){o.wall=HOME.shed.wall;o.roof=HOME.shed.roof;o.hip=1}
@@ -232,7 +235,9 @@ const blds=MAP.B.map((b,i)=>{
 const byId={};blds.forEach(b=>{byId[b.id]=b;if(b.special)byId[b.special]=b});
 const DECKS=blds.filter(b=>b.deck);
 /** How high (model pixels) something at (gx,gy) rides: on a road deck for 'road', on a rail bridge for 'rail', else 0. */
-function rideZ(kind,gx,gy){let z=0;for(const b of DECKS){if(b.deck!==kind||gx<b.minx||gx>b.maxx||gy<b.miny||gy>b.maxy||b.hpx<=z)continue;if(pip(gx,gy,b.pts))z=b.hpx}return z}
+function rideZ(kind,gx,gy,ux,uy){let z=0;for(const b of DECKS){if(b.deck!==kind||gx<b.minx||gx>b.maxx||gy<b.miny||gy>b.maxy||b.hpx<=z)continue;if(!pip(gx,gy,b.pts)||ux!=null&&b.cls&&!runsAlong(b.cls,gx,gy,ux,uy))continue;const h=b.zf?b.zf(gx,gy):b.hpx;if(h>z)z=h}return z}
+/** Whether something heading (ux,uy) at (gx,gy) goes the deck's way (it is on the bridge), not across it (it is on the street underneath). */
+function runsAlong(cls,gx,gy,ux,uy){let bd=1e9,dot=1;for(const l of cls)for(let i=0;i<l.length-1;i++){const a=l[i],q=l[i+1],dx=q[0]-a[0],dy=q[1]-a[1],L2=dx*dx+dy*dy;if(!L2)continue;const t=Math.max(0,Math.min(1,((gx-a[0])*dx+(gy-a[1])*dy)/L2)),d=Math.hypot(a[0]+dx*t-gx,a[1]+dy*t-gy);if(d<bd){bd=d;dot=Math.abs(ux*dx+uy*dy)/Math.sqrt(L2)}}return dot>.75}
 // Draw order. Sorting by the middle of each footprint goes wrong for long or L-shaped buildings, so order every pair
 // that can overlap on screen by looking along the line of sight: on a vertical screen line (gx-gy fixed) the building
 // whose footprint is crossed first (smaller gx+gy) is farther away and is drawn first.
@@ -291,16 +296,22 @@ function paintRails(c,lines,bed){
   for(const r of lines){polyPath(c,r);c.strokeStyle=C.Tin;c.lineWidth=2.0/M;c.stroke();polyPath(c,r);c.strokeStyle=bed?gcol('#8a6046','grass'):gcol('#6f6c72','road');c.lineWidth=1.45/M;c.stroke()}}
 function drawDeck(c,b){const d=b.dk,top=b.hpx,conc=gcol('#d6cfbf','walk'),asph=gcol(S.wx==='rain'?C['Wet asphalt']:C.Asphalt,'road');
   if(b.deck==='road'){
-    const deckTop=d.sp?gcol(mix(C.Asphalt,C.Concrete,.5),'road'):asph;
+    // one road surface from the street, up the ramps and over the span, so nothing changes colour at the joints
+    const Z=q=>b.zf?b.zf(q[0],q[1]):top,wallC=d.sp?conc:mix(conc,SH,.1),rail=mix(conc,SH,.2),railTop=mix(conc,HI,.35);
     for(const q of d.pr||[])drawPrism(c,pairs(q),0,b.z0,mix(C.Concrete,SH,.12),C.Concrete,true);
-    if(d.sp)drawPrism(c,b.pts,b.z0,top-b.z0,conc,deckTop);else drawPrism(c,b.pts,0,top,mix(conc,SH,.1),deckTop);
-    // the road on top: kerb lines, the centre line, lane dashes on a wide deck
-    onPlane(c,top,b.pts,()=>{const hw=d.w/2/M;
-      for(const e of d.ed||[]){polyPath(c,e);c.strokeStyle=conc;c.lineWidth=2.6/M;c.stroke()}
-      polyPath(c,d.cl);c.strokeStyle=gcol(C['Line gold'],'road');c.lineWidth=.75/M;c.stroke();polyPath(c,d.cl);c.strokeStyle=deckTop;c.lineWidth=.3/M;c.stroke();
-      if(d.w>=17)for(const e of d.ln||[]){polyPath(c,e);c.strokeStyle=gcol('#f4f1ea','road');c.lineWidth=.25/M;c.setLineDash([3/M,4/M]);c.stroke();c.setLineDash([])}});
-    // parapets along both edges
-    for(const e of d.ed||[]){const q=pairs(e);for(let i=0;i<q.length-1;i++){const a=q[i],k=q[i+1];poly(c,[P(a[0],a[1],top),P(k[0],k[1],top),P(k[0],k[1],top+2),P(a[0],a[1],top+2)],mix(conc,SH,.18))}}}
+    // no wall where the next piece of the same structure stands against this one
+    if(!b.vw)b.vw=visWalls(b.pts).filter(s=>{const mx=(s.a[0]+s.q[0])/2+s.nx*.06,my=(s.a[1]+s.q[1])/2+s.ny*.06,h=b.zf?b.zf(mx,my):top;return!DECKS.some(o=>o!==b&&o.deck==='road'&&o.z0<=b.z0+.01&&mx>o.minx&&mx<o.maxx&&my>o.miny&&my<o.maxy&&pip(mx,my,o.pts)&&(o.zf?o.zf(mx,my):o.hpx)>=h-1.5)});
+    for(const s of b.vw){const za=Z(s.a),zq=Z(s.q);if(za-b.z0<.3&&zq-b.z0<.3)continue;poly(c,[P(s.a[0],s.a[1],b.z0),P(s.q[0],s.q[1],b.z0),P(s.q[0],s.q[1],zq),P(s.a[0],s.a[1],za)],mix(wallC,SH,.32*(1-s.f)))}
+    const topC=surf(mix(asph,HI,.1),true);poly(c,b.pts.map(q=>P(q[0],q[1],Z(q))),topC,topC); // the thin outline closes the hairline seams between pieces
+    // the road on top: sidewalks, the gold centre (or median) line, dashed white lane lines
+    c.save();if(b.sl)c.transform(TW,TH-b.sl[1],-TW,TH-b.sl[2],ox,oy-b.sl[0]);else c.transform(TW,TH,-TW,TH,ox,oy-top);
+    c.beginPath();b.pts.forEach((q,i)=>i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]));c.closePath();c.clip();c.lineCap='butt';c.lineJoin='round';
+    for(const e of d.ed||[]){polyPath(c,e);c.strokeStyle=conc;c.lineWidth=3.6/M;c.stroke()}
+    for(const e of d.gl||[]){polyPath(c,e);c.strokeStyle=gcol(C['Line gold'],'road');c.lineWidth=.75/M;c.stroke();polyPath(c,e);c.strokeStyle=topC;c.lineWidth=.3/M;c.stroke()}
+    for(const e of d.wl||[]){polyPath(c,e);c.strokeStyle=gcol('#f4f1ea','road');c.lineWidth=.25/M;c.setLineDash([3/M,4/M]);c.stroke();c.setLineDash([])}
+    c.restore();
+    // parapets along both edges, following the slope
+    for(const e of d.ed||[]){const q=pairs(e);for(let i=0;i<q.length-1;i++){const a=q[i],k=q[i+1],za=Z(a),zk=Z(k);if(za<.5&&zk<.5)continue;poly(c,[P(a[0],a[1],za),P(k[0],k[1],zk),P(k[0],k[1],zk+2.6),P(a[0],a[1],za+2.6)],rail);line(c,P(a[0],a[1],za+2.6),P(k[0],k[1],zk+2.6),railTop,.7)}}}
   else if(b.deck==='rail'){
     drawPrism(c,b.pts,0,top,'#4b4f5c',gcol(C['Red clay'],'grass'));
     onPlane(c,top,b.pts,()=>paintRails(c,d.rl||[],1));
@@ -464,11 +475,24 @@ const DT=makeDetails(DET,{P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,li
 // The ground texture: one texel per 1.5 m. Where the 2022 aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
 const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
-let GTEX=null;
+let GTEX=null,GCLS=null;
+// The aerial was flown in February, and the long winter shadows of buildings and bare trees on lawns were read as
+// asphalt: grey blotches in the grass. A patch of "asphalt" that no mapped street, drive or parking lot accounts for
+// takes the kind of ground that surrounds it instead.
+function dropShadows(cls,gw,gh,R){
+  const mc=mk(gw,gh),m=mc.getContext('2d',{willReadFrequently:true});m.setTransform(R,0,0,R,0,0);m.lineCap='round';m.lineJoin='round';m.fillStyle=m.strokeStyle='#fff';
+  MAP.R.forEach(r=>{polyPath(m,r.p);if(r.ar){m.closePath();m.fill();m.lineWidth=4/M;m.stroke()}else{m.lineWidth=(RW[r.c]+7)/M;m.stroke()}});
+  (MAP.PL||[]).forEach(p=>{polyPath(m,p);m.closePath();m.fill();m.lineWidth=5/M;m.stroke()});
+  const md=m.getImageData(0,0,gw,gh).data,N=gw*gh,loose=i=>cls[i]===1&&md[i*4]<128,seen=new Uint8Array(N),stack=new Int32Array(N),tally=new Int32Array(8);
+  for(let s0=0;s0<N;s0++){if(seen[s0]||!loose(s0))continue;let n=0,top=0;stack[top++]=s0;seen[s0]=1;tally.fill(0);
+    while(n<top){const i=stack[n++],x=i%gw;for(const j of [x?i-1:-1,x<gw-1?i+1:-1,i-gw,i+gw]){if(j<0||j>=N)continue;if(loose(j)){if(!seen[j]){seen[j]=1;stack[top++]=j}}else tally[cls[j]&7]++}}
+    let best=1,bn=tally[1]/1.5;for(let k=0;k<8;k++)if(k!==1&&k!==6&&tally[k]>bn){bn=tally[k];best=k}
+    if(best!==1)for(let q=0;q<top;q++)cls[stack[q]]=best}}
 function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),gh=Math.ceil(GY*R);
-  const GCa=MAP.GC?(()=>{const v=MAP.GC,a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0;row.split(',').forEach(t=>{const cls=parseInt(t[0],36),n=parseInt(t.slice(1),36);a.fill(cls,j*v.w+i,j*v.w+i+n);i+=n})});return a})():null;
+  const GCa=MAP.GC&&!GCLS?(()=>{const v=MAP.GC,a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0;row.split(',').forEach(t=>{const cls=parseInt(t[0],36),n=parseInt(t.slice(1),36);a.fill(cls,j*v.w+i,j*v.w+i+n);i+=n})});return a})():null;
   const kinds=['walk','road','grass','grass','grass','road','walk','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
-  const cls=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)cls[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
+  // the kind of ground in each cell, worked out once (the colours change with the light, the kinds do not)
+  const cls=GCLS||(GCLS=(()=>{const a=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)a[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;if(GCa)dropShadows(a,gw,gh,R);return a})());
   // The picture has two texels to each surveyed cell, and where two neighbours of a cell agree with each other but
   // not with it, that corner of the cell takes their kind (the "scale2x" rule), so the edge of a lawn or a patch of
   // paving runs in a line or a curve, not in 1.5 m stair-steps.
@@ -572,8 +596,15 @@ const pts0=[];
   const at=(d,x,y)=>{if(x<=.3||y<=.3||x>=GX-.3||y>=GY-.3)return false;const i=((Math.floor(y*R))*mw+Math.floor(x*R))*4;return d[i]>128};
   const parks=MAP.PK.map(p=>pairs(p.p));
   let s=3;const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647};
+  // A surveyed tree whose crown hangs over a street can come out with its trunk on the roadway or the tracks (the
+  // model also paints one-way roadways wider than they are): such a tree is stood just behind the kerb or clear of
+  // the rails, or left out if that is more than a few metres away.
+  const hard=[];MAP.R.forEach(r=>{if(r.ar||r.c>5)return;const hw=(RW[r.c]/2+1.2)/M;for(let i=2;i<r.p.length;i+=2)hard.push([r.p[i-2],r.p[i-1],r.p[i],r.p[i+1],hw])});
+  MAP.RL.forEach(r=>{for(let i=2;i<r.p.length;i+=2)hard.push([r.p[i-2],r.p[i-1],r.p[i],r.p[i+1],2.6/M])});
+  const deepest=(gx,gy)=>{let best=null,bd=.02;for(const h of hard){const hw=h[4];if(gx<Math.min(h[0],h[2])-hw||gx>Math.max(h[0],h[2])+hw||gy<Math.min(h[1],h[3])-hw||gy>Math.max(h[1],h[3])+hw)continue;const dx=h[2]-h[0],dy=h[3]-h[1],L2=dx*dx+dy*dy,t=L2?Math.max(0,Math.min(1,((gx-h[0])*dx+(gy-h[1])*dy)/L2)):0,qx=h[0]+dx*t,qy=h[1]+dy*t,d=Math.hypot(gx-qx,gy-qy);if(hw-d>bd){bd=hw-d;best=[qx,qy,d,hw]}}return best};
+  const offRoad=o=>{let x=o.gx,y=o.gy;for(let k=0;k<3;k++){const h=deepest(x,y);if(!h){if(k){o.gx=x;o.gy=y}return true}const[qx,qy,d,hw]=h;if(d<1e-4)return false;x=qx+(x-qx)/d*(hw+.03);y=qy+(y-qy)/d*(hw+.03);if(Math.hypot(x-o.gx,y-o.gy)>4.5/M)return false}return false};
   // the real trees (public/model/trees.json); without that file, fall back to the old guessed ones
-  const real=loadTrees(TREES);
+  const real=loadTrees(TREES).filter(offRoad);
   if(real.length)pts0.push(...real);
   else for(let y=0;y<GY;y+=.8)for(let x=0;x<GX;x+=.8){const gx=x+rnd()*.7,gy=y+rnd()*.7;if(!at(px,gx,gy))continue;const inPark=parks.some(p=>pip(gx,gy,p));if(rnd()<(inPark?.5:isVeg(gx,gy)?.32:0))pts0.push({kind:'tree',gx,gy,h:9+rnd()*6,r:3+rnd()*2,sp:rnd()<.3?'loblolly':'willowoak',seed:rnd()})}
   // street trees and lamps along main streets
@@ -630,9 +661,9 @@ function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(
 // small scratch card, the outlines of whatever stands in front are cut out of the card, and the rest goes onto the
 // picture. Nothing in front is ever painted again, so nearer buildings never get painted over.
 function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;const p=new Path2D(),polys=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-  const prism=(pts,h,z0=0)=>{const n=pts.length;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();polys.push(q);q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
-    add(pts.map(q=>P(q[0],q[1],z0)));add(pts.map(q=>P(q[0],q[1],h)));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1],z0),P(c[0],c[1],z0),P(c[0],c[1],h),P(a[0],a[1],h)])}};
-  if(b.deck)prism(b.pts,b.hpx+3,b.z0);
+  const prism=(pts,h,z0=0,hf)=>{const n=pts.length,H=q=>hf?hf(q[0],q[1])+3:h;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();polys.push(q);q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
+    add(pts.map(q=>P(q[0],q[1],z0)));add(pts.map(q=>P(q[0],q[1],H(q))));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1],z0),P(c[0],c[1],z0),P(c[0],c[1],H(c)),P(a[0],a[1],H(a))])}};
+  if(b.deck)prism(b.pts,b.hpx+3,b.z0,b.zf);
   else prism(b.pts,b.hpx+(b.special?14:2));if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
   ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1],polys};return b.sil}
 // The outline of the union of overlapping polygons (filled nonzero), as closed loops with no overlaps, so that an
@@ -895,8 +926,14 @@ const carCols=['#e6e6ea','#ecebe6','#c4c8d0','#9aa0aa','#5c6270','#2f2f38',C.Bri
 const skins=['#f5d0ad','#e2a87e','#c3825a','#9a6040','#76462e','#553220'];
 const shirts=[C.Tobacco,C['Aggie blue'],C.Brick,C.Pine,C.Paper,C['Haw River'],'#b04ec0',C.Slate,'#ff7a9a'];
 const cars=[],people=[];
+// A divided street (two one-way roadways side by side under one name) has no sidewalk down its middle: find the side
+// of each roadway that faces its twin, and keep the walkers to the other side.
+for(const ch of chains){const off=(RW[ch.c]/2+2)/M,near=(RW[ch.c]/2+1)/M;
+  for(const sd of [1,-1]){let n=0,hit=0;for(let d=.5;d<ch.L;d+=1.5){const[gx,gy,ux,uy]=along(ch,d),px=gx-uy*off*sd,py=gy+ux*off*sd;n++;
+      if(chains.some(o=>{if(o===ch||o.n!==ch.n||!o.n)return false;for(let i=1;i<o.p.length;i++){const a=o.p[i-1],b=o.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((px-a[0])*dx+(py-a[1])*dy)/L2)):0;if(Math.hypot(a[0]+dx*t-px,a[1]+dy*t-py)<near)return true}return false}))hit++}
+    if(n&&hit/n>.4)ch.mid=sd}}
 chains.forEach((ch,ci)=>{
-  const np=Math.round(ch.L/4);for(let k=0;k<np;k++)people.push({ch,d:Math.random()*ch.L,dir:Math.random()<.5?1:-1,side:Math.random()<.5?1:-1,v:.13+Math.random()*.06,night:k%3!==0,skin:skins[(ci+k)%6],shirt:shirts[(ci*2+k)%9]})});
+  const np=Math.round(ch.L/4);for(let k=0;k<np;k++)people.push({ch,d:Math.random()*ch.L,dir:Math.random()<.5?1:-1,side:ch.mid?-ch.mid:Math.random()<.5?1:-1,v:.13+Math.random()*.06,night:k%3!==0,skin:skins[(ci+k)%6],shirt:shirts[(ci*2+k)%9]})});
 // ---------- street traffic ----------
 // The streets as a graph (OSM ways split where they meet), one lane each way (one way where OSM says so, and round a
 // roundabout's ring), driving on the right. Cars follow the car ahead (a simple intelligent-driver model, looking past
@@ -957,7 +994,7 @@ function light(l){if(!l.to.signal||l.inner)return null;let t=((T+l.to.offset)%CY
 // widest street at the junction, the stop bar at 4.3 m); on a piece of street shorter than that, at its start.
 // SHORT: a piece of street too short to wait on (the link between a divided street's carriageways, a roundabout's ring).
 const CARL=4.6/9,stopBack=l=>Math.min((RW[l.to.cls]/2+6.9)/M,Math.max(0,l.L-.15));
-const tcars=[];if(new URLSearchParams(location.search).has('debug'))window.__tf={TF,tcars,light,train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
+const tcars=[];if(new URLSearchParams(location.search).has('debug'))window.__tf={TF,tcars,pts0,blds,people,light,train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
 (function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s)}}})();
 function addCar(l,s){const c={lane:l,s,v:.6,ty:carKind(Math.random()),col:carCols[Math.floor(Math.random()*carCols.length)],v0:(l.c<=2?1.5:1.15)*(.88+Math.random()*.24),wait:0,go:false,off:null};l.cars.push(c);l.cars.sort((a,b)=>b.s-a.s);tcars.push(c);return c}
 function nextLane(c){const l=c.lane;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
@@ -1322,12 +1359,12 @@ function frame(ts){const F0=performance.now();
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
   if(!reduce){stepCrossings(Math.min(dt,.1));stepTraffic(Math.min(dt,.05))}
   for(const c of tcars){let[px,py,ux,uy]=lanePos(c.lane,Math.min(c.s,c.lane.L));if(c.off){let k=Math.max(0,1-c.s/c.off[2]);k=k*k*(3-2*k);px+=c.off[0]*k;py+=c.off[1]*k;if(c.off[3]!=null){const hx=ux+(c.off[3]-ux)*k,hy=uy+(c.off[4]-uy)*k,hl=Math.hypot(hx,hy);if(hl>.2){ux=hx/hl;uy=hy/hl}}if(k<=0)c.off=null}if(!vis(px,py))continue;
-    dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,ty:c.ty,stopped:c.stopped,z:rideZ('road',px,py)})}
+    dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,ty:c.ty,stopped:c.stopped,z:rideZ('road',px,py,ux,uy)})}
   // the lights themselves, and stop signs, at the stop line on the right of each approach
   for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;const s_=Math.max(0,l.L-Math.min((RW[l.to.cls]/2+4.3)/M,l.L*.45));const[gx,gy,ux,uy]=along(l.ch,s_);const off=(RW[l.c]/2+1.4)/M;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;
     dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
   for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;const d0=p.ch.d0||0,d1=p.ch.d1==null?p.ch.L:p.ch.d1;if(p.d>d1||p.d<d0){p.dir=p.d>d1?-1:1;p.d=Math.max(d0,Math.min(d1,p.d))}}if(p.rk>=walkLv)continue;
-    const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py)})}
+    const[gx,gy,ux,uy]=along(p.ch,p.d);const off=(RW[p.ch.c]/2+2.0)/M*p.side;const px=gx-uy*off,py=gy+ux*off;if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py,ux,uy)})}
   if(HD)HD.add(dyn,vis);
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
   // crowds only where something is actually on: events at a venue, council in session, open bars after dark
