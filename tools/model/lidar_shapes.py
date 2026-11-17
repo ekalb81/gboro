@@ -8,6 +8,9 @@ Usage: python3 tools/model/lidar_shapes.py <work-dir> <model: public/model/downt
          where it stood (prep.py then leaves it out). After them come additions: a State building footprint
          (tools/model/footprints.py) that the map lacks and the lidar shows standing, with the footprint's outline;
          then anything else the survey classified as a building, 60 m2 or more, with the lidar's own outline.
+         The additions are sorted by place, so a run that covers more ground renumbers them. Anything keyed by
+         one of these numbers (two records in data/model/facades-commons.json) has to be moved to the building's
+         new number after such a run: match the buildings by outline between the old and the new model.
 prep.py reads the result as <inputs-dir>/osm/shapes.json. Run prep.py first if the map changed, so <model> is current.
 """
 import numpy as np,json,math,sys
@@ -123,7 +126,7 @@ for k in range(1,n+1):
         add.append({'p':flat(q),'h':round(h,1),'area':round(q.area*81),'src':'lidar 2024 (classified as a building by the survey)'})
 add.sort(key=lambda nb:(round(min(nb['p'][1::2])),min(nb['p'][0::2])))
 new+=add
-json.dump({'tiers':tiers,'new':new,'source':'NC Emergency Management Phase 3 QL1 lidar flown 2024-02-03 (sdd.nc.gov), 1.5 m cells, inside the downloaded tiles; north of them the 2015 shapes (NC Phase III lidar 2015-02-03, NOAA dataset 6209) are kept, marked survey 2015. Outlines of buildings OpenStreetMap lacks come from the NC Emergency Management 2022 building footprints where they have one. Previous version: shapes-2015.json'},open(out,'w'))
+json.dump({'tiers':tiers,'new':new,'source':'NC Emergency Management Phase 3 QL1 lidar flown 2024-02-03 (sdd.nc.gov), 1.5 m cells, inside the downloaded tiles; outside them the 2015 shapes (NC Phase III lidar 2015-02-03, NOAA dataset 6209) are kept, marked survey 2015. Outlines of buildings OpenStreetMap lacks come from the NC Emergency Management 2022 building footprints where they have one. Previous version: shapes-2015.json'},open(out,'w'))
 print('from footprints',nfp,'from lidar only',len(add)-nfp);print('tiers',len(tiers),'redone',redone,'kept2015',kept,'old',len(old['tiers']),'| new',len(new),'of which old',n_old)
 print('old "new" buildings 2015h,2024h,standing,area:',rep)
 for nb in new[n_old:]:
