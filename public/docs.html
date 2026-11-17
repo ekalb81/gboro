@@ -249,7 +249,7 @@
     <tr><td>Buildings missing from OpenStreetMap</td><td>Found in the 2024 lidar (returns the survey classified as building); outlines from NC Emergency Management's statewide building footprints where it has one, else the lidar's own. A building in the earlier list that the 2024 lidar shows as flat ground is left out</td><td>2022 and 2024</td></tr>
     <tr><td>Bridges, the underpass, skywalks and railroad crossings</td><td>OpenStreetMap (bridge and crossing tags). Deck heights and ramp lengths are typical, not measured.</td><td>The extract used at the last rebuild</td></tr>
     <tr><td>Roof colours, lawns and planting, paving, painted parking rows</td><td>NC OneMap aerial imagery</td><td>Flown February 2022</td></tr>
-    <tr><td>Facade colours and floor counts</td><td>Mapillary street photos (about 50 buildings)</td><td>2018 and 2021</td></tr>
+    <tr><td>Facade colours and floor counts</td><td>Wikimedia Commons photos (72 buildings, mostly along Elm and Market streets; the readings are in <code>data/model/facades-commons.json</code>, each with its photo, author and licence) and Mapillary street photos (about 40 more)</td><td>Commons: mostly September and October 2019. Mapillary: 2018 and 2021</td></tr>
     <tr><td>Landmark fronts (Kress, Carolina Theatre and others)</td><td>Photos on Wikimedia Commons, used as reference</td><td>Various</td></tr>
     <tr><td>Lincoln Financial tower and Jefferson Standard Building</td><td>OpenStreetMap 3D building parts</td><td>Current</td></tr>
     <tr><td>Pools, fountains, courts, playgrounds, the dog park, fences, benches, picnic tables, hydrants, bus stops, statues and public art, the water tower</td><td>OpenStreetMap. Pools OpenStreetMap lacks, and the ballpark's diamond, were found in the aerial and checked by eye (<code>data/model/details-extra.json</code>)</td><td>The extract used at the last rebuild; aerial of February 2024</td></tr>
@@ -440,6 +440,7 @@ npm run serve</code></pre>
     <li>Building heights and shapes: NC Emergency Management Phase 3 lidar (2024), from NC Spatial Data Download. Trees, and heights north of those tiles: NC Floodplain Mapping Program Phase III lidar (2015), distributed by NOAA's Office for Coastal Management.</li>
     <li>Roof colours and ground cover: NC OneMap orthoimagery (2022), NC CGIA and the NC 911 Board.</li>
     <li>Facades: Mapillary street photos, © Mapillary contributors, CC BY-SA 4.0.</li>
+    <li>Facades: photos on Wikimedia Commons, mostly by Warren LeMay (CC0), with others under CC BY-SA; each one is named in <code>data/model/facades-commons.json</code>. Google Street View is not used: its terms do not allow storing its images or deriving a model from them.</li>
     <li>Weather: the National Weather Service.</li>
     <li>Road closures: NCDOT DriveNC.</li>
     <li>Crime counts: the FBI Crime Data Explorer and the City of Greensboro's open data.</li>

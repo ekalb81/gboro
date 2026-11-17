@@ -206,6 +206,16 @@ try:
         f=FC.get(str(b['id']))
         if f: b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
 except FileNotFoundError: pass
+# facade readings from Wikimedia Commons photos (mostly a 2019 walk along Elm and Market streets, straight-on and
+# CC0); committed in data/model/facades-commons.json. One replaces a Mapillary reading unless that one is surer.
+try:
+    FW_=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','facades-commons.json')))
+    _rk={'low':0,'medium':1,'high':2}
+    for b in B:
+        f=FW_.get(str(b['id']))
+        if f and _rk.get(f.get('confidence'),0)>=_rk.get((b.get('f') or {}).get('confidence'),-1):
+            b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
+except FileNotFoundError: pass
 
 # measured heights: the 2024 NC lidar (flown 2024-02-03) where its downloaded tiles reach, the 2015 one north of them
 try:
