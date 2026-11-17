@@ -437,7 +437,7 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees, home, details] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null)]);
+const [map, info, eatsData, trees, home, details, roofs] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null)]);
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
@@ -446,6 +446,7 @@ model = startModel({
   map,
   trees,
   home,
+  roofs,
   details,
   onPick: (b) => {
     if (b && (b.special === 'home' || b.special === 'homeshed')) { location.href = 'house.html'; return; } // the close-up of the house up the street
