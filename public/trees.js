@@ -56,7 +56,9 @@ export function dayOfYear(date = new Date()) {
 /** What a species looks like on a day: leaf (0 bare .. 1 full), crown colour, bloom colour and amount, leaves falling. */
 export function look(spKey, doy, seed = 0.5) {
   const sp = SPECIES[spKey] || SPECIES.redmaple;
-  const j = (seed - 0.5) * 8; // each tree is a few days ahead or behind its neighbours
+  // each tree is up to nine days ahead of or behind its neighbours (sun, soil, a street lamp), so a row of one kind
+  // turns and thins tree by tree, not all in one week
+  const j = (seed - 0.5) * 18;
   const d = doy - j;
   const out = { leaf: 1, col: sp.green, col2: sp.green, bloom: null, bloomAmt: 0, bloomBare: 0, dropping: 0, litter: 0, litterCol: null, berries: 0 };
   if (sp.bloom) {
@@ -71,7 +73,8 @@ export function look(spKey, doy, seed = 0.5) {
   const [c0, c1] = sp.fallC;
   if (d < l0 || d >= f1) out.leaf = sp.hold || 0;
   else if (d < l1) out.leaf = ramp(d, l0, l1);
-  else if (d >= f0) out.leaf = lerp(1, sp.hold || 0, ramp(d, f0, f1));
+  // leaves come down slowly at first, then in a rush, and the last tenth hangs on to the end
+  else if (d >= f0) { const t = ramp(d, f0, f1), e = t < 0.85 ? 0.9 * Math.pow(t / 0.85, 1.6) : 0.9 + 0.1 * ((t - 0.85) / 0.15); out.leaf = lerp(1, sp.hold || 0, e); }
   // colour: fresh spring green, summer green, then fall colour from first tint to peak
   if (d < l1 + 25 && d >= l0) out.col = mixc(sp.spring, sp.green, ramp(d, l1 - 5, l1 + 25));
   else if (d >= c0 && d < f1) {
@@ -221,6 +224,17 @@ export function drawTree(c, o, h) {
       if (stems === 1) line(c, [fx, fy], [q.mx, q.my], wood, Math.max(1, tw * 0.6));
       line(c, [q.mx, q.my], [q.ex, q.ey], wood, 1);
       for (const t of q.tips) line(c, [q.ex, q.ey], t, twigC, 0.8);
+    }
+    // A bare crown is mostly fine twigs, too fine to draw one by one: a faint haze the shape of the crown, and a
+    // fringe of short twigs fanning from each limb end, so a leafless tree keeps its outline (not a broom of sticks).
+    if (bare > 0.45) {
+      const k0 = Math.min(1, (bare - 0.45) / 0.35), haze = mix(trunk, '#b9a99a', 0.5);
+      c.globalAlpha = 0.2 * k0; circ(c, ccx, ccy, Math.min(rx, ry) * 0.98, haze); c.globalAlpha = 0.14 * k0; circ(c, ccx, ccy - ry * 0.12, Math.max(rx, ry) * 0.8, haze); c.globalAlpha = 1;
+      const nf = hp > 13 ? 4 : 2;
+      for (let li = 0; li < limbs.length; li++) { const q = limbs[li], a0 = Math.atan2(q.ey - ccy, q.ex - ccx);
+        for (let f = 0; f < nf; f++) { const b = a0 + (f - (nf - 1) / 2) * 0.42 + (hash(s * 9 + li, f) - 0.5) * 0.3, tl = 0.34 + hash(li * 3 + f, s * 11) * 0.2;
+          const px = (q.ex + q.mx) / 2 + (hash(f, li + s) - 0.5) * rx * 0.2, py = (q.ey + q.my) / 2;
+          line(c, [f % 2 ? q.ex : px, f % 2 ? q.ey : py], [ccx + Math.cos(b) * rx * (0.62 + tl), ccy + Math.sin(b) * ry * (0.66 + tl) * (Math.sin(b) > 0 ? 0.6 : 1)], twigC, 0.6); } }
     }
   } else if (stems === 1) line(c, [fx, fy], [ccx + 0.5, ccy + ry * 0.4], trunkD, Math.max(1, tw * 0.7));
   // blossom on bare branches (red maple, pear, redbud)

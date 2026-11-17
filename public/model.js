@@ -567,6 +567,8 @@ function drawGround(c){
   // lane markings: double yellow on main streets, dashed white on smaller ones
   Rs.filter(r=>!r.ar&&r.c<=2&&!r.ow&&!r.rb).forEach(r=>{polyPath(c,r.p);c.strokeStyle=gcol(C['Line gold'],'road');c.lineWidth=.75/M;c.stroke();polyPath(c,r.p);c.strokeStyle=asph;c.lineWidth=.3/M;c.stroke()});
   Rs.filter(r=>!r.ar&&!r.rb&&(r.c===3||(r.c<=2&&r.ow))).forEach(r=>{polyPath(c,r.p);c.strokeStyle=gcol('#f4f1ea','road');c.lineWidth=.25/M;c.setLineDash([3/M,4/M]);c.stroke();c.setLineDash([])});
+  // no centre line or lane line runs through a junction: the box of each one is plain asphalt
+  c.fillStyle=asph;for(const[x,y,r] of XWALK.box){if(TG&&(x<TG[0]-2||x>TG[2]+2||y<TG[1]-2||y>TG[3]+2))continue;c.beginPath();c.arc(x,y,r,0,7);c.fill()}
   // crosswalks and stop bars (worked out from the street graph, see XWALK)
   c.lineCap='butt';c.strokeStyle=gcol('#f4f1ea','road');
   {c.beginPath();c.lineWidth=.55/M;for(const k of XWALK.cw){if(TG&&(k[0]<TG[0]-2||k[0]>TG[2]+2||k[1]<TG[1]-2||k[1]>TG[3]+2))continue;const[x,y,ux,uy,w]=k,vx=-uy,vy=ux,n=Math.floor(w/1.1),h=1.4/M;
@@ -677,7 +679,13 @@ function drawCar(c,gx,gy,ux,uy,z,col,ty){const k=CARS[ty]||CARS[0],L=k[0]/M,Wd=k
   drawPrism(c,rect(gx-ux*cb/M,gy-uy*cb/M,ux,uy,cl/M,Wd-.3/M),z+k[2],k[3]-k[2],GLASS,mix(col,HI,.22))}
 function drawCarS(c,o){drawCar(c,o.gx,o.gy,o.ux,o.uy,0,o.col,o.ty)}
 function drawFountain(c,o){const r=7/M;const ring=[...Array(16)].map((_,k)=>[o.gx+Math.cos(k*Math.PI/8)*r,o.gy+Math.sin(k*Math.PI/8)*r]);drawPrism(c,ring,0,3,C.Concrete,C.Concrete,true);poly(c,ring.map(p=>P(p[0],p[1],3)),surf(mix(C['Haw River'],HI,.25),true));const ring2=ring.map(p=>[o.gx+(p[0]-o.gx)*.3,o.gy+(p[1]-o.gy)*.3]);drawPrism(c,ring2,0,7,C.Concrete,C.Concrete)}
-function drawPoint(c,o){switch(o.kind){case'tree':drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break}}
+// Looking under the trees: with the pointer resting on a tree, a small round patch around it is drawn again with the
+// trees there as a trunk and a dotted outline of the crown, so what the canopy hides (a house, a path, parked cars)
+// can be seen. The patch is a few thousand pixels, redrawn only when the pointer has moved, never during a drag or zoom.
+let GHOST=false;
+function ghostTree(c,o){const b=P(o.gx,o.gy),hp=Math.min(o.h,32)*ZPM;line(c,[b[0]+.5,b[1]],[b[0]+.5,b[1]-hp*.5],'#5a4636',hp>30?2:1.4);
+  c.save();c.globalAlpha=.55;c.strokeStyle='#fff8e6';c.lineWidth=.7;c.setLineDash([2,2]);c.beginPath();c.ellipse(b[0]+.5,b[1]-hp*.64,Math.max(2,o.r*ZPM*.85),Math.max(2,o.r*ZPM*.7),0,0,7);c.stroke();c.restore()}
+function drawPoint(c,o){switch(o.kind){case'tree':GHOST?ghostTree(c,o):drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break}}
 // LeBauer Park's suspended net sculpture, drawn above everything
 function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(1-u*u)*(1-v*v);const pt=(u,v)=>P(cx+u*rx,cy+v*ry,z(u,v));const lit=lampsOn();
   [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v])=>line(c,P(cx+u*rx*1.15,cy+v*ry*1.15),P(cx+u*rx*1.15,cy+v*ry*1.15,34),'#e8e4dc',1));
@@ -1012,19 +1020,24 @@ const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
 // as painted downtown. None is painted on the ring of a roundabout itself, or on the short link between two junctions
 // that sit a few metres apart (a divided street's two carriageways), which is where they used to pile up.
 // cw: [x, y, ux, uy (along the street), street width (m)]; bars: [x0, y0, x1, y1] across the lanes that stop.
-const XWALK=(()=>{const cw=[],bars=[];
+const XWALK=(()=>{const cw=[],bars=[];const J=TF.nodes.filter(n=>n.deg>=3&&!n.rb);
+  // a big junction is several nodes a few metres apart (a divided street, a slip lane): a crosswalk that would land
+  // inside another node's box, or on top of one already painted for the same crossing, is not painted
+  const boxed=(x,y,n)=>J.some(m=>m!==n&&Math.hypot(m.x-x,m.y-y)<(RW[m.cls]/2+1.2)/M);
+  const dup=(x,y,ux,uy)=>cw.some(k=>Math.hypot(k[0]-x,k[1]-y)<1.1&&Math.abs(k[2]*ux+k[3]*uy)>.7);
   for(const n of TF.nodes){if(n.deg<3)continue;const arms=[];
     for(const l of n.out)arms.push({o:l,i:l.rev||null});for(const l of n.inn)if(!l.rev)arms.push({o:null,i:l});
     const wmax=RW[n.cls]||RW[3];
-    for(const a of arms){const l=a.o||a.i,far=a.o?l.to:l.from;if(l.c>3||l.rb)continue;if(l.L<3.2&&far.deg>=3)continue;
+    for(const a of arms){const l=a.o||a.i,far=a.o?l.to:l.from;if(l.c>3||l.rb)continue;if(l.L<(n.signal&&far.signal?6:3.2)&&far.deg>=3)continue; // (two signals under 55 m apart are one junction: nothing on the link between them)
       const gives=a.i&&(a.i.sign==='stop'||a.i.sign==='yield');if(!n.signal&&!gives&&!(n.rb&&!l.rb))continue;
       // a point d (grid units) out along the arm, with the direction pointing away from the junction
       const at=d=>{d=Math.min(d,l.L*.45);if(a.o){return along(l.ch,d)}const q=along(l.ch,l.L-d);return[q[0],q[1],-q[2],-q[3]]};
       const w=RW[l.c],[x,y,ux,uy]=at((wmax/2+(n.rb?3.4:2.2))/M);if(rideZ('road',x,y))continue; // none painted on a bridge deck (it is drawn above the ground's paint)
-      cw.push([x,y,ux,uy,w]);
+      if(boxed(x,y,n)||dup(x,y,ux,uy))continue;cw.push([x,y,ux,uy,w]);
       if(a.i&&(n.signal||a.i.sign==='stop')){const[bx,by,bu,bv]=at((wmax/2+(n.rb?5.5:4.3))/M),rx=bv,ry=-bu,h0=a.o?.25/M:-(w/2-.4)/M,h1=(w/2-.4)/M;
-        bars.push([bx+rx*h0,by+ry*h0,bx+rx*h1,by+ry*h1])}}}
-  return{cw,bars}})();
+        if(!boxed(bx,by,n))bars.push([bx+rx*h0,by+ry*h0,bx+rx*h1,by+ry*h1])}}}
+  // box: [x, y, radius] of each junction, where the lane lines of the streets that meet are not painted
+  return{cw,bars,box:J.map(n=>[n.x,n.y,(RW[n.cls]/2-.3)/M])}})();
 // walkers keep to the sidewalks: where a street ends on a roundabout they turn back short of the ring
 for(const ch of chains){const rbAt=q=>TF.nodes.some(n=>n.rb&&Math.hypot(n.x-q[0],n.y-q[1])<1.2);if(rbAt(ch.p[0]))ch.d0=Math.min(1.8,ch.L/3);if(rbAt(ch.p[ch.p.length-1]))ch.d1=ch.L-Math.min(1.8,ch.L/3)}
 const CYC=[22,3,1.5];const CYCLE=2*(CYC[0]+CYC[1]+CYC[2]);
@@ -1248,10 +1261,11 @@ cv.addEventListener('pointerdown',timed(e=>{touches.set(e.pointerId,[e.clientX,e
 // motion it steps a level at a time, as before)
 cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);
   if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
+let lensAt=null;const LENS={c:null,d:null,r:null,vs:0,ver:-1,t:0,S:0};let treePts=null;
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
 function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
 const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}if(drag)TB=Math.min(TB,2);drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
-cv.addEventListener('mousemove',timed(e=>{if(drag)return;const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}}));cv.addEventListener('mouseleave',()=>{hoverB=null;onHover(null)});
+cv.addEventListener('mousemove',timed(e=>{if(drag){lensAt=null;return}lensAt=toStatic(e);const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}}));cv.addEventListener('mouseleave',()=>{hoverB=null;lensAt=null;onHover(null)});
 
 // ---------- light grading from the sun ----------
 const GD={dawn:{m:[1.03,.9,.92],a:[18,4,16],d:-.05},day:{m:[1.02,1.01,1],a:[0,0,0],d:-.12},dusk:{m:[1.04,.82,.76],a:[16,0,18],d:-.05},night:{m:[.40,.45,.70],a:[6,8,24],d:.2}};
@@ -1400,6 +1414,21 @@ function frame(ts){const F0=performance.now();
     else t=getTile(tx,ty,budget);
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
+  if(lensAt&&!drag&&!touches.size&&!ZG&&!frame.stale){const[sx,sy]=lensAt;treePts=treePts||pts0.filter(o=>o.kind==='tree');
+    if(treePts.some(o=>sx>o.box[0]&&sx<o.box[2]&&sy>o.box[1]&&sy<o.box[3])){const g_=geo(),Rc=Math.round(60*W/(g_.cw||W)),S=Rc*2,Rm=Rc/VS,L=LENS;
+      if(!L.c||L.S!==S){L.c=mk(S,S).getContext('2d');L.d=mk(S,S).getContext('2d');L.S=S;L.r=null}
+      if(!L.r||L.vs!==VS||L.ver!==stver||(Math.hypot(L.r[0]+Rm-sx,L.r[1]+Rm-sy)*VS>2&&F0-L.t>40)){
+        const c=L.c,b0=BT,t0=TGT,o0=ox,o1=oy,r0=TR,g0=TG,r=[Math.round((sx-Rm)*VS)/VS,Math.round((sy-Rm)*VS)/VS,0,0];r[2]=r[0]+2*Rm;r[3]=r[1]+2*Rm;
+        const bt=[VS,0,0,VS,-r[0]*VS,-r[1]*VS],tg={c,e:L.d,g:L.d,de:0,dg:0},at=()=>{BT=bt;TGT=tg;ox=BOX;oy=BOY;TR=r};
+        for(const q of [c,L.d]){q.setTransform(1,0,0,1,0,0);q.globalAlpha=1;q.globalCompositeOperation='source-over';q.clearRect(0,0,S,S)}
+        at();setT(c,L.d,L.d);const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]},cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
+        TG=[Math.min(...cs.map(q=>q[0])),Math.min(...cs.map(q=>q[1])),Math.max(...cs.map(q=>q[0])),Math.max(...cs.map(q=>q[1]))];
+        GHOST=true;try{drawGround(c);drawShadows(c);TG=null;at();for(const b of blds)if(hitBox(b.box,r)){drawBuilding(c,b);at()}
+          for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(c,o);else if(TCLIP)clipPoint(o,tg);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);at()}}
+        finally{GHOST=false;BT=b0;TGT=t0;ox=o0;oy=o1;TR=r0;TG=g0}
+        L.r=r;L.vs=VS;L.ver=stver;L.t=F0}
+      const X=Math.round(L.r[0]*VS)-cx,Y=Math.round(L.r[1]*VS)-cy;w.save();w.setTransform(1,0,0,1,0,0);w.beginPath();w.arc(X+Rc,Y+Rc,Rc,0,7);w.clip();w.drawImage(L.c.canvas,X,Y);w.restore();
+      w.strokeStyle='rgba(255,248,230,.6)';w.lineWidth=Math.max(1,Math.round(W/(g_.cw||W)));w.beginPath();w.arc(X+Rc,Y+Rc,Rc-.5,0,7);w.stroke()}}
   const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+2*(tx1-tx0+ty1-ty0)+16);trimTiles(keepN); // the view, the ring round it and the view at the next level each way
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT=FT;ox=BOX-cx/VS;oy=BOY-cy/VS;
   BM&&bm('tiles');
