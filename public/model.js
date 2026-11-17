@@ -356,8 +356,9 @@ function drawRoofReal(c,b){const R=b.rf,hp=b.hpx;
   const us=R.units.slice().sort((a,q)=>a[0]+a[1]-q[0]-q[1]);
   for(const[ux,uy,wm,dm,col] of us){let z=hp,on=b.pts;if(b.tiers)for(const t of b.tiers){const tz=Math.min(250,t.h*ZPM);if(tz>z&&pip(ux,uy,t.pts)){z=tz;on=t.pts}}
     const hw=Math.max(.07,Math.min(.26,wm/M/2)),hd=Math.max(.07,Math.min(.26,dm/M/2)),box=[[ux-hw,uy-hd],[ux+hw,uy-hd],[ux+hw,uy+hd],[ux-hw,uy+hd]];
-    // it must stand wholly on its roof, and (the tiers are already drawn) not behind a taller part of the building
-    if(!box.every(v=>pip(v[0],v[1],on)))continue;if(b.tiers&&b.tiers.some(t=>Math.min(250,t.h*ZPM)>z+1&&t.pts.some(v=>v[0]+v[1]>ux+uy)))continue;
+    // it must stand wholly on its roof, and (the tiers are already drawn) not behind a taller part of the building:
+    // one that reaches further forward and whose span across the screen (x - y) takes in the unit's
+    if(!box.every(v=>pip(v[0],v[1],on)))continue;if(b.tiers&&b.tiers.some(t=>{if(Math.min(250,t.h*ZPM)<=z+1||!t.pts.some(v=>v[0]+v[1]>ux+uy))return false;let a0=1e9,a1=-1e9;for(const v of t.pts){const a=v[0]-v[1];if(a<a0)a0=a;if(a>a1)a1=a}return ux-uy+hw+hd>a0&&ux-uy-hw-hd<a1}))continue;
     if(lumOf(col)<100)poly(c,box.map(v=>P(v[0],v[1],z)),surf(mix(col,'#2a3442',.35),true));
     else{const body=mix(col,'#c9cfd6',.45);drawPrism(c,box,z,wm*dm>8?4.5:3,body,mix(body,HI,.3));if(wm*dm>6){const tp=P(ux,uy,z+(wm*dm>8?4.5:3));circ(c,tp[0],tp[1],1.2,'#8a93a0')}}}}
 // stepped roof levels measured by the lidar survey: each tier sits on the one below it
