@@ -47,9 +47,9 @@ const sceneDate0=()=>DATEQ||new Date();
 const sceneDate=()=>S.time==='now'?new Date():nyDate(...PREVIEW[S.time]);
 
 // ---------- geometry ----------
-// W,H: the view canvas in canvas pixels. VS: canvas pixels per model pixel (the render scale; up to RESMAX for sharper
-// detail, below 1 when zoomed far out). Model pixels are the units every drawing routine below works in.
-let W=800,H=450,VS=1;const RESMAX=2,TILE=512;const TW=16,TH=8,ZPM=2.0,M=MAP.M,GX=MAP.GX,GY=MAP.GY,MARG=60,MAXH=270;
+// W,H: the view canvas in canvas pixels. VS: canvas pixels per model pixel (the render scale: see "view size and zoom"
+// for how it is chosen; below 1 when zoomed far out). Model pixels are the units every drawing routine below works in.
+let W=800,H=450,VS=1;const TILE=512;const TW=16,TH=8,ZPM=2.0,M=MAP.M,GX=MAP.GX,GY=MAP.GY,MARG=60,MAXH=270;
 const BW=Math.ceil((GX+GY)*TW+2*MARG),BH=Math.ceil((GX+GY)*TH+MAXH+2*MARG+20);
 const BOX=GY*TW+MARG,BOY=MAXH+MARG;
 let ox=BOX,oy=BOY;
@@ -873,7 +873,7 @@ function trimTiles(keep){let n=nLoose();const cap=TILE_MB*262144;
   for(;;){if(usedPx()-Math.min(pool.length,3)*TILE*TILE<=cap)break;if(pool.length>3)freeSpare();else if(!dropOldest())break}
   while(pool.length>POOL)freeSpare()}
 if(BM){BM.cs=CS;BM.flags={tilecut:TCLIP?'clip':'card',ahead:AHEAD}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,k:KPX,plan:PLAN.name,planWhy:PLANWHY,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
 function renderStatic(){const T0=performance.now();
   SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}buildGroundTex();buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
@@ -1249,8 +1249,8 @@ function fpsBox(){const fr_=BM.frames,now=performance.now(),n=fr_.length;
     `tiles cut by ${TCLIP?'clip':'card'}${QS.get('tilecut')?' (?tilecut)':''}, ${CS.last.length?f1(CS.last.reduce((a,b)=>a+b,0)/CS.last.length):'-'} cards a tile   drawing ahead ${AHEAD?'on':'OFF (?ahead=0)'}   tile canvases in the last 5 s: ${cs5('made')} made, ${cs5('freed')} freed, ${cs5('reused')} reused (${pool.length} spare)\n`+
     `tile work ${f1(twS)} ms in ${n1} frames of the last 5 s, extra rest after them ${f1(exT)} ms = ${twS>.5?f1(exT/twS):'-'} ms of rest per ms of tile work (${f1(n1?exS/n1:0)} ms extra a frame against ${f1(ex0)} without tile work)   allowance ${f1(TB)} ms${TBFIX?' (pinned, ?tilems)':''}${tbGap?' every '+(tbGap+1)+' frames':''}, ${sum('late')} stalls\n`+wl+
     `moving things ${Math.round(avg('n'))}, cut out ${Math.round(avg('cut'))}   tiles ${tiles.size} (${(mb*4/1048576).toFixed(0)} MB of ${TILE_MB})   glow ${FT.dg?'on':'off'}\n`+
-    `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)}   zoom ${+zNow().toFixed(2)}${ZG?' (on its way to '+ZL[zi]+')':''}\n`+
-    `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}${reduce?'   reduced motion: zoom jumps':''}`}
+    `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)} (${KPX} device px a canvas px)   zoom ${+zNow().toFixed(2)}${ZG?' (on its way to '+ZL[zi]+')':''}\n`+
+    `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}   res: ${PLAN.name} (${PLANWHY}${GV.on?', watching':''})${reduce?'   reduced motion: zoom jumps':''}`}
 // The buildings that could stand in front of something at grid box (x0,y0)-(x1,y1): a coarse grid over each building's
 // reach (its footprint plus how far its height carries up the screen), so a frame does not scan every building for
 // every moving thing. In the buildings' own order, each once.
@@ -1278,6 +1278,7 @@ let FT={de:1,dg:1};const glowOn=()=>{useGlow(true);FT.dg=1};
 const TBFIX=+QS.get('tilems')||0;
 let TB=12,tbGap=0,tbSince=99,tbLast=0,tbEnd=0,tbBase=16.7,tbMin=1e9,tbN=0,tbTw=0,tbE0=0;const TS=[];
 function tileBudget(now){const iv=now-tbLast,inF=tbEnd-tbLast,tw=tbTw;tbLast=now;tbTw=0;
+  if(!reduce&&iv>0)resGov(iv,tw,now);
   if(reduce||!(iv>0&&iv<1000))return TB; // (reduced motion draws frames only when asked, so their spacing says nothing)
   if(iv<tbMin)tbMin=iv;if(++tbN>=90){tbBase=tbMin;tbMin=1e9;tbN=0} // the usual interval: the shortest of the last 90 frames
   const base=Math.min(tbBase,tbMin),extra=Math.max(0,iv-Math.max(1,Math.ceil((inF-1)/base))*base),other=Math.max(0,inF-tw);
@@ -1526,12 +1527,43 @@ function lookAt(b){if(!b)return;if(ZG)land();[tgtX,tgtY]=camFor(b);tgtX=clampX(t
 let started=false,glide=false;
 
 // ---------- view size and zoom ----------
-// The canvas fills whatever box the page gives it. Zoom levels are device pixels per model pixel. The model is drawn at
-// up to RESMAX canvas pixels per model pixel (VS) for sharp detail, and below 1 when zoomed far out, so the whole of
-// downtown fits; each canvas pixel is a whole number (k) of device pixels so edges stay crisp.
-const ZL=[.25,.35,.5,.7,1,1.5,2,3,4,6],MAXPX=2.6e6;let zi=-1,KPX=1;
+// The canvas fills whatever box the page gives it. Zoom levels are device pixels per model pixel. Each canvas pixel is
+// a whole number (k) of device pixels, so edges stay crisp; the model is drawn at VS = zoom / k canvas pixels per model
+// pixel (below 1 when zoomed far out, so the whole of downtown fits).
+// How big k has to be is the resolution plan. 'sharp' (the default with a graphics card): one canvas pixel per device
+// pixel at every zoom level, until the canvas would pass PLANS.sharp.px pixels (a 4K screen filled edge to edge, say),
+// where it halves. 'safe' is what the model did before: no more than 2.6 million canvas pixels and no more than 2
+// canvas pixels per model pixel, which on a big window or zoomed right in meant drawing at half or a third of the
+// screen's resolution and stretching. Sharp draws up to four times the pixels (nine at the closest zoom), which a
+// graphics card does not notice and a weak one might, so a governor watches the frames (resGov): if they come slowly
+// under sharp it tries safe, keeps safe only if safe is really faster (and remembers that on this device for a week),
+// and otherwise goes back to sharp and stops watching, since the pixels were not what was slow. A software renderer
+// and a touch device (less canvas memory) keep the old pixel count. ?res=sharp or ?res=safe pins one; ?res=auto forgets what was remembered and starts over on sharp, watched.
+const ZL=[.25,.35,.5,.7,1,1.5,2,3,4,6];let zi=-1,KPX=1;
+const COARSE=!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+const PLANS={sharp:{name:'sharp',res:6,px:COARSE?2.6e6:6e6},safe:{name:'safe',res:2,px:2.6e6}},RESKEY='gso-res',RESQ=QS.get('res');
+let PLAN=PLANS.sharp,PLANWHY='default';const GV={on:true,q:[],a:[],slow:0,trial:0,mSharp:0,t0:0,w0:0};
+if(PLANS[RESQ]){PLAN=PLANS[RESQ];PLANWHY='?res';GV.on=false}
+else if(RESQ==='auto'){PLANWHY='?res=auto';try{localStorage.removeItem(RESKEY)}catch{}}
+else if(SOFT){PLAN=PLANS.safe;PLANWHY='software renderer';GV.on=false}
+else try{const m=JSON.parse(localStorage.getItem(RESKEY)||'null');if(m&&m.plan==='safe'&&Date.now()-m.t<7*864e5){PLAN=PLANS.safe;PLANWHY='sharp was slow here on '+new Date(m.t).toLocaleDateString();GV.on=false}}catch{}
 const dev=geo;
-function planFor(z,dw,dh){let k=1;while(z/k>RESMAX+1e-9||(dw/k)*(dh/k)>MAXPX)k++;return{k,vs:z/k}}
+function planFor(z,dw,dh,P=PLAN){let k=1;while(z/k>P.res+1e-9||(dw/k)*(dh/k)>P.px)k++;return{k,vs:z/k}}
+function setPlan(name,why){PLAN=PLANS[name];PLANWHY=why;ev('res '+name);fit(true)}
+// The governor. iv: the time since the last frame; tw: the tile drawing done in it. It takes the middle frame time of 120 frames at rest
+// or dragging, or four seconds' worth when they come that slowly (not a zoom on its way, not a frame that drew tiles:
+// those are paced by the tile allowance; but when tiles are being drawn for fifteen seconds on end, every frame counts).
+// Slow is under about 48 frames a second (so a 120 Hz screen held at 60 is not noticed). Two slow windows running under sharp: try safe.
+// Safe's first window is thrown away (the canvas has just changed size and its tiles are new), the second decides.
+function resGov(iv,tw,now){if(!GV.on||ZG||document.hidden||!started)return;if(!GV.t0)GV.t0=now;if(now-GV.t0<3000)return;
+  const{dw,dh}=dev(),z=ZL[zi];if(planFor(z,dw,dh,PLANS.sharp).k===planFor(z,dw,dh,PLANS.safe).k){GV.q.length=GV.a.length=0;return} // the two plans agree here: nothing to learn
+  if(!GV.a.length)GV.w0=now-iv;GV.a.push(iv);if(tw<=.3)GV.q.push(iv);
+  const q=GV.q.length>=120||GV.q.length>=4&&now-GV.w0>=4000;if(!q&&now-GV.w0<15000)return;
+  const l=(q?GV.q:GV.a).sort((x,y)=>x-y),m=l[l.length>>1];GV.q.length=GV.a.length=0;
+  if(PLAN===PLANS.sharp){if(m>21){if(++GV.slow>=2){GV.slow=0;GV.mSharp=m;GV.trial=1;setPlan('safe','trying: sharp ran at '+m.toFixed(1)+' ms a frame')}}else GV.slow=0;return}
+  if(GV.trial++<2)return;GV.on=false;
+  if(m<GV.mSharp*.8){PLANWHY='sharp ran at '+GV.mSharp.toFixed(1)+' ms a frame, safe at '+m.toFixed(1);try{localStorage.setItem(RESKEY,JSON.stringify({plan:'safe',t:Date.now(),sharp:+GV.mSharp.toFixed(1),safe:+m.toFixed(1)}))}catch{}}
+  else setPlan('sharp','safe was no faster ('+m.toFixed(1)+' ms a frame against '+GV.mSharp.toFixed(1)+')')}
 // zoom out until the whole model is in view, and in until about 160 model pixels fill the width
 const zoomAllowed=(i,dw,dh)=>i>=0&&i<ZL.length&&dw/ZL[i]>=160&&(i>=zi||BW*ZL[i+1]>dw*.92||BH*ZL[i+1]>dh*.92);
 function fit(force,cam){const F0=DIAG?performance.now():0;fit0(force,cam);if(DIAG)tm.fit+=performance.now()-F0}
