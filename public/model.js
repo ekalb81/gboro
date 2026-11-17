@@ -16,7 +16,7 @@ import { mowRoute } from './house.js';
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
 import { makeDetails } from './details.js';
 
-export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
+export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
@@ -186,6 +186,21 @@ const pastW=[C.Mortar,C.Paper,'#ffd59a','#c9eeb0','#ffcdc2','#c8e4f5',C.Limeston
 const roofsF=['#e9e8e3','#dcdbd6','#c8c7c2','#b3b1ab','#8f8d88','#6e6c6a','#d8d2c4'];
 const roofsH=['#55555c','#4a4440','#6b5a4e','#7a3e34','#5c6a72','#8a8a86'];
 const awnC=['#23303d','#6e2626','#2c4636','#34343a','#7a5a34','#1f3f5f'];
+// Buildings the lidar found were traced off a 1.5 m raster: corners come out cut off at 45 degrees and a small shed
+// comes out as a blob. A plain one (it fills four fifths of the smallest rectangle round it) becomes that rectangle,
+// turned as the building is and of the same area; any other keeps its shape with its cut corners squared.
+function tidyOutline(q){const n=q.length;if(n<5||q.filter(v=>Math.abs(v[0]*6-Math.round(v[0]*6))<.07&&Math.abs(v[1]*6-Math.round(v[1]*6))<.07).length<n*.8)return null;
+  let A=0;for(let k=0;k<n;k++){const[a,c]=q[k],[d,e]=q[(k+1)%n];A+=a*e-d*c}A=Math.abs(A/2);let best=null;
+  for(let t=0;t<90;t+=3){const cs=Math.cos(t*Math.PI/180),sn=Math.sin(t*Math.PI/180);let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;for(const[x,y] of q){const u=x*cs+y*sn,v=-x*sn+y*cs;if(u<x0)x0=u;if(u>x1)x1=u;if(v<y0)y0=v;if(v>y1)y1=v}
+    const ar=(x1-x0)*(y1-y0);if(!best||ar<best.ar-1e-9)best={ar,cs,sn,x0,x1,y0,y1}}
+  if(A/best.ar>.8){const k=Math.sqrt(A/best.ar),{cs,sn}=best,cu=(best.x0+best.x1)/2,cv=(best.y0+best.y1)/2,hu=(best.x1-best.x0)/2*k,hv=(best.y1-best.y0)/2*k;
+    return[[-1,-1],[1,-1],[1,1],[-1,1]].map(([i,j])=>{const u=cu+i*hu,v=cv+j*hv;return[u*cs-v*sn,u*sn+v*cs]})}
+  let r=q.slice(),hit=false;for(let pass=0;pass<4;pass++){let did=false;for(let i=0;i<r.length&&r.length>4;i++){const m=r.length,p0=r[(i+m-1)%m],a=r[i],c=r[(i+1)%m],p3=r[(i+2)%m],dx=c[0]-a[0],dy=c[1]-a[1];
+      if(Math.abs(dx)<.05||Math.abs(dy)<.05||Math.hypot(dx,dy)>.36)continue;const E=1e-3;let k=null;
+      if(Math.abs(p0[1]-a[1])<E&&Math.abs(c[0]-p3[0])<E)k=[c[0],a[1]];else if(Math.abs(p0[0]-a[0])<E&&Math.abs(c[1]-p3[1])<E)k=[a[0],c[1]];if(!k)continue;
+      r[i]=k;r.splice((i+1)%r.length,1);did=hit=true}if(!did)break}
+  return hit?r:null}
+for(const b of MAP.B)if(b.lidar_new&&!b.dk){const q=tidyOutline(pairs(b.p));if(q)b.p=q.flat()}
 const blds=MAP.B.map((b,i)=>{
   let pts=pairs(b.p);let A=0;for(let k=0;k<pts.length;k++){const[a,c]=pts[k],[d,e]=pts[(k+1)%pts.length];A+=a*e-d*c}A/=2;if(A<0)pts.reverse();
   const area=Math.abs(A)*M*M;const t=b.t||'yes';const r=hash(b.id%9973,7);
@@ -239,6 +254,12 @@ const blds=MAP.B.map((b,i)=>{
   return o;
 }).sort((a,b)=>a.key-b.key);
 const byId={};blds.forEach(b=>{byId[b.id]=b;if(b.special)byId[b.special]=b});
+// What the aerial shows on each flat roof (public/model/roofs.json, tools/model/rooftops.py): the real rooftop units and
+// the big patches of another colour. A record belongs to whichever building stands on its spot; a roof with a record
+// drops its made-up units, even when the record says the roof is bare.
+if(ROOFS&&ROOFS.roofs)for(const[x,y,un,pa] of ROOFS.roofs){const b=blds.find(o=>!o.deck&&x>=o.minx&&x<=o.maxx&&y>=o.miny&&y<=o.maxy&&pip(x,y,o.pts));
+  if(!b||b.rf||b.hip||b.canopy||b.special==='tower'||b.special==='home')continue;const plain=!b.tiers&&!b.special&&!b.tank;
+  b.rf={units:un.filter(u=>pip(u[0],u[1],b.pts)),patches:plain?pa.map(([col,r])=>({col,pts:pairs(r)})):[]};b.units=[]}
 const DECKS=blds.filter(b=>b.deck);
 /** How high (model pixels) something at (gx,gy) rides: on a road deck for 'road', on a rail bridge for 'rail', else 0. */
 function rideZ(kind,gx,gy,ux,uy){let z=0;for(const b of DECKS){if(b.deck!==kind||gx<b.minx||gx>b.maxx||gy<b.miny||gy>b.maxy||b.hpx<=z)continue;if(!pip(gx,gy,b.pts)||ux!=null&&b.cls&&!runsAlong(b.cls,gx,gy,ux,uy))continue;const h=b.zf?b.zf(gx,gy):b.hpx;if(h>z)z=h}return z}
@@ -326,7 +347,19 @@ function drawDeck(c,b){const d=b.dk,top=b.hpx,conc=gcol('#d6cfbf','walk'),asph=g
   else{const glass=mix(C['Haw River'],HI,.25);
     drawPrism(c,b.pts,b.z0,top-b.z0,d.cv?glass:conc,d.cv?'#d9d6cf':'#cfc8b8');
     if(d.cv)for(const s of visWalls(b.pts)){line(c,P(s.a[0],s.a[1],b.z0+1),P(s.q[0],s.q[1],b.z0+1),mix(C.Concrete,SH,.2),1.4);line(c,P(s.a[0],s.a[1],top-.5),P(s.q[0],s.q[1],top-.5),'#f1ede4',1);if(evening()){const n=Math.max(1,Math.round(s.L*M/3));for(let k=0;k<n;k++){const u0=(k+.12)/n,u1=(k+.88)/n,A=u=>[s.a[0]+(s.q[0]-s.a[0])*u,s.a[1]+(s.q[1]-s.a[1])*u],p0=A(u0),p1=A(u1);eq([P(p0[0],p0[1],b.z0+2),P(p1[0],p1[1],b.z0+2),P(p1[0],p1[1],top-1),P(p0[0],p0[1],top-1)],'#ffe9b0',.5)}}}}}
-function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b);DT.roof(c,b)}
+function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b);if(b.rf)drawRoofReal(c,b);DT.roof(c,b)}
+// The roof as the aerial shows it: patches of another colour laid on the roof, then the units standing on it (a pale
+// one is a box: an air handler or a vent; a dark one lies flat: a skylight or a hatch).
+const lumOf=h=>{const n=parseInt(h.slice(1),16);return(n>>16)*.299+(n>>8&255)*.587+(n&255)*.114};
+function drawRoofReal(c,b){const R=b.rf,hp=b.hpx;
+  if(R.patches.length)onPlane(c,hp,b.pts,()=>{for(const q of R.patches){c.beginPath();q.pts.forEach((v,i)=>i?c.lineTo(v[0],v[1]):c.moveTo(v[0],v[1]));c.closePath();c.fillStyle=surf(mix(q.col,HI,.06),true);c.fill()}});
+  const us=R.units.slice().sort((a,q)=>a[0]+a[1]-q[0]-q[1]);
+  for(const[ux,uy,wm,dm,col] of us){let z=hp,on=b.pts;if(b.tiers)for(const t of b.tiers){const tz=Math.min(250,t.h*ZPM);if(tz>z&&pip(ux,uy,t.pts)){z=tz;on=t.pts}}
+    const hw=Math.max(.07,Math.min(.26,wm/M/2)),hd=Math.max(.07,Math.min(.26,dm/M/2)),box=[[ux-hw,uy-hd],[ux+hw,uy-hd],[ux+hw,uy+hd],[ux-hw,uy+hd]];
+    // it must stand wholly on its roof, and (the tiers are already drawn) not behind a taller part of the building
+    if(!box.every(v=>pip(v[0],v[1],on)))continue;if(b.tiers&&b.tiers.some(t=>Math.min(250,t.h*ZPM)>z+1&&t.pts.some(v=>v[0]+v[1]>ux+uy)))continue;
+    if(lumOf(col)<100)poly(c,box.map(v=>P(v[0],v[1],z)),surf(mix(col,'#2a3442',.35),true));
+    else{const body=mix(col,'#c9cfd6',.45);drawPrism(c,box,z,wm*dm>8?4.5:3,body,mix(body,HI,.3));if(wm*dm>6){const tp=P(ux,uy,z+(wm*dm>8?4.5:3));circ(c,tp[0],tp[1],1.2,'#8a93a0')}}}}
 // stepped roof levels measured by the lidar survey: each tier sits on the one below it
 function drawTiers(c,b){let z0=b.hpx;const fr_=litFrac(b);let wi=7;
   for(const t of b.tiers){const z1=Math.min(250,t.h*ZPM);if(z1<z0+3)continue;
@@ -514,8 +547,11 @@ function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),g
     // box(I,x,y,r): the sum of a square window from a summed table
     const table=f=>{const I=new Int32Array(W1*(gh+1));for(let y=0;y<gh;y++){let row=0;for(let x=0;x<gw;x++){row+=f(y*gw+x);I[(y+1)*W1+x+1]=I[y*W1+x+1]+row}}return I};
     const box=(I,x,y,r)=>{const x0=Math.max(0,x-r),y0=Math.max(0,y-r),x1=Math.min(gw,x+r+1),y1=Math.min(gh,y+r+1);return[I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0],(x1-x0)*(y1-y0)]};
+    // "asphalt" under a real tree's crown and not mapped as paved is the shadow of a bare crown on a yard or in the woods
+    const out=[];for(const o of pts0){if(o.kind!=='tree')continue;const rr=((o.r||3)+1.5)/M*R,cx=o.gx*R,cy=o.gy*R;
+      for(let y=Math.max(0,Math.floor(cy-rr));y<=Math.min(gh-1,Math.ceil(cy+rr));y++)for(let x=Math.max(0,Math.floor(cx-rr));x<=Math.min(gw-1,Math.ceil(cx+rr));x++){const q=y*gw+x;if(cls[q]===1&&pv[q*4]<128&&(x+.5-cx)**2+(y+.5-cy)**2<=rr*rr){cls[q]=255;out.push(q)}}}
     const IA=table(q=>cls[q]===1?1:0),core=new Uint8Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){if(cls[y*gw+x]!==1)continue;const[a,n]=box(IA,x,y,6);if(a>=n*.8)core[y*gw+x]=1}
-    const IC=table(q=>core[q]),out=[];for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const q=y*gw+x;if(cls[q]===1&&pv[q*4]<128&&!box(IC,x,y,4)[0]){cls[q]=255;out.push(q)}}
+    const IC=table(q=>core[q]);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){const q=y*gw+x;if(cls[q]===1&&pv[q*4]<128&&!box(IC,x,y,4)[0]){cls[q]=255;out.push(q)}}
     // fill from the edges inwards with whatever lies next to each cell (not water), lawn where nothing does
     let todo=out;for(let pass=0;pass<60&&todo.length;pass++){const next=[],set=[];for(const q of todo){const x=q%gw,y=(q-x)/gw,cnt=[0,0,0,0,0,0,0,0];let any=0;
         for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const a=x+dx,b=y+dy;if(a<0||b<0||a>=gw||b>=gh)continue;const c=cls[b*gw+a];if(c!==255&&c!==1&&c!==5){cnt[c]++;any++}}
@@ -1261,11 +1297,13 @@ cv.addEventListener('pointerdown',timed(e=>{touches.set(e.pointerId,[e.clientX,e
 // motion it steps a level at a time, as before)
 cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);
   if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
-let lensAt=null;const LENS={c:null,d:null,r:null,vs:0,ver:-1,t:0,S:0};let treePts=null;
+let lensAt=null;const LENS={c:null,e:null,g:null,de:0,dg:0,r:null,vs:0,ver:-1,t:0,S:0};let treePts=null;
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
 function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
 const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}if(drag)TB=Math.min(TB,2);drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
-cv.addEventListener('mousemove',timed(e=>{if(drag){lensAt=null;return}lensAt=toStatic(e);const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b);if(reduce)requestAnimationFrame(frame)}}));cv.addEventListener('mouseleave',()=>{hoverB=null;lensAt=null;onHover(null)});
+// (with reduced motion nothing draws unless asked, so the lens asks for one frame each time it moves or goes)
+let lensAsk=0;const lensKick=()=>{if(reduce&&!lensAsk)lensAsk=requestAnimationFrame(ts=>{lensAsk=0;frame(ts)})};
+cv.addEventListener('mousemove',timed(e=>{if(drag){lensAt=null;return}lensAt=toStatic(e);const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b)}lensKick()}));cv.addEventListener('mouseleave',()=>{hoverB=null;lensAt=null;onHover(null);lensKick()});
 
 // ---------- light grading from the sun ----------
 const GD={dawn:{m:[1.03,.9,.92],a:[18,4,16],d:-.05},day:{m:[1.02,1.01,1],a:[0,0,0],d:-.12},dusk:{m:[1.04,.82,.76],a:[16,0,18],d:-.05},night:{m:[.40,.45,.70],a:[6,8,24],d:.2}};
@@ -1416,18 +1454,21 @@ function frame(ts){const F0=performance.now();
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
   if(lensAt&&!drag&&!touches.size&&!ZG&&!frame.stale){const[sx,sy]=lensAt;treePts=treePts||pts0.filter(o=>o.kind==='tree');
     if(treePts.some(o=>sx>o.box[0]&&sx<o.box[2]&&sy>o.box[1]&&sy<o.box[3])){const g_=geo(),Rc=Math.round(60*W/(g_.cw||W)),S=Rc*2,Rm=Rc/VS,L=LENS;
-      if(!L.c||L.S!==S){L.c=mk(S,S).getContext('2d');L.d=mk(S,S).getContext('2d');L.S=S;L.r=null}
+      if(!L.c||L.S!==S){L.c=mk(S,S).getContext('2d');L.e=mk(S,S).getContext('2d');L.g=mk(S,S).getContext('2d');L.S=S;L.r=null}
       if(!L.r||L.vs!==VS||L.ver!==stver||(Math.hypot(L.r[0]+Rm-sx,L.r[1]+Rm-sy)*VS>2&&F0-L.t>40)){
         const c=L.c,b0=BT,t0=TGT,o0=ox,o1=oy,r0=TR,g0=TG,r=[Math.round((sx-Rm)*VS)/VS,Math.round((sy-Rm)*VS)/VS,0,0];r[2]=r[0]+2*Rm;r[3]=r[1]+2*Rm;
-        const bt=[VS,0,0,VS,-r[0]*VS,-r[1]*VS],tg={c,e:L.d,g:L.d,de:0,dg:0},at=()=>{BT=bt;TGT=tg;ox=BOX;oy=BOY;TR=r};
-        for(const q of [c,L.d]){q.setTransform(1,0,0,1,0,0);q.globalAlpha=1;q.globalCompositeOperation='source-over';q.clearRect(0,0,S,S)}
-        at();setT(c,L.d,L.d);const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]},cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
+        const bt=[VS,0,0,VS,-r[0]*VS,-r[1]*VS],tg={c,e:L.e,g:L.g,de:0,dg:0},at=()=>{BT=bt;TGT=tg;ox=BOX;oy=BOY;TR=r};
+        for(const q of [c,L.e,L.g]){q.setTransform(1,0,0,1,0,0);q.globalAlpha=1;q.globalCompositeOperation='source-over';q.clearRect(0,0,S,S)}
+        at();setT(c,L.e,L.g);const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]},cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
         TG=[Math.min(...cs.map(q=>q[0])),Math.min(...cs.map(q=>q[1])),Math.max(...cs.map(q=>q[0])),Math.max(...cs.map(q=>q[1]))];
         GHOST=true;try{drawGround(c);drawShadows(c);TG=null;at();for(const b of blds)if(hitBox(b.box,r)){drawBuilding(c,b);at()}
           for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(c,o);else if(TCLIP)clipPoint(o,tg);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);at()}}
         finally{GHOST=false;BT=b0;TGT=t0;ox=o0;oy=o1;TR=r0;TG=g0}
-        L.r=r;L.vs=VS;L.ver=stver;L.t=F0}
+        L.r=r;L.vs=VS;L.ver=stver;L.t=F0;L.de=tg.de;L.dg=tg.dg}
       const X=Math.round(L.r[0]*VS)-cx,Y=Math.round(L.r[1]*VS)-cy;w.save();w.setTransform(1,0,0,1,0,0);w.beginPath();w.arc(X+Rc,Y+Rc,Rc,0,7);w.clip();w.drawImage(L.c.canvas,X,Y);w.restore();
+      // the lit windows and the glow inside the ring are the patch's own, so what the crown hid is lit too
+      for(const[q,im,on] of [[E,L.e,L.de],[GL,L.g,L.dg]]){if(!on&&!(q===E?FT.de:FT.dg))continue;if(on){if(q===E)FT.de=FT.wide=1;else glowOn()}
+        q.save();q.setTransform(1,0,0,1,0,0);q.beginPath();q.arc(X+Rc,Y+Rc,Rc,0,7);q.clip();q.clearRect(X,Y,S,S);if(on)q.drawImage(im.canvas,X,Y);q.restore()}
       w.strokeStyle='rgba(255,248,230,.6)';w.lineWidth=Math.max(1,Math.round(W/(g_.cw||W)));w.beginPath();w.arc(X+Rc,Y+Rc,Rc-.5,0,7);w.stroke()}}
   const nv=nVis=(tx1-tx0+1)*(ty1-ty0+1);keepN=Math.max(32,nv*3+2*(tx1-tx0+ty1-ty0)+16);trimTiles(keepN); // the view, the ring round it and the view at the next level each way
   BT=[VS,0,0,VS,0,0];setT(w,E,GL);TGT=FT;ox=BOX-cx/VS;oy=BOY-cy/VS;
