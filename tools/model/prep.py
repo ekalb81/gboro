@@ -523,9 +523,44 @@ try:
     import names
     try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
     except FileNotFoundError: NOV={}
-    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV)
+    try: ADR=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','addresses.json')))['points']
+    except FileNotFoundError: ADR=None
+    try:
+        _lot=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','public','model','house.json')))
+        PRIV=(_lot['at'][0]+_lot['base'][0]/M,_lot['at'][1]+_lot['base'][1]/M,_lot['at'][0]+_lot['base'][2]/M,_lot['at'][1]+_lot['base'][3]/M)
+    except (FileNotFoundError,KeyError): PRIV=None
+    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV,ADR,R,M,PRIV)
     print('names',names.coverage(B))
 except FileNotFoundError: pass
+
+# Outlines the lidar found are checked against what is mapped around them (gboro issue #41):
+#   - one lying mostly on a mapped footbridge or bridge deck is that bridge seen from above, and goes;
+#   - where one overlaps a building OpenStreetMap has, the overlap belongs to the mapped building and the rest stays
+#     as the part of it the map lacks (or goes, if only a sliver is left).
+# (One that reaches over a street is left alone: cutting it along the street left notched outlines the renderer could
+# no longer square up, and the squaring already pulls the ragged edge back.)
+try:
+    from shapely.geometry import Polygon as _Pg2
+    from shapely.ops import unary_union as _uu2
+    from shapely.strtree import STRtree as _Tree2
+    def _poly(p): return _Pg2(list(zip(p[0::2],p[1::2]))).buffer(0)
+    _dk=[_poly(d_['p']) for d_ in DK]
+    _osm=[_poly(b['p']) for b in B if not b.get('lidar_new')];_ot=_Tree2(_osm)
+    _keep=[];_n=[0,0]
+    for b in B:
+        if not b.get('lidar_new'): _keep.append(b);continue
+        g_=_poly(b['p']);a0=g_.area
+        if a0<=0: continue
+        if sum(g_.intersection(q).area for q in _dk)>.5*a0: _n[0]+=1;continue
+        hit=[_osm[i] for i in _ot.query(g_) if _osm[i].intersects(g_)]
+        if hit and g_.intersection(_uu2(hit)).area>.03*a0:
+            g_=g_.difference(_uu2(hit).buffer(.3/M)).buffer(-1/M).buffer(1/M);_n[1]+=1
+        if g_.geom_type=='MultiPolygon': g_=max(g_.geoms,key=lambda q:q.area)
+        if g_.is_empty or g_.geom_type!='Polygon' or g_.area*M*M<40 or g_.area<.3*a0: _n[0]+=1;continue
+        if g_.area<a0-1e-6: b['p']=flat([(round(x,2),round(y,2)) for x,y in list(g_.simplify(.3/M).exterior.coords)[:-1]])
+        _keep.append(b)
+    B=_keep;print('lidar outlines against the map: dropped',_n[0],'cut round a mapped building',_n[1])
+except ImportError: pass
 
 GEO={'north':N,'south':S,'west':Wl,'east':El,'mPerDegLon':round(k,3),'mPerDegLat':110574}
 if GC: VG=None   # the aerial's ground classes (GC) took over from the planted-ground mask; the live model ships without it

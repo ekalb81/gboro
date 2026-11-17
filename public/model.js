@@ -16,7 +16,7 @@ import { mowRoute } from './house.js';
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
 import { makeDetails } from './details.js';
 
-export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
+export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, yards: YARDS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
@@ -209,7 +209,7 @@ const blds=MAP.B.map((b,i)=>{
   if(SPECIAL[b.id]==='kress'){delete b.tr;delete b.tb}
   const hm=(b.dk?b.dk.z1:0)||(b.tb>2.5?b.tb:0)||(b.id!==208115796&&b.lh>2.5?b.lh:0)||b.h||lv*3.6;if(b.lh>2.5&&!b.l&&!(F&&F.floors))lv=Math.max(1,Math.round(b.lh/3.8));const hpx=Math.min(250,hm*ZPM);
   const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
-  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
+  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',st:b.st||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
   if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt;if(b.dk.cl&&Array.isArray(b.dk.cl[0]))o.cls=b.dk.cl.map(pairs);
     // a ramp's top is a tilted plane: z = sl[0] + sl[1]*gx + sl[2]*gy (model pixels), kept between its two end heights
@@ -538,6 +538,8 @@ function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),g
   const kinds=['walk','road','grass','grass','grass','road','walk','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
   // the kind of ground in each cell, worked out once (the colours change with the light, the kinds do not)
   const cls=GCLS||(GCLS=(()=>{const cls=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)cls[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
+  // a work yard read from the aerial (yards.json) stands on dirt, whatever specks of lawn and paving the cells there held
+  if(YARDS&&YARDS.r===R)for(const[j,i0,n]of YARDS.runs)for(let i=i0;i<i0+n;i++){const q=j*gw+i;if(j<gh&&i<gw&&cls[q]!==1&&cls[q]!==7)cls[q]=4}
   // The aerial's "asphalt" away from anything mapped as paved (a street, a drive, a parking lot) is mostly shadow, bare
   // soil and leafless crowns: grey blotches across lawns and back yards. Such a cell stays only where the ground is
   // solidly asphalt for 20 m around (a yard, an unmapped lot); the rest takes the kind of ground next to it.
@@ -692,11 +694,15 @@ const pts0=[];
   // landmarks
   const ccp=MAP.PK.find(p=>p.n==='Center City Park');if(ccp&&!DT.points.some(o=>o.what==='jet')){const q=pairs(ccp.p);pts0.push({kind:'fountain',gx:q.reduce((a,p)=>a+p[0],0)/q.length,gy:q.reduce((a,p)=>a+p[1],0)/q.length})}
   const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(lb){const q=pairs(lb.p);let best=null;for(let i=0;i<q.length-1;i++){const a=q[i],b=q[i+1];const nx=b[1]-a[1],ny=-(b[0]-a[0]);if(nx+ny>0){const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(!best||L>best.L)best={a,b,L}}}if(best)pts0.push({kind:'string',a:best.a,b:best.b,gx:(best.a[0]+best.b[0])/2,gy:(best.a[1]+best.b[1])/2})}
+  // what stands in a work yard: trailers and sheds as boxes, rubble as piles, pipe and timber as low stacks
+  if(YARDS)for(const[x,y,L,W,ang,col,what]of YARDS.things){if(BLDG(x,y)||railNear(x,y,1.2))continue;const a=ang*Math.PI/180,ux=Math.cos(a),uy=Math.sin(a);pts0.push({kind:'yard',gx:x,gy:y,what,col,L,W,r:rect(x,y,ux,uy,L/M,W/M)})}
   pts0.push(...DT.points);
   for(let i=pts0.length-1;i>=0;i--){const o=pts0[i];if((o.kind==='car'||o.kind==='tree')&&DT.wet(o.gx,o.gy)){pts0.splice(i,1);continue}if(DECKS.some(b=>b.deck!=='foot'&&o.gx>b.minx&&o.gx<b.maxx&&o.gy>b.miny&&o.gy<b.maxy&&pip(o.gx,o.gy,b.pts)))pts0.splice(i,1)}
   pts0.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
 })();
-const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);return{cx:q.reduce((a,p)=>a+p[0],0)/q.length,cy:q.reduce((a,p)=>a+p[1],0)/q.length,rx:16/M,ry:11/M}})();
+// "Where We Met" (Janet Echelman, 2016) hangs over LeBauer Park's Great Lawn, the lawn in the park's north-west, not over
+// the playground: the spot is the lawn's middle measured on the aerial, as offsets from the park's own outline
+const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return{cx:x0+(x1-x0)*.295,cy:y0+(y1-y0)*.175,rx:22/M,ry:14/M}})();
 function drawTree(c,o){drawTreeSp(c,o,{P,fr,circ,poly,line,mix,surf,SH,HI,doy:DOY,lean:WIND.lean})}
 const FLAGS=loadFlags(TREES);
 // A post-top street lamp, as on downtown's sidewalks: a footed post, a pale globe under a dark cap. Lit, the globe
@@ -722,14 +728,38 @@ function drawFountain(c,o){const r=7/M;const ring=[...Array(16)].map((_,k)=>[o.g
 let GHOST=false;
 function ghostTree(c,o){const b=P(o.gx,o.gy),hp=Math.min(o.h,32)*ZPM;line(c,[b[0]+.5,b[1]],[b[0]+.5,b[1]-hp*.5],'#5a4636',hp>30?2:1.4);
   c.save();c.globalAlpha=.55;c.strokeStyle='#fff8e6';c.lineWidth=.7;c.setLineDash([2,2]);c.beginPath();c.ellipse(b[0]+.5,b[1]-hp*.64,Math.max(2,o.r*ZPM*.85),Math.max(2,o.r*ZPM*.7),0,0,7);c.stroke();c.restore()}
-function drawPoint(c,o){switch(o.kind){case'tree':GHOST?ghostTree(c,o):drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break}}
-// LeBauer Park's suspended net sculpture, drawn above everything
-function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const z=(u,v)=>26-10*(1-u*u)*(1-v*v);const pt=(u,v)=>P(cx+u*rx,cy+v*ry,z(u,v));const lit=lampsOn();
-  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v])=>line(c,P(cx+u*rx*1.15,cy+v*ry*1.15),P(cx+u*rx*1.15,cy+v*ry*1.15,34),'#e8e4dc',1));
-  c.globalAlpha=.75;for(let i=0;i<=10;i++){const u=-1+i/5;c.beginPath();for(let j=0;j<=20;j++){const v=-1+j/10;const p=pt(u,v);j?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])}c.strokeStyle=i%2?'#f08a7a':'#ffb86b';c.lineWidth=.8;c.stroke();
-    c.beginPath();for(let j=0;j<=20;j++){const v=-1+j/10;const p=pt(v,u);j?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])}c.stroke()}c.globalAlpha=1;
-  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v])=>line(c,pt(u,v),P(cx+u*rx*1.15,cy+v*ry*1.15,34),'#e8e4dc',.6));
-  if(lit){for(let i=0;i<=10;i++)for(let j=0;j<=10;j++){if((i+j)%2)continue;const p=pt(-1+i/5,-1+j/5);ed(p,(i+j)%4?'#ff8ab4':'#8ad8ff')}}}
+function drawPoint(c,o){switch(o.kind){case'tree':GHOST?ghostTree(c,o):drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break;case'yard':drawYard(c,o);break}}
+// a thing in a work yard (see yards.json)
+function drawYard(c,o){let q=o.r.map(p=>[p[0],p[1]]);let A=0;for(let k=0;k<q.length;k++){const[a,b]=q[k],[d,e]=q[(k+1)%q.length];A+=a*e-d*b}if(A<0)q.reverse();
+  if(o.what==='box'){const h=(o.L>7?2.8:o.L>4.5?2.2:1.7)*ZPM;drawPrism(c,q,0,h,mix(o.col,SH,.22),mix(o.col,'#d9d4c8',.35))}
+  else if(o.what==='stack'){drawPrism(c,q,0,1.1*ZPM,mix('#6b6660',SH,.3),'#8d8882');const[a,b,d]=q;for(let k=1;k<4;k++){const t=k/4;line(c,P(a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t,1.1*ZPM),P(b[0]+(q[2][0]-b[0])*t,b[1]+(q[2][1]-b[1])*t,1.1*ZPM),'#5a554f',.6)}}
+  else{const n=Math.max(3,Math.round(o.L/1.6)),ux=(o.r[1][0]-o.r[0][0]),uy=(o.r[1][1]-o.r[0][1]);   // a pile: heaped lumps along its length, biggest in the middle
+    for(let k=0;k<n;k++){const t=(k+.5)/n-.5,hh=hash(o.gx*13+k,o.gy*7),x=o.gx+ux*t*.8+(hh-.5)*o.W/M*.4,y=o.gy+uy*t*.8+(hash(k,o.gx)-.5)*o.W/M*.4,r=Math.max(2.2,o.W*.8*(1-Math.abs(t)*.7)),p=P(x,y,0);
+      c.fillStyle=mix('#7a7672',SH,.38);c.beginPath();c.ellipse(p[0],p[1]-r*.35,r*1.2,r*.85,0,0,7);c.fill();c.fillStyle=k%2?'#8f8a84':'#827d78';c.beginPath();c.ellipse(p[0]-r*.15,p[1]-r*.65,r*.8,r*.55,0,0,7);c.fill()}}}
+// LeBauer Park's fabric sculpture, drawn above everything: four masts, and between them two layers of netting that sag
+// into a deep bowl, coloured in rings from blue at the rim through white and gold to red at the bottom, as the real one is
+const NETC=['#2f6fd0','#5aa2e6','#bfe0f4','#fff3d6','#ffc24d','#ff8a3c','#ef4f3c','#c8324a'];
+function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const lit=lampsOn(),N=14,MH=38;
+  const bowl=(u,v)=>(1-u*u)*(1-v*v),dip=(u,v)=>Math.exp(-((u-.18)*(u-.18)+(v+.1)*(v+.1))/.09);
+  const mast=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v])=>[cx+u*rx*1.18,cy+v*ry*1.18]);
+  // the two masts at the back first, the net, then the two in front
+  const post=k=>{const[x,y]=mast[k];line(c,P(x,y),P(x,y,MH),'#8d8a86',1.6);line(c,P(x,y),P(x,y,MH),'#e8e4dc',.8)};
+  const sheet=(s,top,sag,deep,al,off)=>{const z=(u,v)=>top-sag*bowl(u,v)-deep*dip(u,v)-3*((1-u*u)*v*v+(1-v*v)*u*u),pt=(u,v)=>P(cx+u*(1-.26*(1-v*v))*rx*s,cy+v*(1-.26*(1-u*u))*ry*s,z(u,v));   // the edges are pulled in and hang lower between the corners, which the masts hold up
+    const cells=[];for(let i=0;i<N;i++)for(let j=0;j<N;j++)cells.push([i,j]);cells.sort((a,b)=>(a[0]+a[1])-(b[0]+b[1]));
+    for(const[i,j]of cells){const u0=-1+2*i/N,u1=-1+2*(i+1)/N,v0=-1+2*j/N,v1=-1+2*(j+1)/N,um=(u0+u1)/2,vm=(v0+v1)/2;
+      const t=Math.min(1,bowl(um,vm)*.75+dip(um,vm)*.45+off),k=Math.min(NETC.length-1,Math.floor(t*NETC.length));
+      // the far wall of the bowl faces the viewer and catches the light, the near wall is seen from behind
+      const face=((z(u1,vm)-z(u0,vm))+(z(um,v1)-z(um,v0)))/sag;const col=mix(NETC[k],face>0?'#ffffff':SH,Math.min(.28,Math.abs(face)*1.6));
+      c.globalAlpha=al;c.beginPath();[[u0,v0],[u1,v0],[u1,v1],[u0,v1]].forEach(([u,v],n)=>{const p=pt(u,v);n?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])});c.closePath();c.fillStyle=col;c.fill();
+      c.globalAlpha=al*.55;c.strokeStyle=mix(NETC[k],'#ffffff',.35);c.lineWidth=.35;c.stroke()}
+    c.globalAlpha=1;return pt};
+  post(0);post(1);post(3);
+  const rim=sheet(1,MH-3,12,8,.58,0);const inner=sheet(.6,MH-8,8,12,.66,.25);
+  // rigging: each corner of the net to its mast, and the rim rope
+  c.globalAlpha=.8;[[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([u,v],k)=>line(c,rim(u,v),P(mast[k][0],mast[k][1],MH),'#e8e4dc',.6));
+  c.beginPath();for(let k=0;k<=4*N;k++){const s=k%(4*N),e=Math.floor(s/N),f=(s%N)/N*2-1;const[u,v]=e===0?[f,-1]:e===1?[1,f]:e===2?[-f,1]:[-1,-f];const p=rim(u,v);k?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])}c.strokeStyle='#f4f1ea';c.lineWidth=.7;c.stroke();c.globalAlpha=1;
+  post(2);
+  if(lit){for(let i=0;i<=10;i++)for(let j=0;j<=10;j++){if((i+j)%2)continue;const u=-1+i/5,v=-1+j/5;ed(inner(u,v),(i+j)%4?'#ff8ab4':'#8ad8ff');if((i+j)%4===0)ed(rim(u,v),'#ffd75e')}}}
 
 // ---------- what hides what ----------
 // Anything that is partly behind a building (or, for moving things, behind a tree, lamp or parked car) is drawn on a
@@ -817,6 +847,7 @@ let occFor='';
     else if(o.kind==='car'){fp=o.r;zmax=5;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],CARS[o.ty][3]))));o.occ=path(h);o.occParts=[[['p',h],0,0]]}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
     else if(o.kind==='prop'){const r=o.pr/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=o.ph+4;pad=3;smp=[[o.gx,o.gy,0]]}
+    else if(o.kind==='yard'){fp=o.r;zmax=10;pad=7;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}
     else{fp=[o.a,o.b];zmax=24;pad=4;smp=[[o.a[0],o.a[1],0],[o.b[0],o.b[1],0],[o.gx,o.gy,0]]}
     o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,parts:o.occParts,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
 const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)*4096+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}
@@ -1088,6 +1119,13 @@ const XWALK=(()=>{const cw=[],bars=[];const J=TF.nodes.filter(n=>n.deg>=3&&!n.rb
       if(boxed(x,y,n)||dup(x,y,ux,uy))continue;cw.push([x,y,ux,uy,w]);
       if(a.i&&(n.signal||a.i.sign==='stop')){const[bx,by,bu,bv]=at((wmax/2+(n.rb?5.5:4.3))/M),rx=bv,ry=-bu,h0=a.o?.25/M:-(w/2-.4)/M,h1=(w/2-.4)/M;
         if(!boxed(bx,by,n))bars.push([bx+rx*h0,by+ry*h0,bx+rx*h1,by+ry*h1])}}}
+  // A divided street has a crosswalk on each carriageway, each set back from its own node, so the two halves of one
+  // crossing sat a few metres apart along the street. Two that run the same way, side by side, are slid along the
+  // street to meet in the middle (each at most 4 m, so the stop line stays behind it) and take one heading.
+  {const moved=new Set();for(let i=0;i<cw.length;i++)for(let j=i+1;j<cw.length;j++){if(moved.has(i)||moved.has(j))continue;const a=cw[i],b=cw[j],dot=a[2]*b[2]+a[3]*b[3];if(Math.abs(dot)<.9)continue;
+      const dx=b[0]-a[0],dy=b[1]-a[1],al=dx*a[2]+dy*a[3],ac=Math.abs(dx*a[3]-dy*a[2]);if(ac<.5||ac>3.4||Math.abs(al)<.04||Math.abs(al)>8/M)continue;
+      const sg=dot<0?-1:1;let ux=a[2]+sg*b[2],uy=a[3]+sg*b[3];const L=Math.hypot(ux,uy);ux/=L;uy/=L;
+      a[0]+=a[2]*al/2;a[1]+=a[3]*al/2;b[0]-=a[2]*al/2;b[1]-=a[3]*al/2;a[2]=ux;a[3]=uy;b[2]=sg*ux;b[3]=sg*uy;moved.add(i);moved.add(j)}}
   // box: [x, y, radius] of each junction, where the lane lines of the streets that meet are not painted
   return{cw,bars,box:J.map(n=>[n.x,n.y,(RW[n.cls]/2-.3)/M])}})();
 // walkers keep to the sidewalks: where a street ends on a roundabout they turn back short of the ring

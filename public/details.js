@@ -73,8 +73,27 @@ export function makeDetails(DET, env) {
     c.beginPath(); c.arc(cx, cy, m(1.8), 0, 7); c.stroke(); c.restore();
   }
   function surface(c, a) {
-    const col = a.k === 'play' && /tartan|rubber|artificial/.test(a.s || '') ? '#4d9fd0' : SURF[a.k];
+    const rubber = a.k === 'play' && /tartan|rubber|artificial/.test(a.s || '');
+    const col = rubber ? '#9cbde4' : SURF[a.k];   // poured rubber is a pale periwinkle, well away from the water's blue
     trace(c, a.q); c.fillStyle = gcol(col, a.k === 'turf' ? 'grass' : 'walk'); c.fill();
+    // a big rubber playground has turf crescents and low mounds in it (LeBauer Park's is built that way), which is
+    // also what tells it apart from a pond at a glance
+    const w = a.bb[2] - a.bb[0], h = a.bb[3] - a.bb[1];
+    if (rubber && w > m(25) && h > m(18)) {
+      c.save(); trace(c, a.q); c.clip(); c.lineCap = 'round';
+      const [cx, cy] = a.c, turf = gcol(SURF.turf, 'grass'), sd = Math.round(cx * 7 + cy * 3);
+      const arc = (x, y, r, a0, a1, lw) => { c.beginPath(); c.arc(x, y, r, a0, a1); c.strokeStyle = turf; c.lineWidth = lw; c.stroke(); };
+      const ex = cx + w * 0.17, ey = cy - h * 0.02, r = Math.min(w, h) * 0.3;
+      arc(ex, ey, r, -0.5, 1.9, m(3.4)); arc(ex, ey, r * 0.55, 2.4, 5.2, m(2.6)); arc(ex, ey, r * 0.2, 0, 7, m(1.6));
+      const wx = cx - w * 0.22, wy = cy + h * 0.12;
+      arc(wx, wy, r * 0.5, 2.6, 5.6, m(2.4)); arc(wx + w * 0.14, wy + h * 0.05, r * 0.4, 3.3, 6.0, m(2.2));
+      for (let i = 0; i < 9; i++) {   // mounds: pale domes with a shaded side
+        const x = a.bb[0] + w * (0.12 + 0.76 * hash(sd, i + 1)), y = a.bb[1] + h * (0.15 + 0.7 * hash(sd, i + 31));
+        c.beginPath(); c.arc(x + m(0.25), y + m(0.25), m(1.1), 0, 7); c.fillStyle = gcol(mix(col, SH, 0.3), 'walk'); c.fill();
+        c.beginPath(); c.arc(x, y, m(1.0), 0, 7); c.fillStyle = gcol(mix(col, '#ffffff', 0.45), 'walk'); c.fill();
+      }
+      c.restore();
+    }
     if (a.k === 'turf' || a.k === 'dogpark' || a.k === 'play') { c.strokeStyle = gcol(a.k === 'turf' ? '#f4f1ea' : mix(col, SH, 0.35), 'walk'); c.lineWidth = m(0.35); c.stroke(); }
     if (a.k === 'platform') { c.save(); trace(c, a.q); c.clip(); c.strokeStyle = gcol('#e8c33a', 'walk'); c.lineWidth = m(0.9); trace(c, a.q); c.stroke(); c.restore(); }
   }
