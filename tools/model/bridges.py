@@ -16,7 +16,8 @@ Each deck: {k:'road', p: outline, z0, z1: underside and top (m), n: street name,
             cl: the centre line of each carriageway on this piece (also tells the renderer which way the deck runs),
             gl: gold lines (the centre of a two-way street, the middle of a divided one), wl: dashed white lane lines,
             ed: the kerb and parapet lines, sp: 1 for a span, pr: its piers,
-            sl: [ax, ay, za, bx, by, zb] for a ramp: the top is za metres high at (ax, ay) and zb at (bx, by)}
+            sl: [ax, ay, za, bx, by, zb] for a ramp: the top is za metres high at (ax, ay) and zb at (bx, by),
+            ct: the ramp piece's two cut lines [x, y, x, y,  x, y, x, y]: za all along the first, zb along the second}
 
 prep.py calls road_decks() while it builds the model. To rebuild only the bridges of a model that is already built:
   python3 tools/model/bridges.py public/model/downtown.json
@@ -196,7 +197,7 @@ def road_decks(R, RL, X, GX, GY, M, widths=None):
         a, b = ln.interpolate(max(0, d - .05)), ln.interpolate(min(ln.length, d + .05))
         return (p.x, p.y), unit((a.x, a.y), (b.x, b.y))
 
-    def piece(lanes, c0, c1, z0, za, zb, extra, AB=None):
+    def piece(lanes, c0, c1, z0, za, zb, extra, AB=None, true0=None):
         """One deck, cut between the lines c0 and c1. lanes = [(carriageway line F, from, to (distances along F),
         half width in tiles, road width in m, one way)]."""
         quad = Polygon([c0[0], c0[1], c1[1], c1[0]])
@@ -238,6 +239,9 @@ def road_decks(R, RL, X, GX, GY, M, widths=None):
                  'cl': cl, 'gl': gl, 'wl': wl, 'ed': ed, **extra}
             if za != zb:
                 d['sl'] = [round(A[0], 2), round(A[1], 2), round(za, 2), round(B[0], 2), round(B[1], 2), round(zb, 2)]
+                # the two cuts themselves: the top is za all along the first and zb all along the second, so
+                # neighbouring pieces meet at one height from kerb to kerb, on a curve too
+                d['ct'] = [round(v, 3) for c_ in (true0 or c0, c1) for p_ in c_ for v in p_]
             DK.append(d)
 
     for g_ in groups:
@@ -309,7 +313,7 @@ def road_decks(R, RL, X, GX, GY, M, widths=None):
                     # little inside the piece before so they overlap rather than leave a gap
                     for j, k in enumerate(ks):
                         mid = lambda d: list(at(Fs[k], d)[0])
-                        piece([lanes[j]], cutat([ds0[j] - sgn * .45], [k]), cutat([ds1[j]], [k]), 0, za, zb, {'n': name}, [mid(ds0[j]), mid(ds1[j])])
+                        piece([lanes[j]], cutat([ds0[j] - sgn * .45], [k]), cutat([ds1[j]], [k]), 0, za, zb, {'n': name}, [mid(ds0[j]), mid(ds1[j])], cutat([ds0[j]], [k]))
                     prev = None
                     continue
                 nxt = cutat(ds1, ks)
