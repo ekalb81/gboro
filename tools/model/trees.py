@@ -1,9 +1,11 @@
 """Build public/model/trees.json: every tree in the downtown model, where it really stands, how tall and wide
 it is, and whether it keeps its leaves in winter. Two steps:
 
-1. Once per lidar survey (heavy, ~280 MB download):
+1. Once per lidar survey:
      python3 tools/model/trees.py lidar <lidar-dir> <ortho-15cm.jpg> <out: data/model/osm/trees-lidar.json>
-   lidar-dir holds the NC 2015 Phase III tiles for downtown (NOAA Digital Coast dataset 6209, GuilfordCoNC,
+   lidar-dir holds pts.npz, the 2024 survey's points as tools/model/lidar_load.py writes them (this is what the
+   committed crowns come from: it covers the whole model). Without that file it reads .laz tiles instead, as it
+   first did: the NC 2015 Phase III tiles for downtown (NOAA Digital Coast dataset 6209, GuilfordCoNC,
    20150203_LA_37_1078640{1,2,3,4}.copc.laz on the public noaa-nos-coastal-lidar-pds S3 bucket). Vegetation
    returns (classes 3-5) minus ground give a canopy height model; each crown is a local high point of it, its
    width from the canopy around it. False "trees" (vegetation-classed returns on parking decks and roofs, a few
@@ -13,7 +15,7 @@ it is, and whether it keeps its leaves in winter. Two steps:
 
 2. Every model refresh (cheap): python3 tools/model/trees.py <inputs-dir> [out.json] [model.json]
    Reads <inputs-dir>/osm/trees-lidar.json and <inputs-dir>/osm/downtown-raw.json (OpenStreetMap). Crowns now
-   under a building are dropped; OSM natural=tree nodes the lidar does not show (planted since 2015, such as
+   under a building are dropped; OSM natural=tree nodes the lidar does not show (planted since, such as
    LeBauer Park's) are added as young trees; man_made=flagpole nodes become flags.
    Buildings the lidar found are read from the model (prep.py's output; public/model/downtown.json unless given).
 
@@ -55,7 +57,17 @@ def lidar_step():
     gmin = np.full((gh, gw), 1e9, np.float32); vmax = np.full((gh, gw), -1e9, np.float32); bmax = np.full((gh, gw), -1e9, np.float32)
     vcnt = np.zeros((gh, gw), np.int32); gcnt = np.zeros((gh, gw), np.int32)
     files = sorted(glob.glob(lazdir + '/*.laz'))
-    if not files: sys.exit('no .laz tiles in ' + lazdir)
+    NPZ = os.path.join(lazdir, 'pts.npz')
+    if os.path.exists(NPZ):
+        # the 2024 survey as lidar_load.py leaves it: metres east and south of the model's corner, class 11 = road surface
+        files = []; d = np.load(NPZ); x, y, z, c = d['X'], d['Y'], d['Z'].astype(np.float32), d['C']
+        i = (x / M * R).astype(np.int64); j = (y / M * R).astype(np.int64)
+        ok = (i >= 0) & (i < gw) & (j >= 0) & (j < gh); i, j, z, c = i[ok], j[ok], z[ok], c[ok]
+        g = np.isin(c, [2, 11, 20]); v = np.isin(c, [3, 4, 5]); b = np.isin(c, [1, 6, 17])
+        np.minimum.at(gmin, (j[g], i[g]), z[g]); np.maximum.at(vmax, (j[v], i[v]), z[v]); np.maximum.at(bmax, (j[b], i[b]), z[b])
+        np.add.at(vcnt, (j[v], i[v]), 1); np.add.at(gcnt, (j[g], i[g]), 1)
+        print('read', NPZ, len(z), 'points', flush=True); del d, x, y, z, c, i, j
+    elif not files: sys.exit('no .laz tiles or pts.npz in ' + lazdir)
     for f in files:
         with laspy.open(f) as fh:
             for ch in fh.chunk_iterator(5_000_000):
@@ -131,7 +143,8 @@ def lidar_step():
         dark = s is not None and float(Lum[s].mean()) < 0.3
         ever = gf > 0.25 or (t['pen'] < 0.1 and dark)
         out.append([round(t['gx'], 2), round(t['gy'], 2), round(t['h'], 1), round(t['r'], 1), 1 if ever else 0])
-    json.dump({'about': 'Tree crowns from NC 2015 Phase III lidar (NOAA Digital Coast dataset 6209, flown 2015-02-03), checked against the 2022-02-09 NC OneMap aerial. gx, gy in model grid units (9 m), h and r in metres, ever = evergreen.',
+    survey = 'NC 2024 Phase 3 lidar (NC Emergency Management, flown 2024-02-03)' if os.path.exists(NPZ) else 'NC 2015 Phase III lidar (NOAA Digital Coast dataset 6209, flown 2015-02-03)'
+    json.dump({'about': 'Tree crowns from ' + survey + ', checked against the 2022-02-09 NC OneMap aerial. gx, gy in model grid units (9 m), h and r in metres, ever = evergreen.',
                'cols': ['gx', 'gy', 'h', 'r', 'ever'], 'C': out}, open(LOUT, 'w'), separators=(',', ':'))
     print(len(out), 'crowns;', dropped)
 
@@ -196,7 +209,7 @@ def merge_step():
     trees.sort(key=lambda t: t['gx'] + t['gy'])
     SP = sorted({t['sp'] for t in trees})
     out = {
-        'about': 'Downtown Greensboro trees. Positions, heights (m) and crown radii (m) from NC 2015 Phase III lidar (NOAA dataset 6209) plus OpenStreetMap natural=tree for trees planted since; trees under buildings dropped. Evergreen vs deciduous from the 2024-02-03 leaf-off NC OneMap aerial. Species inferred (no public inventory): typical Piedmont NC plantings by evergreen, size and setting.',
+        'about': 'Downtown Greensboro trees. Positions, heights (m) and crown radii (m) from the NC 2024 Phase 3 lidar (flown 2024-02-03) plus OpenStreetMap natural=tree for trees planted since; trees under buildings dropped. Evergreen vs deciduous from the 2022-02-09 leaf-off NC OneMap aerial. Species inferred (no public inventory): typical Piedmont NC plantings by evergreen, size and setting.',
         'cols': ['gx', 'gy', 'h', 'r', 'sp', 'src'], 'SP': SP, 'SRC': ['lidar', 'osm'],
         'T': [[round(t['gx'], 2), round(t['gy'], 2), round(t['h'], 1), round(t['r'], 1), SP.index(t['sp']), 0 if t['src'] == 'lidar' else 1] for t in trees],
         'F': flags,
