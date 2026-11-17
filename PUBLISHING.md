@@ -4,7 +4,7 @@ The site is static: everything in `public/` is the whole site. One GitHub Action
 `.github/workflows/publish.yml`, keeps it fresh:
 
 ```
-every 30 min, on push to main, or by hand
+about every 30 min at best (see below), on push to main, or by hand
   -> npm test
   -> python3 tools/model/refresh.py --publish   (about weekly: rebuild the downtown model from OpenStreetMap)
   -> node scripts/refresh.mjs     (each collector in scripts/collectors.json, then ingest)
@@ -13,8 +13,9 @@ every 30 min, on push to main, or by hand
 ```
 
 A second workflow, `.github/workflows/checks.yml`, runs on every pull request: the tests, a parse of
-every script, and a build of the site from the sample digest followed by the same
-`scripts/check-site.mjs`. It uses no secrets. Merging to `main` publishes at once, so wait for its
+every script, a build of the site from the sample digest followed by the same
+`scripts/check-site.mjs`, and `scripts/smoke.mjs`, which opens every page in a headless Chrome and
+fails if one throws or the village draws nothing (`CHROME=/path/to/chrome npm run smoke` locally). It uses no secrets. Merging to `main` publishes at once, so wait for its
 green tick before merging. To make GitHub insist on it, add a branch protection rule for `main`
 that requires the status check named `checks` (Settings > Branches).
 
@@ -88,11 +89,15 @@ fails the run.
 - The trade-off: if a source is down for a run, its items drop off the site until the next good run.
 - The workflow fails the deploy if `held.json` or any raw `.txt` file ends up in `public/`.
 
+`.github/dependabot.yml` opens one pull request a month that moves the workflows' actions to their
+newest releases.
+
 ## Things to know
 
 - GitHub runs schedules late when it's busy, and drops many of them. From 13 to 17 November 2026 the
   half-hourly schedule started 19 runs where about 200 were due, with gaps of up to eight hours.
-  `status.json` shows when the last one ran. The cure is to start the workflow from outside
+  The schedule now asks four times an hour and takes what GitHub gives: best effort.
+  `status.json` shows when the last one ran. A real cure, if it is ever wanted, is to start the workflow from outside
   (a `workflow_dispatch` call from a hosted scheduler), which needs a token only the owner can make.
 - On a public repo, GitHub pauses scheduled workflows after 60 days with no commits. Re-enable
   under Actions if that happens.

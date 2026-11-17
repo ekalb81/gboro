@@ -11,7 +11,10 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '7,37 * * * *' # every 30 minutes, off the top of the hour when GitHub's queue is busiest
+    # Best effort. GitHub starts scheduled runs late and skips many when it is busy: asked twice an hour it ran
+    # about one in ten. So ask four times an hour, away from :00 and :30 when its queue is fullest, and take
+    # what comes. A run that does start refreshes everything; one that is skipped costs nothing.
+    - cron: '11,26,41,56 * * * *'
   workflow_dispatch:
 
 permissions:

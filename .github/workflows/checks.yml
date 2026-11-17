@@ -1,5 +1,5 @@
-# Check a pull request before it is merged: the tests, that every script parses, and that the site
-# still builds. Merging to main publishes at once (publish.yml), so this is the only look
+# Check a pull request before it is merged: the tests, that every script parses, that the site
+# still builds, and that its pages load in a browser. Merging to main publishes at once (publish.yml), so this is the only look
 # a change gets first. It uses no secrets and cannot write anywhere, so it is safe on pull requests from forks.
 
 name: Checks
@@ -48,3 +48,8 @@ jobs:
         run: |
           node scripts/ingest.mjs test/fixtures
           node scripts/check-site.mjs
+
+      # Open every page in the runner's own Chrome: fails if a page throws, one of its files is missing,
+      # or the village draws nothing.
+      - name: The pages load
+        run: node scripts/smoke.mjs

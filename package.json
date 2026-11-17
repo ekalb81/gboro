@@ -22,6 +22,8 @@
     "bench": "node scripts/bench.mjs",
     "audit:geometry": "node scripts/audit-geometry.mjs",
     "audit:tiles": "node scripts/audit-tiles.mjs",
+    "check:site": "node scripts/check-site.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }

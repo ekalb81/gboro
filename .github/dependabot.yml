@@ -1,0 +1,11 @@
+# Once a month, one pull request that moves the workflows' actions to their newest releases, so they do not
+# fall onto versions GitHub has retired. The pull request checks run on it like any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
