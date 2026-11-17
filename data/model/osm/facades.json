@@ -1,0 +1,1712 @@
+{
+ "207915704": {
+  "name": "XO Lounge",
+  "street": "South Elm Street",
+  "wall_hex": "#3a3530",
+  "trim_hex": "#2a2622",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2b3a3a",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dusk, blurry and very oblique; dark brick behind street trees",
+  "confidence": "low",
+  "photo": "207915704_1.jpg",
+  "image_ids": [
+   "603052064009099"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915707": {
+  "name": null,
+  "street": "West Washington Street",
+  "wall_hex": "#8c4b3b",
+  "trim_hex": "#d8d0c0",
+  "material": "brick",
+  "floors": 3,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "plain red-brick side wall on Washington St, tall punched windows",
+  "confidence": "medium",
+  "photo": "207915707_1.jpg",
+  "image_ids": [
+   "157804849732517"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915708": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#5a3f33",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dusk; mostly hidden by trees; dark brown brick upper floors",
+  "confidence": "low",
+  "photo": "207915708_1.jpg",
+  "image_ids": [
+   "955266865316113"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915709": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#c8b27a",
+  "trim_hex": "#3a3328",
+  "material": "painted brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#5a3a2a",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "mustard/ochre painted upper facade with a lit shopfront and a brown awning at the right edge",
+  "confidence": "low",
+  "photo": "207915709_1.jpg",
+  "image_ids": [
+   "827046104907380"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915710": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#d8d2c4",
+  "trim_hex": "#5a4a3a",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "light facade behind street trees and streetery planters",
+  "confidence": "low",
+  "photo": "207915710_1.jpg",
+  "image_ids": [
+   "160036499490248"
+  ],
+  "captured": "2021-06-15"
+ },
+ "207915711": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#d9d2c2",
+  "trim_hex": "#6a5a48",
+  "material": "stone",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#3a3a36",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "pale stone/cast facade with projecting cornice and shopfront canopy; streetery with string lights",
+  "confidence": "low",
+  "photo": "207915711_1.jpg",
+  "image_ids": [
+   "894054414786616"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915712": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#cfc8b8",
+  "trim_hex": "#3a3a36",
+  "material": "stucco",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#3a3a36",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "light grey-beige facade with string-lit canopy; streetery in front",
+  "confidence": "low",
+  "photo": "207915712_1.jpg",
+  "image_ids": [
+   "4343133592479893"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915713": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#3a332c",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dusk, blurry and in shadow",
+  "confidence": "low",
+  "photo": "207915713_1.jpg",
+  "image_ids": [
+   "603052064009099"
+  ],
+  "captured": "2021-06-10"
+ },
+ "207915719": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#3b332c",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "blurry; string lights along a streetery",
+  "confidence": "low",
+  "photo": "207915719_1.jpg",
+  "image_ids": [
+   "936986567140687"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101225": {
+  "name": "First Citizens Building",
+  "street": "South Elm Street",
+  "wall_hex": "#b5472c",
+  "trim_hex": "#e8e0d0",
+  "material": "brick",
+  "floors": 3,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "orange-red brick with a tall arcade of square piers along the sidewalk and a large central arched entrance (SE corner of Elm and Market); also seen in 208184338_1",
+  "confidence": "medium",
+  "photo": "208101225_1.jpg",
+  "image_ids": [
+   "331282668515494"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101227": {
+  "name": "The Vernon Building",
+  "street": "South Elm Street",
+  "wall_hex": "#8e4a34",
+  "trim_hex": "#2a2a2a",
+  "material": "brick",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": "#1f2224",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red-brown brick with regular punched windows, long black shopfront canopy along the sidewalk",
+  "confidence": "medium",
+  "photo": "208101227_1.jpg",
+  "image_ids": [
+   "4220235048072690"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101228": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#a54a32",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": null,
+  "sign_text": "Serving Our Community",
+  "notes": "blank red-brick corner wall with a large dark sign panel reading Serving Our Community",
+  "confidence": "medium",
+  "photo": "208101228_1.jpg",
+  "image_ids": [
+   "4499844700055358"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208101229": {
+  "name": "Tavo Restaurant & Tavern",
+  "street": "South Elm Street",
+  "wall_hex": "#a54a32",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": null,
+  "sign_text": null,
+  "notes": "blank red-brick wall (side of the same corner block as 208101228)",
+  "confidence": "medium",
+  "photo": "208101229_1.jpg",
+  "image_ids": [
+   "130837429145724"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208101230": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#4a4038",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#2f3b33",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dusk, mostly hidden by trees",
+  "confidence": "low",
+  "photo": "208101230_1.jpg",
+  "image_ids": [
+   "198644588826751"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101231": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#7a4a38",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "hidden by trees; brown brick visible above canopy",
+  "confidence": "low",
+  "photo": "208101231_1.jpg",
+  "image_ids": [
+   "175319491220397"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101232": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#3a3836",
+  "trim_hex": "#d8d4cc",
+  "material": "metal",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2a2a2a",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark grey upper facade with light signboard band; in shadow",
+  "confidence": "low",
+  "photo": "208101232_1.jpg",
+  "image_ids": [
+   "1179640862538870"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101234": {
+  "name": "Triad Stage",
+  "street": "South Elm Street",
+  "wall_hex": "#8a4632",
+  "trim_hex": "#efe8d8",
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#2e2a28",
+  "window_style": "punched",
+  "sign_text": "TRIAD STAGE",
+  "notes": "red brick with white-painted window surrounds and cornice, tall vertical TRIAD STAGE blade sign (cream with gold letters), long dark canopy over the entrance, round projecting sign",
+  "confidence": "high",
+  "photo": "208101234_1.jpg",
+  "image_ids": [
+   "582293686067697"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208101235": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#3b3a3a",
+  "trim_hex": "#d9d6d0",
+  "material": "metal",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2a2a2a",
+  "window_style": "punched",
+  "sign_text": "PAPA JOHN'S",
+  "notes": "dark charcoal upper facade with a pale panel above; Papa Johns sign over the shopfront",
+  "confidence": "medium",
+  "photo": "208101235_1.jpg",
+  "image_ids": [
+   "4066345223479825"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208115791": {
+  "name": "Bank of America",
+  "street": "North Elm Street",
+  "wall_hex": "#e7e3da",
+  "trim_hex": "#2f3a3e",
+  "material": "concrete",
+  "floors": null,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": "Lincoln Financial Group",
+  "notes": "white precast base with round columns and dark glazing; red Lincoln Financial Group sign at the Elm/Friendly corner; tower glass above",
+  "confidence": "medium",
+  "photo": "208115791_1.jpg",
+  "image_ids": [
+   "332685738418221"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208115795": {
+  "name": "Center Point",
+  "street": "West Friendly Avenue",
+  "wall_hex": "#7d97a8",
+  "trim_hex": "#eceae4",
+  "material": "glass",
+  "floors": null,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": "Lincoln Financial Group",
+  "notes": "blue-grey glass curtain wall tower on a white precast colonnaded base; red Lincoln Financial Group sign on the corner",
+  "confidence": "medium",
+  "photo": "208115795_1.jpg",
+  "image_ids": [
+   "2693353880963307"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208115796": {
+  "name": "Lincoln Financial Group",
+  "street": "North Elm Street",
+  "wall_hex": "#ece6d6",
+  "trim_hex": "#cfc6b0",
+  "material": "stone",
+  "floors": null,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": "Lincoln Financial Group",
+  "notes": "Jefferson Standard / Lincoln Financial: cream-white terra-cotta tower over a rusticated stone base with tall arched ground-floor windows, iron railing with seasonal garland, red Lincoln Financial Group sign at the base (Dec 2021)",
+  "confidence": "high",
+  "photo": "208115796_2.jpg",
+  "image_ids": [
+   "138006208604177"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208184336": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#c9c2b4",
+  "trim_hex": "#a59d8e",
+  "material": "stone",
+  "floors": 6,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "pale grey-cream stone office block with arched top-floor windows and a curved bay at the corner; seen obliquely",
+  "confidence": "low",
+  "photo": "208184336_1.jpg",
+  "image_ids": [
+   "156891429758818"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208184337": {
+  "name": null,
+  "street": "North Elm Street",
+  "wall_hex": "#bdb8ae",
+  "trim_hex": "#8c867c",
+  "material": "stone",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "grey ornate stone with arched windows, at the left edge of frame",
+  "confidence": "low",
+  "photo": "208184337_1.jpg",
+  "image_ids": [
+   "1256088541511231"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208184338": {
+  "name": "101 Elm",
+  "street": "South Elm Street",
+  "wall_hex": "#3a3e44",
+  "trim_hex": "#d8d8d8",
+  "material": "glass",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": "101 ELM",
+  "notes": "dark glass and charcoal panels with large white 101 ELM lettering near the top on both faces",
+  "confidence": "high",
+  "photo": "208184338_1.jpg",
+  "image_ids": [
+   "1912235702277763"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208184339": {
+  "name": null,
+  "street": "North Elm Street",
+  "wall_hex": "#e0dbcf",
+  "trim_hex": "#b02e2e",
+  "material": "stone",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "pale stone facade with a small red sign, at the left edge of frame",
+  "confidence": "low",
+  "photo": "208184339_1.jpg",
+  "image_ids": [
+   "191548352874070"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208184340": {
+  "name": "Chick-fil-A",
+  "street": "North Elm Street",
+  "wall_hex": "#5a4636",
+  "trim_hex": "#e8dcc0",
+  "material": "stone",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "brown stone base with a lit arched doorway, at the left edge of frame",
+  "confidence": "low",
+  "photo": "208184340_1.jpg",
+  "image_ids": [
+   "340191150819896"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208184345": {
+  "name": null,
+  "street": "East Friendly Avenue",
+  "wall_hex": "#cbbfa6",
+  "trim_hex": "#3c4a50",
+  "material": "concrete",
+  "floors": 6,
+  "storefront": true,
+  "awning_hex": "#3c5a6a",
+  "window_style": "ribbon",
+  "sign_text": "Self-Help Center",
+  "notes": "tan precast concrete piers and spandrels with dark tinted ribbon glazing; curved grey-blue entrance canopy reading Self-Help Center",
+  "confidence": "high",
+  "photo": "208184345_1.jpg",
+  "image_ids": [
+   "184236460196661"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208189127": {
+  "name": "Greensboro Day Spa",
+  "street": "South Elm Street",
+  "wall_hex": "#8a5a40",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "brick buildings at left edge, behind trees",
+  "confidence": "low",
+  "photo": "208189127_1.jpg",
+  "image_ids": [
+   "537742570966394"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208189131": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#b03a30",
+  "trim_hex": "#f0f0f0",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#f0f0f0",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red-lit shopfront with white canopy, seen obliquely at left",
+  "confidence": "low",
+  "photo": "208189131_1.jpg",
+  "image_ids": [
+   "4499844700055358"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208189136": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#3b4a8a",
+  "trim_hex": "#1e2a5a",
+  "material": "metal",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": "CONE DENIM",
+  "notes": "blue-lit facade with CONE DENIM sign at the far left edge; may belong to the neighbouring building",
+  "confidence": "low",
+  "photo": "208189136_1.jpg",
+  "image_ids": [
+   "202988335011849"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208189139": {
+  "name": "Schiffman's Jewelers",
+  "street": "South Elm Street",
+  "wall_hex": "#c9a87a",
+  "trim_hex": "#efe6d2",
+  "material": "stone",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "tan/buff stone with a projecting rounded bay and arched upper windows",
+  "confidence": "low",
+  "photo": "208189139_1.jpg",
+  "image_ids": [
+   "385983439521599"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208101224": {
+  "name": "International Civil Rights Center & Museum",
+  "street": "South Elm Street",
+  "wall_hex": "#ece6d8",
+  "trim_hex": "#b22a2a",
+  "material": "stone",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#b22a2a",
+  "window_style": "curtain wall",
+  "sign_text": "F. W. WOOLWORTH CO.",
+  "notes": "former Woolworth store, now the International Civil Rights Center and Museum: pale stone upper wall, red sign band with gold F. W. WOOLWORTH CO. letters, red awning strip, large glass shopfront; tall vertical International Civil Rights Center & Museum blade sign at the north end",
+  "confidence": "high",
+  "photo": "208101224_1.jpg",
+  "image_ids": [
+   "537742570966394"
+  ],
+  "captured": "2021-06-15"
+ },
+ "208189145": {
+  "name": "Thousands O' Prints",
+  "street": "South Elm Street",
+  "wall_hex": "#a99aa0",
+  "trim_hex": "#e4ddd2",
+  "material": "stone",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "mauve-grey ornate facade with an arched entrance, at the left edge, seen across the Elm/Washington intersection",
+  "confidence": "low",
+  "photo": "208189145_1.jpg",
+  "image_ids": [
+   "1119632665514157"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208194317": {
+  "name": null,
+  "street": "South Elm Street",
+  "wall_hex": "#c0583a",
+  "trim_hex": "#f0ece2",
+  "material": "brick",
+  "floors": 10,
+  "storefront": true,
+  "awning_hex": "#6a1f24",
+  "window_style": "punched",
+  "sign_text": "THE GUILFORD BUILDING",
+  "notes": "former Greensboro Bank and Trust: orange-red brick upper floors with a white window grid, white terra-cotta lower three floors with GREENSBORO BANK AND TRUST carved in the frieze, maroon awnings lettered THE GUILFORD BUILDING",
+  "confidence": "high",
+  "photo": "208194317_3.jpg",
+  "image_ids": [
+   "1119632665514157"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208194322": {
+  "name": "Mary's Jewelry Box",
+  "street": "South Elm Street",
+  "wall_hex": "#b9ab92",
+  "trim_hex": null,
+  "material": "stucco",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2f4a3a",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "blurry; beige facade with green awnings at the left edge",
+  "confidence": "low",
+  "photo": "208194322_1.jpg",
+  "image_ids": [
+   "4343133592479893"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208194324": {
+  "name": "View On Elm",
+  "street": "South Elm Street",
+  "wall_hex": "#6a5e52",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#5a7a8e",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "blue-grey awning over shopfront at left edge, blurry",
+  "confidence": "low",
+  "photo": "208194324_1.jpg",
+  "image_ids": [
+   "603052064009099"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208196416": {
+  "name": null,
+  "street": "South Davie Street",
+  "wall_hex": "#8a4a38",
+  "trim_hex": "#e8e0d0",
+  "material": "brick",
+  "floors": 4,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red-brick 4-storey former warehouse with tall punched windows and arched ground-floor openings",
+  "confidence": "medium",
+  "photo": "208196416_1.jpg",
+  "image_ids": [
+   "835418470733551"
+  ],
+  "captured": "2021-06-11"
+ },
+ "208196417": {
+  "name": null,
+  "street": "South Davie Street",
+  "wall_hex": "#9a9a92",
+  "trim_hex": "#3a3a38",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "grey painted brick with large shop windows and a dark sign band",
+  "confidence": "medium",
+  "photo": "208196417_1.jpg",
+  "image_ids": [
+   "331156788476177"
+  ],
+  "captured": "2021-06-11"
+ },
+ "208196418": {
+  "name": null,
+  "street": "South Davie Street",
+  "wall_hex": "#8e968a",
+  "trim_hex": "#e8e4da",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "grey-green painted brick, 2 storeys, corbelled cornice, large shop windows with a painted mural/lettering in the window",
+  "confidence": "medium",
+  "photo": "208196418_1.jpg",
+  "image_ids": [
+   "832561257371936"
+  ],
+  "captured": "2021-06-11"
+ },
+ "208196419": {
+  "name": null,
+  "street": "South Davie Street",
+  "wall_hex": "#e6e2d8",
+  "trim_hex": "#6a6a66",
+  "material": "painted brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "narrow cream/white painted 3-storey with a bracketed cornice",
+  "confidence": "medium",
+  "photo": "208196419_1.jpg",
+  "image_ids": [
+   "308400394325681"
+  ],
+  "captured": "2021-06-11"
+ },
+ "208196421": {
+  "name": null,
+  "street": "South Davie Street",
+  "wall_hex": "#8e4a36",
+  "trim_hex": "#e6dfd2",
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick 3-storey with a corbelled cornice, punched windows and a shopfront",
+  "confidence": "medium",
+  "photo": "208196421_1.jpg",
+  "image_ids": [
+   "248718717058414"
+  ],
+  "captured": "2021-06-11"
+ },
+ "208202816": {
+  "name": null,
+  "street": "West Washington Street",
+  "wall_hex": "#6e3a30",
+  "trim_hex": "#e8e0d0",
+  "material": "brick",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": "#1e1e1e",
+  "window_style": "punched",
+  "sign_text": "111",
+  "notes": "dark red-brown brick, tall punched windows with light surrounds, black canopy with white address lettering 111",
+  "confidence": "medium",
+  "photo": "208202816_1.jpg",
+  "image_ids": [
+   "988821331848004"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208202822": {
+  "name": "Carolina Theatre",
+  "street": "South Greene Street",
+  "wall_hex": "#e4dccb",
+  "trim_hex": "#2f6a5e",
+  "material": "stucco",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": "#2a2a2a",
+  "window_style": "punched",
+  "sign_text": "CAROLINA",
+  "notes": "Carolina Theatre: cream classical facade with pilasters, large projecting marquee with white backlit letter boards on three faces and a teal-green crest carrying CAROLINA, dark glass entrance doors (Jan 2018)",
+  "confidence": "medium",
+  "photo": "208202822_2.jpg",
+  "image_ids": [
+   "212010470490336"
+  ],
+  "captured": "2018-01-20"
+ },
+ "208202831": {
+  "name": null,
+  "street": "West Washington Street",
+  "wall_hex": "#8c4a36",
+  "trim_hex": "#f0ece4",
+  "material": "brick",
+  "floors": 3,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick with white-painted window surrounds; cream classical entrance portico with green columns and a round clock in the pediment",
+  "confidence": "high",
+  "photo": "208202831_1.jpg",
+  "image_ids": [
+   "1648309052186681"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208202834": {
+  "name": null,
+  "street": "South Greene Street",
+  "wall_hex": "#6a4436",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "blurry, at the left edge in dusk light",
+  "confidence": "low",
+  "photo": "208202834_1.jpg",
+  "image_ids": [
+   "135810715223026"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208213655": {
+  "name": "Deuterman Law Group",
+  "street": "South Greene Street",
+  "wall_hex": "#8e8e88",
+  "trim_hex": "#3a3a38",
+  "material": "painted brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "grey painted 3-storey with tall dark windows next to a narrow red-brick neighbour",
+  "confidence": "low",
+  "photo": "208213655_1.jpg",
+  "image_ids": [
+   "211379254045538"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208213661": {
+  "name": "Twisted Dance Studios",
+  "street": "South Greene Street",
+  "wall_hex": "#4a3a30",
+  "trim_hex": "#2a2420",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2a2a2a",
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "dark brown brick with arched ground-floor windows and a dark canopy",
+  "confidence": "low",
+  "photo": "208213661_1.jpg",
+  "image_ids": [
+   "160470269463880"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208264963": {
+  "name": null,
+  "street": "Commerce Place",
+  "wall_hex": "#7a4636",
+  "trim_hex": "#e6dfd2",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red-brown brick 2-storey with dark windows and a rooftop railing; at the left edge looking east on Market",
+  "confidence": "low",
+  "photo": "208264963_1.jpg",
+  "image_ids": [
+   "624074082070975"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208264964": {
+  "name": "Greene Street Deck",
+  "street": "West Washington Street",
+  "wall_hex": "#9c9a94",
+  "trim_hex": "#d8d6d0",
+  "material": "concrete",
+  "floors": null,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "ribbon",
+  "sign_text": null,
+  "notes": "grey concrete parking deck with round colourful mural medallions on the corner",
+  "confidence": "medium",
+  "photo": "208264964_1.jpg",
+  "image_ids": [
+   "136926098509003"
+  ],
+  "captured": "2021-06-10"
+ },
+ "208264973": {
+  "name": null,
+  "street": "West Market Street",
+  "wall_hex": "#ece6d6",
+  "trim_hex": "#cfc6b0",
+  "material": "stone",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "white stone/terra-cotta base with arched openings; easily confused with the Jefferson Standard tower behind it",
+  "confidence": "low",
+  "photo": "208264973_1.jpg",
+  "image_ids": [
+   "1119175205521330"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208264974": {
+  "name": null,
+  "street": "West Market Street",
+  "wall_hex": "#8a4a38",
+  "trim_hex": "#e6dfd2",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick 2-3 storey with punched windows and an arched ground-floor opening, seen obliquely",
+  "confidence": "low",
+  "photo": "208264974_1.jpg",
+  "image_ids": [
+   "2821888981442163"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208264975": {
+  "name": null,
+  "street": "West Market Street",
+  "wall_hex": "#8c4b39",
+  "trim_hex": "#e6dfd2",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2f5a46",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick 2-storey row with green awnings, seen obliquely from the west",
+  "confidence": "low",
+  "photo": "208264975_1.jpg",
+  "image_ids": [
+   "632415781232231"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208264981": {
+  "name": "The Rhinoceros Times",
+  "street": "West Market Street",
+  "wall_hex": "#8a5a48",
+  "trim_hex": "#d8d0c0",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "small 2-storey brick building with a pale painted/mural side wall",
+  "confidence": "low",
+  "photo": "208264981_1.jpg",
+  "image_ids": [
+   "1062124194574586"
+  ],
+  "captured": "2021-12-15"
+ },
+ "208274780": {
+  "name": null,
+  "street": "Bellemeade Street",
+  "wall_hex": "#e4dcc6",
+  "trim_hex": "#5a5a58",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "cream painted 2-storey with dark windows (2018 photo, snow)",
+  "confidence": "medium",
+  "photo": "208274780_1.jpg",
+  "image_ids": [
+   "489894379112713"
+  ],
+  "captured": "2018-01-20"
+ },
+ "208274782": {
+  "name": null,
+  "street": "North Greene Street",
+  "wall_hex": "#8e4a3a",
+  "trim_hex": "#e6e0d2",
+  "material": "brick",
+  "floors": 3,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick upper floors over a cream-painted ground-floor band, few windows (2018 photo)",
+  "confidence": "medium",
+  "photo": "208274782_1.jpg",
+  "image_ids": [
+   "174303281282715"
+  ],
+  "captured": "2018-09-08"
+ },
+ "208274783": {
+  "name": "Franciscan Center",
+  "street": "North Greene Street",
+  "wall_hex": "#5c5a58",
+  "trim_hex": "#f0ece4",
+  "material": "brick",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark grey brick with white window frames over a cream stucco ground floor with large dark windows (2018 photo)",
+  "confidence": "medium",
+  "photo": "208274783_1.jpg",
+  "image_ids": [
+   "142168781283349"
+  ],
+  "captured": "2018-09-08"
+ },
+ "325370726": {
+  "name": "Early Childhood Center",
+  "street": "West Friendly Avenue",
+  "wall_hex": "#9a7a5a",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 1,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "low tan brick building behind a parking lot (2018 photo)",
+  "confidence": "low",
+  "photo": "325370726_1.jpg",
+  "image_ids": [
+   "220725472880021"
+  ],
+  "captured": "2018-09-08"
+ },
+ "325370727": {
+  "name": "L. Richardson Preyer Federal Building",
+  "street": "West Market Street",
+  "wall_hex": "#d9d5c9",
+  "trim_hex": "#bdb7a8",
+  "material": "stone",
+  "floors": 4,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "pale limestone Art Deco federal building, stepped central block, tall vertical ornamental panels between window bays, flat roof",
+  "confidence": "high",
+  "photo": "325370727_1.jpg",
+  "image_ids": [
+   "441994104035941"
+  ],
+  "captured": "2021-12-15"
+ },
+ "325370732": {
+  "name": null,
+  "street": "West Market Street",
+  "wall_hex": "#e6e4de",
+  "trim_hex": "#2a2e33",
+  "material": "concrete",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "ribbon",
+  "sign_text": "BB&T",
+  "notes": "white concrete office block on a ground-floor arcade of tall round arches, dark ribbon windows on cantilevered upper floors, maroon BB&T letters (bank may now be Truist)",
+  "confidence": "high",
+  "photo": "325370732_1.jpg",
+  "image_ids": [
+   "973389629915765"
+  ],
+  "captured": "2021-12-15"
+ },
+ "325370739": {
+  "name": null,
+  "street": "Bellemeade Street",
+  "wall_hex": "#e8e6e0",
+  "trim_hex": "#2a3038",
+  "material": "concrete",
+  "floors": 5,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "ribbon",
+  "sign_text": null,
+  "notes": "white concrete with dark ribbon glazing; red dot sculpture on the side (2018 photo)",
+  "confidence": "medium",
+  "photo": "325370739_1.jpg",
+  "image_ids": [
+   "3423680417733995"
+  ],
+  "captured": "2018-01-20"
+ },
+ "325370748": {
+  "name": null,
+  "street": "Sternberger Place",
+  "wall_hex": "#6a6e72",
+  "trim_hex": "#7a5ac8",
+  "material": "metal",
+  "floors": 5,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "under construction in the 2018 photo (grey panels, purple wrap); finished state unknown",
+  "confidence": "low",
+  "photo": "325370748_1.jpg",
+  "image_ids": [
+   "471912477203308"
+  ],
+  "captured": "2018-09-08"
+ },
+ "325370759": {
+  "name": "West Market Street United Methodist Church",
+  "street": "West Market Street",
+  "wall_hex": "#8c3f30",
+  "trim_hex": "#5a5a5e",
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "red brick Romanesque church with a round corner turret under a conical grey slate roof; black abstract sculpture in front",
+  "confidence": "high",
+  "photo": "325370759_1.jpg",
+  "image_ids": [
+   "325335076261246"
+  ],
+  "captured": "2021-12-15"
+ },
+ "341248625": {
+  "name": null,
+  "street": "South Eugene Street",
+  "wall_hex": "#b5a183",
+  "trim_hex": "#8c7a60",
+  "material": "brick",
+  "floors": 6,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "buff/tan brick 6-storey with Gothic stone trim at the entrance (left of frame looking south on Eugene)",
+  "confidence": "medium",
+  "photo": "341248625_1.jpg",
+  "image_ids": [
+   "586057352466435"
+  ],
+  "captured": "2021-12-15"
+ },
+ "414234839": {
+  "name": null,
+  "street": "Bellemeade Street",
+  "wall_hex": "#1e3a5a",
+  "trim_hex": "#1a1a1a",
+  "material": "glass",
+  "floors": null,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": null,
+  "notes": "dark blue reflective glass tower on a black granite base (2018 photo)",
+  "confidence": "medium",
+  "photo": "414234839_1.jpg",
+  "image_ids": [
+   "4534991123184670"
+  ],
+  "captured": "2018-01-20"
+ },
+ "414240404": {
+  "name": "Greensboro Cultural Center",
+  "street": "East Friendly Avenue",
+  "wall_hex": "#8a4a38",
+  "trim_hex": "#4a7a6a",
+  "material": "brick",
+  "floors": 4,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": null,
+  "notes": "red brick piers between green-tinted glazed bays",
+  "confidence": "medium",
+  "photo": "414240404_1.jpg",
+  "image_ids": [
+   "806310113334374"
+  ],
+  "captured": "2021-06-10"
+ },
+ "414240405": {
+  "name": "Church Street Parking Deck",
+  "street": "North Church Street",
+  "wall_hex": "#8a5040",
+  "trim_hex": "#e8e8e8",
+  "material": "brick",
+  "floors": null,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "ribbon",
+  "sign_text": "Church Street Parking Deck",
+  "notes": "red-brown brick parking deck with white Church Street Parking Deck letters, green railings",
+  "confidence": "high",
+  "photo": "414240405_1.jpg",
+  "image_ids": [
+   "493363758621337"
+  ],
+  "captured": "2021-06-11"
+ },
+ "414240406": {
+  "name": null,
+  "street": "North Church Street",
+  "wall_hex": "#d6cbb2",
+  "trim_hex": "#6a4636",
+  "material": "brick",
+  "floors": 3,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "cream-painted bands and spandrels between brown brick piers, large multi-pane windows (converted industrial)",
+  "confidence": "medium",
+  "photo": "414240406_1.jpg",
+  "image_ids": [
+   "267371135145848"
+  ],
+  "captured": "2021-06-11"
+ },
+ "414240407": {
+  "name": "Governors Court Condominiums",
+  "street": "East Friendly Avenue",
+  "wall_hex": "#b4583c",
+  "trim_hex": "#ece4d2",
+  "material": "brick",
+  "floors": 5,
+  "storefront": false,
+  "awning_hex": "#b03a30",
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "orange-red brick condos with cream stucco bands, arched window heads, recessed balconies, a red umbrella on one balcony",
+  "confidence": "high",
+  "photo": "414240407_1.jpg",
+  "image_ids": [
+   "829140078039219"
+  ],
+  "captured": "2021-06-10"
+ },
+ "414240408": {
+  "name": null,
+  "street": "North Church Street",
+  "wall_hex": "#8a4434",
+  "trim_hex": "#f0ece4",
+  "material": "brick",
+  "floors": 1,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "one-storey red brick shop with a small white sign board; taller red-brick apartments behind",
+  "confidence": "medium",
+  "photo": "414240408_1.jpg",
+  "image_ids": [
+   "1632046806988743"
+  ],
+  "captured": "2021-06-11"
+ },
+ "414240410": {
+  "name": null,
+  "street": "East Friendly Avenue",
+  "wall_hex": "#4a4c50",
+  "trim_hex": null,
+  "material": "metal",
+  "floors": 4,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": null,
+  "sign_text": null,
+  "notes": "tall dark charcoal blank wall with fine horizontal texture, no windows on this face",
+  "confidence": "medium",
+  "photo": "414240410_1.jpg",
+  "image_ids": [
+   "201995615124633"
+  ],
+  "captured": "2021-06-10"
+ },
+ "414240431": {
+  "name": "Southeastern Building",
+  "street": "North Elm Street",
+  "wall_hex": "#d6ccb6",
+  "trim_hex": "#5a5a5a",
+  "material": "stone",
+  "floors": 4,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "arched",
+  "sign_text": null,
+  "notes": "pale buff ornate stone with arched upper windows and a grey storefront, at the left edge",
+  "confidence": "low",
+  "photo": "414240431_1.jpg",
+  "image_ids": [
+   "332765231698662"
+  ],
+  "captured": "2021-06-15"
+ },
+ "414240432": {
+  "name": null,
+  "street": "East Market Street",
+  "wall_hex": "#bcb3a2",
+  "trim_hex": null,
+  "material": "concrete",
+  "floors": 1,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": null,
+  "sign_text": null,
+  "notes": "long low beige-grey concrete wall with few openings",
+  "confidence": "low",
+  "photo": "414240432_1.jpg",
+  "image_ids": [
+   "319218279827700"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414240433": {
+  "name": null,
+  "street": "East Market Street",
+  "wall_hex": "#8e4634",
+  "trim_hex": "#ece6da",
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red brick 3-storey with cream-painted window frames, a bay and deep overhanging cornice/eaves, shopfront at ground floor",
+  "confidence": "medium",
+  "photo": "414240433_1.jpg",
+  "image_ids": [
+   "1055989005256713"
+  ],
+  "captured": "2021-12-15"
+ },
+ "414241381": {
+  "name": "Miriam P. Brenner Children's Museum",
+  "street": "North Church Street",
+  "wall_hex": "#8c8e90",
+  "trim_hex": "#7dbb3a",
+  "material": "metal",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": "#e87a2a",
+  "window_style": "curtain wall",
+  "sign_text": "CHILDREN'S MUSEUM",
+  "notes": "low grey and glass building with a lime-green box tower carrying the Childrens Museum sign, orange accent column",
+  "confidence": "high",
+  "photo": "414241381_1.jpg",
+  "image_ids": [
+   "490744415548066"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414245582": {
+  "name": "Carolina Cadillac Company Building",
+  "street": "South Church Street",
+  "wall_hex": "#ddd6c8",
+  "trim_hex": "#7a5a48",
+  "material": "painted brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "whitewashed brick with peeling paint showing red brick beneath, large dark industrial windows",
+  "confidence": "medium",
+  "photo": "414245582_1.jpg",
+  "image_ids": [
+   "177403674320248"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414245604": {
+  "name": null,
+  "street": "South Church Street",
+  "wall_hex": "#6a3f30",
+  "trim_hex": "#e0d8c8",
+  "material": "brick",
+  "floors": 1,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "brown brick one-storey with a roll-up garage door and small sign; neighbour has a painted music plays here mural",
+  "confidence": "medium",
+  "photo": "414245604_1.jpg",
+  "image_ids": [
+   "112813744252560"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414245605": {
+  "name": null,
+  "street": "South Church Street",
+  "wall_hex": "#9a4a34",
+  "trim_hex": "#ece8e0",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "ribbon",
+  "sign_text": null,
+  "notes": "red brick with a curved corner, large factory windows, a glass-block panel and a mural on the side",
+  "confidence": "medium",
+  "photo": "414245605_1.jpg",
+  "image_ids": [
+   "323936595859643"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414245606": {
+  "name": null,
+  "street": "South Church Street",
+  "wall_hex": "#8c3e2e",
+  "trim_hex": "#2a2a2a",
+  "material": "brick",
+  "floors": 3,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": "CANDY FACTORY",
+  "notes": "red brick 3-storey with black sign bands lettered CANDY and FACTORY, large colourful mural on the end wall",
+  "confidence": "high",
+  "photo": "414245606_1.jpg",
+  "image_ids": [
+   "1451656471834308"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414245607": {
+  "name": null,
+  "street": "East Washington Street",
+  "wall_hex": "#9a4a36",
+  "trim_hex": "#e8e8e8",
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": "#e87a2a",
+  "window_style": "punched",
+  "sign_text": "GATE CITY STATION",
+  "notes": "low red-brick building with large white raised letters GATE CITY STATION along the roofline; orange-and-white monument sign on the lawn; neighbour has a large colourful mural and a gabled glass entrance",
+  "confidence": "medium",
+  "photo": "414245607_1.jpg",
+  "image_ids": [
+   "324413589330740"
+  ],
+  "captured": "2021-06-11"
+ },
+ "414245609": {
+  "name": null,
+  "street": "East Washington Street",
+  "wall_hex": "#7a4434",
+  "trim_hex": "#e0d8c8",
+  "material": "brick",
+  "floors": 4,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "red-brown brick 4-storey at the left, next to the railroad underpass on Washington",
+  "confidence": "medium",
+  "photo": "414245609_1.jpg",
+  "image_ids": [
+   "295938378896677"
+  ],
+  "captured": "2021-06-10"
+ },
+ "414246358": {
+  "name": null,
+  "street": "North Church Street",
+  "wall_hex": "#b03a32",
+  "trim_hex": "#e8e4dc",
+  "material": "wood",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": null,
+  "sign_text": null,
+  "notes": "red-painted wooden barn-like building with a grey gabled metal roof",
+  "confidence": "medium",
+  "photo": "414246358_1.jpg",
+  "image_ids": [
+   "153193483466826"
+  ],
+  "captured": "2021-05-13"
+ },
+ "414248856": {
+  "name": null,
+  "street": "South Eugene Street",
+  "wall_hex": "#5a3a30",
+  "trim_hex": null,
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark brown brick 2-storey with a small shop sign, at the frame edge",
+  "confidence": "low",
+  "photo": "414248856_1.jpg",
+  "image_ids": [
+   "1271732976676819"
+  ],
+  "captured": "2021-12-15"
+ },
+ "597977767": {
+  "name": "Hyatt Place",
+  "street": "Bellemeade Street",
+  "wall_hex": "#e6e4e0",
+  "trim_hex": "#3a4a5a",
+  "material": "stucco",
+  "floors": 5,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "under construction in the Feb 2018 photo (white and grey panels, wrap); Hyatt Place is complete now, so treat colours as provisional",
+  "confidence": "low",
+  "photo": "597977767_1.jpg",
+  "image_ids": [
+   "2221382131493665"
+  ],
+  "captured": "2018-01-20"
+ },
+ "597977768": {
+  "name": null,
+  "street": "Bellemeade Street",
+  "wall_hex": "#e8e8e8",
+  "trim_hex": "#2a3a4a",
+  "material": "stucco",
+  "floors": 5,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "under construction in the Feb 2018 photo; white panels with dark windows",
+  "confidence": "low",
+  "photo": "597977768_1.jpg",
+  "image_ids": [
+   "508899600245195"
+  ],
+  "captured": "2018-01-20"
+ },
+ "692848655": {
+  "name": null,
+  "street": "East Market Street",
+  "wall_hex": "#4e3a30",
+  "trim_hex": "#9a9a92",
+  "material": "brick",
+  "floors": 2,
+  "storefront": true,
+  "awning_hex": "#2a2a2a",
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark brick with grey-painted stone trim, deep bracketed cornice, black metal canopy over large shop windows",
+  "confidence": "medium",
+  "photo": "692848655_1.jpg",
+  "image_ids": [
+   "897598651144091"
+  ],
+  "captured": "2021-12-15"
+ },
+ "1064222018": {
+  "name": "400 Bellemeade",
+  "street": "Bellemeade Street",
+  "wall_hex": "#7a8a9a",
+  "trim_hex": "#2a5a9a",
+  "material": "metal",
+  "floors": 5,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": null,
+  "notes": "grey-blue panelled 5-storey with a curved blue glass corner (2018 photo, may have been nearly finished)",
+  "confidence": "low",
+  "photo": "1064222018_1.jpg",
+  "image_ids": [
+   "210952997270747"
+  ],
+  "captured": "2018-01-20"
+ },
+ "1064222709": {
+  "name": "Parkside Pull-up",
+  "street": "Summit Avenue",
+  "wall_hex": "#c9c4bc",
+  "trim_hex": "#8a5a3a",
+  "material": "wood",
+  "floors": 1,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": "LEBAUER PARK",
+  "notes": "LeBauer Park kiosk pavilion: low flat-roofed box clad in warm wood slats and pale grey panels, large glass fronts, address 210, LEBAUER PARK letters on the plaza wall; tall slanted steel masts of the net sculpture nearby (2018)",
+  "confidence": "high",
+  "photo": "1064222709_1.jpg",
+  "image_ids": [
+   "482298269771040"
+  ],
+  "captured": "2018-01-20"
+ },
+ "1064222710": {
+  "name": "Lawn Service Cafe",
+  "street": "North Davie Street",
+  "wall_hex": "#6a4a36",
+  "trim_hex": "#c9c4bc",
+  "material": "wood",
+  "floors": 1,
+  "storefront": true,
+  "awning_hex": null,
+  "window_style": "curtain wall",
+  "sign_text": null,
+  "notes": "LeBauer Park cafe kiosk: dark wood-slat box under a wide flat cantilevered roof; sun flare (2018)",
+  "confidence": "low",
+  "photo": "1064222710_1.jpg",
+  "image_ids": [
+   "502606924425057"
+  ],
+  "captured": "2018-01-20"
+ },
+ "1539790682": {
+  "name": null,
+  "street": "South Church Street",
+  "wall_hex": "#3a3a3c",
+  "trim_hex": "#8a8a88",
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark charcoal brick with large grid-pane industrial windows",
+  "confidence": "medium",
+  "photo": "1539790682_1.jpg",
+  "image_ids": [
+   "389758325763948"
+  ],
+  "captured": "2021-05-13"
+ },
+ "1539790683": {
+  "name": null,
+  "street": "South Church Street",
+  "wall_hex": "#5a4438",
+  "trim_hex": "#9a9890",
+  "material": "brick",
+  "floors": 2,
+  "storefront": false,
+  "awning_hex": null,
+  "window_style": "punched",
+  "sign_text": null,
+  "notes": "dark brown brick between concrete frame members, roll-up garage door, factory windows; whitewashed brick neighbour",
+  "confidence": "medium",
+  "photo": "1539790683_1.jpg",
+  "image_ids": [
+   "183518943599122"
+  ],
+  "captured": "2021-05-13"
+ }
+}

@@ -6,6 +6,7 @@ The site is static: everything in `public/` is the whole site. One GitHub Action
 ```
 every 30 min, on push to main, or by hand
   -> npm test
+  -> python3 tools/model/refresh.py --publish   (about weekly: rebuild the downtown model from OpenStreetMap)
   -> node scripts/refresh.mjs     (each collector in scripts/collectors.json, then ingest)
   -> check public/ has no private files
   -> deploy public/ to the host named in DEPLOY_TARGET

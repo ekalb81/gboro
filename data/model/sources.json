@@ -1,0 +1,4 @@
+{
+ "$comment": "Baselines for the four-weekly source checks in tools/model/refresh.py. aerial_date is the flight date of the NC OneMap aerial the roof colours, ground and brick paving were read from: set it when a newer aerial has been processed.",
+ "aerial_date": "2022-02-09"
+}

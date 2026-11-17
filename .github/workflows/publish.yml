@@ -25,7 +25,7 @@ jobs:
     # Scheduled runs are skipped until a host is chosen, so they don't spend Actions minutes.
     if: github.event_name != 'schedule' || vars.DEPLOY_TARGET != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45 # most runs take a minute or two; the weekly model rebuild adds about 15
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +33,14 @@ jobs:
         with:
           node-version: 20
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Test
-        run: npm test
+        run: |
+          npm test
+          python3 -m unittest tools/model/test_refresh.py
 
       # Every run starts from a clean checkout and refetches recent data, so raw posts (which name
       # private people) are never stored in git or in an Actions cache. Add new sources'
@@ -82,6 +88,41 @@ jobs:
           key: traffic-volumes-${{ github.run_id }}
           restore-keys: traffic-volumes-
 
+      # The downtown model (public/model/) is rebuilt from fresh OpenStreetMap data about once a week, and at once
+      # when tools/model/ or data/model/ change. The rebuilt files are kept between runs and deployed, never
+      # committed: this workflow cannot write to the repository. If the rebuild fails, the last good model (or the
+      # one in git) is published and the run carries on. See tools/model/refresh.py.
+      - name: Restore last model build
+        uses: actions/cache/restore@v4
+        with:
+          path: data/model-build
+          key: model-build-${{ github.run_id }}
+          restore-keys: model-build-
+
+      - name: Rebuild the model if it is due
+        id: model
+        continue-on-error: true
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
+        run: |
+          # Exit status 10 means a rebuild is due and the Python packages it needs are not installed yet,
+          # so the half-hourly runs that only reuse the last build skip the install.
+          status=0
+          python3 tools/model/refresh.py --publish || status=$?
+          if [ "$status" = 10 ]; then
+            pip install --quiet numpy pillow scipy shapely pyarrow
+            python3 tools/model/refresh.py --publish
+          elif [ "$status" != 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Save model build
+        if: steps.model.outputs.changed == 'true' && hashFiles('data/model-build/built.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/model-build
+          key: model-build-${{ github.run_id }}
+
       - name: Collect data and ingest
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -128,7 +169,7 @@ jobs:
 
       - name: Check the site has its files
         run: |
-          for f in public/index.html public/village.js public/data/map.json public/data/items.json; do
+          for f in public/index.html public/village.js public/data/map.json public/data/items.json public/model/downtown.json; do
             test -s "$f" || { echo "::error::$f is missing"; exit 1; }
           done
           # Held items and raw digests must never be in the published folder.
