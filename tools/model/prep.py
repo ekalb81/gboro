@@ -3,7 +3,7 @@ the optional survey layers (lidar tiers and heights, roof colours, aerial vegeta
 
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
-osm/heights.json, imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
+osm/heights.json, addresses.json (tools/model/addresses.py; the copy in data/model/ is used when it is missing), imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
 painted parking lines read from the 2022 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
 Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
@@ -523,9 +523,50 @@ try:
     import names
     try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
     except FileNotFoundError: NOV={}
-    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV)
+    RAWN=json.load(open(INP+'osm/downtown-raw.json'))['elements']
+    names.name_buildings(B,RAWN,g,NOV)
+    # a street address, from the State's address points and parcels, for whatever OpenStreetMap left with nothing
+    REPO=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..')
+    AD=next((f for f in (INP+'addresses.json',os.path.join(REPO,'data','model','addresses.json')) if os.path.exists(f)),None)
+    if AD:
+        quiet=None
+        try:
+            # the keepsake house stays unlabelled, and so do its nearest neighbours, whose numbers would give its own away
+            HL=json.load(open(os.path.join(REPO,'public','model','house.json')));hx,hy=HL['at'];hb=HL['base'];QM=12.0
+            quiet=(hx+(hb[0]-QM)/M,hy+(hb[1]-QM)/M,hx+(hb[2]+QM)/M,hy+(hb[3]+QM)/M)
+        except (FileNotFoundError,KeyError): pass
+        print('addresses from the State for',names.state_addresses(B,json.load(open(AD)),g,RAWN,quiet),'buildings')
     print('names',names.coverage(B))
 except FileNotFoundError: pass
+
+# Outlines the lidar found are checked against what is mapped around them (gboro issue #41):
+#   - one lying mostly on a mapped footbridge or bridge deck is that bridge seen from above, and goes;
+#   - where one overlaps a building OpenStreetMap has, the overlap belongs to the mapped building and the rest stays
+#     as the part of it the map lacks (or goes, if only a sliver is left).
+# (One that reaches over a street is left alone: cutting it along the street left notched outlines the renderer could
+# no longer square up, and the squaring already pulls the ragged edge back.)
+try:
+    from shapely.geometry import Polygon as _Pg2
+    from shapely.ops import unary_union as _uu2
+    from shapely.strtree import STRtree as _Tree2
+    def _poly(p): return _Pg2(list(zip(p[0::2],p[1::2]))).buffer(0)
+    _dk=[_poly(d_['p']) for d_ in DK]
+    _osm=[_poly(b['p']) for b in B if not b.get('lidar_new')];_ot=_Tree2(_osm)
+    _keep=[];_n=[0,0]
+    for b in B:
+        if not b.get('lidar_new'): _keep.append(b);continue
+        g_=_poly(b['p']);a0=g_.area
+        if a0<=0: continue
+        if sum(g_.intersection(q).area for q in _dk)>.5*a0: _n[0]+=1;continue
+        hit=[_osm[i] for i in _ot.query(g_) if _osm[i].intersects(g_)]
+        if hit and g_.intersection(_uu2(hit)).area>.03*a0:
+            g_=g_.difference(_uu2(hit).buffer(.3/M)).buffer(-1/M).buffer(1/M);_n[1]+=1
+        if g_.geom_type=='MultiPolygon': g_=max(g_.geoms,key=lambda q:q.area)
+        if g_.is_empty or g_.geom_type!='Polygon' or g_.area*M*M<40 or g_.area<.3*a0: _n[0]+=1;continue
+        if g_.area<a0-1e-6: b['p']=flat([(round(x,2),round(y,2)) for x,y in list(g_.simplify(.3/M).exterior.coords)[:-1]])
+        _keep.append(b)
+    B=_keep;print('lidar outlines against the map: dropped',_n[0],'cut round a mapped building',_n[1])
+except ImportError: pass
 
 GEO={'north':N,'south':S,'west':Wl,'east':El,'mPerDegLon':round(k,3),'mPerDegLat':110574}
 if GC: VG=None   # the aerial's ground classes (GC) took over from the planted-ground mask; the live model ships without it

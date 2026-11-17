@@ -380,6 +380,9 @@ function renderEats() {
     el('details', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, now)))));
 }
 
+const KIND = { house: 'House', detached: 'House', residential: 'House', apartments: 'Apartments', garage: 'Garage', garages: 'Garages',
+  shed: 'Shed', roof: 'Shelter', carport: 'Carport', church: 'Church', parking: 'Parking deck', retail: 'Shop', office: 'Offices',
+  commercial: 'Commercial building', industrial: 'Industrial building', warehouse: 'Warehouse', grandstand: 'Grandstand', bridge: 'Bridge' };
 /** The card at the top of the paper for a building on the model. */
 function showBuilding(b, look = false) {
   picked = b;
@@ -390,7 +393,9 @@ function showBuilding(b, look = false) {
   const here = items.filter((it) => spots.get(it.id)?.bid === b.id).sort(byTime);
   const ps = places.filter((p) => p.bid === b.id);
   const now = etNow();
-  const name = b.name || b.label || ps[0]?.name || 'A downtown building';
+  // every building gets its real name, else who is inside, else its street address; one nobody has on record is
+  // called what it is (see tools/model/names.py), never given a made-up name
+  const name = b.name || b.label || ps[0]?.name || b.ad || KIND[b.t] || (b.am === 'parking' ? 'Parking deck' : 'Building');
   // who else is inside, from the model's own data, without repeating the title or the places listed below
   const shown = new Set([name, ...ps.map((p) => p.name)].map(norm));
   const inside = (b.tn || []).filter((t) => !shown.has(norm(t)));
@@ -437,7 +442,7 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees, home, details, roofs] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null)]);
+const [map, info, eatsData, trees, home, details, roofs, yards] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null), loadJSON('model/yards.json', null)]);
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
@@ -447,6 +452,7 @@ model = startModel({
   trees,
   home,
   roofs,
+  yards,
   details,
   onPick: (b) => {
     if (b && (b.special === 'home' || b.special === 'homeshed')) { location.href = 'house.html'; return; } // the close-up of the house up the street
