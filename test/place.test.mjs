@@ -80,6 +80,19 @@ test('most buildings have something to call them, and the data stays in shape', 
   assert.equal(books.ad, '304 S Elm St');
 });
 
+test('nearly every building on the map has a name, a tenant or an address', () => {
+  // OpenStreetMap first, then the State's address points and parcels (tools/model/names.py). The keepsake house and its
+  // nearest neighbours stay blank on purpose, and a few buildings no source knows stay blank rather than get a made-up name.
+  const called = model.B.filter((b) => b.n || b.tn?.length || b.ad);
+  assert.ok(called.length / model.B.length > 0.96, `${called.length} of ${model.B.length} buildings have something to call them`);
+  for (const b of model.B) if (b.ax) assert.ok(b.ad && !b.n, 'only a building that borrows its lot\'s address is marked ax');
+  // a second building on a lot only borrows the lot's address: things at that address still go to the main building
+  const hill = model.B.find((b) => b.n === "Hudson's Hill");
+  assert.equal(makePlacer(model, []).place({ venue: 'Someone New', address: hill.ad }).buildingId, hill.id);
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.ok(!/A downtown building/.test(app), 'the placeholder title is gone');
+});
+
 test('items are placed by a tenant of a building, or by the building at that address', () => {
   const P = makePlacer(model, []);
   const books = model.B.find((b) => b.tn?.includes('Scuppernong Books'));

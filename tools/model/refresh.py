@@ -6,6 +6,7 @@ Nothing is ever written back to the repository: the rebuilt model is only deploy
 
 A rebuild:
   1. fetches the model's box from OpenStreetMap (main API in tiles, Overpass as fallback),
+     and the street addresses in it from NC OneMap (addresses.py; the copy in data/model/ is the fallback),
   2. every four weeks checks for a newer NC OneMap aerial, new Mapillary street photos, a newer USGS lidar survey
      and buildings in Overture Maps that the model lacks (each only reported, never applied),
   3. runs prep.py, trees.py and details.py on data/model/ (the survey layers kept in git) plus the fresh extract,
@@ -361,6 +362,21 @@ def build(old, src, monthly, outdir, osm_raw=None):
         json.dump(raw, open(os.path.join(inp, 'osm', 'downtown-raw.json'), 'w'))
         json.dump(geom, open(os.path.join(tmp, 'osm.json'), 'w'))
         notes.append(f'OpenStreetMap via {how}: {len(geom["elements"])} mapped features, {nb} buildings in the model\'s box.')
+
+        # 1b. Street addresses for the buildings OpenStreetMap has none for: a fresh copy from the State, else the one in git
+        kept = os.path.join(inp, 'addresses.json')
+        have = json.load(open(kept)) if os.path.exists(kept) else {}
+        try:
+            sys.path.insert(0, HERE)
+            import addresses
+            fresh = addresses.fetch((bx['w'], bx['s'], bx['e'], bx['n']), get=lambda u: get(u, timeout=120, tries=2))
+            if len(fresh['points']) < 0.8 * len(have.get('points', [])) or len(fresh['parcels']) < 0.8 * len(have.get('parcels', [])):
+                raise RuntimeError(f'only {len(fresh["points"])} address points and {len(fresh["parcels"])} parcels came back')
+            json.dump(fresh, open(kept, 'w'))
+            notes.append(f'Street addresses from NC OneMap: {len(fresh["points"])} address points, {len(fresh["parcels"])} parcels.')
+        except Exception as e:
+            notes.append(f'Street addresses: NC OneMap did not answer ({e}); using the copy in git'
+                         + (f' from {have["fetched"]}.' if have.get('fetched') else '.'))
 
         # 2. Four-weekly checks
         if monthly:

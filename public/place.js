@@ -61,8 +61,9 @@ export function makePlacer(model, eatsPlaces = []) {
   // Who is inside each building, and each building's own street address (tools/model/names.py).
   const centre = (b) => { const p = pairs(b.p); return { id: b.id, gx: p.reduce((s, q) => s + q[0], 0) / p.length, gy: p.reduce((s, q) => s + q[1], 0) / p.length }; };
   const tenants = model.B.flatMap((b) => (b.tn || []).filter((t) => norm(t).length >= 4).map((t) => ({ ...centre(b), n: norm(t) })));
+  // b.ax: the address is only its lot's (a garage behind a house), so things at that address go to the main building
   const addressed = model.B.flatMap((b) => {
-    const m = (b.ad || '').match(/^(\d+)[A-Za-z]?(?:-(\d+)[A-Za-z]?)?\s+(.+)$/);
+    const m = (b.ax ? '' : b.ad || '').match(/^(\d+)[A-Za-z]?(?:-(\d+)[A-Za-z]?)?\s+(.+)$/);
     const a = m && parseAddress(`1 ${m[3]}`);
     return a ? [{ ...centre(b), lo: +m[1], hi: +(m[2] || m[1]), street: a.street }] : [];
   });

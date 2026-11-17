@@ -3,7 +3,7 @@ the optional survey layers (lidar tiers and heights, roof colours, aerial vegeta
 
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
-osm/heights.json, imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
+osm/heights.json, addresses.json (tools/model/addresses.py; the copy in data/model/ is used when it is missing), imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
 painted parking lines read from the 2022 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
 Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
@@ -523,7 +523,19 @@ try:
     import names
     try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
     except FileNotFoundError: NOV={}
-    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV)
+    RAWN=json.load(open(INP+'osm/downtown-raw.json'))['elements']
+    names.name_buildings(B,RAWN,g,NOV)
+    # a street address, from the State's address points and parcels, for whatever OpenStreetMap left with nothing
+    REPO=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..')
+    AD=next((f for f in (INP+'addresses.json',os.path.join(REPO,'data','model','addresses.json')) if os.path.exists(f)),None)
+    if AD:
+        quiet=None
+        try:
+            # the keepsake house stays unlabelled, and so do its nearest neighbours, whose numbers would give its own away
+            HL=json.load(open(os.path.join(REPO,'public','model','house.json')));hx,hy=HL['at'];hb=HL['base'];QM=12.0
+            quiet=(hx+(hb[0]-QM)/M,hy+(hb[1]-QM)/M,hx+(hb[2]+QM)/M,hy+(hb[3]+QM)/M)
+        except (FileNotFoundError,KeyError): pass
+        print('addresses from the State for',names.state_addresses(B,json.load(open(AD)),g,RAWN,quiet),'buildings')
     print('names',names.coverage(B))
 except FileNotFoundError: pass
 
