@@ -380,15 +380,6 @@ function renderEats() {
     el('details', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, now)))));
 }
 
-/** A title for a building with no name, tenant or address: what kind of building it is, and its street when known. */
-const KIND = { house: 'House', detached: 'House', residential: 'House', semidetached_house: 'House', apartments: 'Apartments', garage: 'Garage',
-  garages: 'Garages', shed: 'Shed', roof: 'Canopy', parking: 'Parking deck', church: 'Church', retail: 'Shop', commercial: 'Shop', office: 'Offices',
-  industrial: 'Workshop', warehouse: 'Warehouse', school: 'School', grandstand: 'Grandstand', carport: 'Carport' };
-function plainName(b) {
-  const kind = KIND[b.t] || 'Building';
-  return b.st ? `${kind} on ${b.st}` : kind;
-}
-
 /** The card at the top of the paper for a building on the model. */
 function showBuilding(b, look = false) {
   picked = b;
@@ -399,7 +390,7 @@ function showBuilding(b, look = false) {
   const here = items.filter((it) => spots.get(it.id)?.bid === b.id).sort(byTime);
   const ps = places.filter((p) => p.bid === b.id);
   const now = etNow();
-  const name = b.name || b.label || ps[0]?.name || plainName(b);
+  const name = b.name || b.label || ps[0]?.name || 'A downtown building';
   // who else is inside, from the model's own data, without repeating the title or the places listed below
   const shown = new Set([name, ...ps.map((p) => p.name)].map(norm));
   const inside = (b.tn || []).filter((t) => !shown.has(norm(t)));

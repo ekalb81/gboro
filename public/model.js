@@ -209,7 +209,7 @@ const blds=MAP.B.map((b,i)=>{
   if(SPECIAL[b.id]==='kress'){delete b.tr;delete b.tb}
   const hm=(b.dk?b.dk.z1:0)||(b.tb>2.5?b.tb:0)||(b.id!==208115796&&b.lh>2.5?b.lh:0)||b.h||lv*3.6;if(b.lh>2.5&&!b.l&&!(F&&F.floors))lv=Math.max(1,Math.round(b.lh/3.8));const hpx=Math.min(250,hm*ZPM);
   const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
-  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',st:b.st||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
+  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
   if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt;if(b.dk.cl&&Array.isArray(b.dk.cl[0]))o.cls=b.dk.cl.map(pairs);
     // a ramp's top is a tilted plane: z = sl[0] + sl[1]*gx + sl[2]*gy (model pixels), kept between its two end heights

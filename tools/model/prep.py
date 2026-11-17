@@ -523,13 +523,7 @@ try:
     import names
     try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
     except FileNotFoundError: NOV={}
-    try: ADR=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','addresses.json')))['points']
-    except FileNotFoundError: ADR=None
-    try:
-        _lot=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','public','model','house.json')))
-        PRIV=(_lot['at'][0]+_lot['base'][0]/M,_lot['at'][1]+_lot['base'][1]/M,_lot['at'][0]+_lot['base'][2]/M,_lot['at'][1]+_lot['base'][3]/M)
-    except (FileNotFoundError,KeyError): PRIV=None
-    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV,ADR,R,M,PRIV)
+    names.name_buildings(B,json.load(open(INP+'osm/downtown-raw.json'))['elements'],g,NOV)
     print('names',names.coverage(B))
 except FileNotFoundError: pass
 
