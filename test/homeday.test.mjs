@@ -81,6 +81,13 @@ test('the mowing round keeps clear of every trunk and the fire ring', async () =
     const q = route.at(d);
     for (const o of keep) assert.ok(Math.hypot(q.x - o.x, q.y - o.y) >= o.r, `too close to (${o.x}, ${o.y}) at ${d.toFixed(1)} m`);
   }
+  // the walk back to the gate from the last stripe keeps clear too, and stays off the beds
+  const end = route.pts[route.pts.length - 1], g = lot.doors.gateOut;
+  for (let t = 0; t <= 1; t += 0.01) {
+    const x = end[0] + (g[0] - end[0]) * t, y = end[1] + (g[1] - end[1]) * t;
+    for (const o of keep) assert.ok(Math.hypot(x - o.x, y - o.y) >= o.r, `the way back passes too close to (${o.x}, ${o.y})`);
+    for (const b of lot.beds) assert.ok(!(x > b[0] && x < b[2] && y > b[1] && y < b[3]), `the way back crosses the bed at (${b[0]}, ${b[1]})`);
+  }
 });
 
 test('the lot sits on the downtown model, on a mapped building, beside a mapped street', () => {
