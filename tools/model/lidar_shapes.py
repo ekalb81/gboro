@@ -8,6 +8,9 @@ Usage: python3 tools/model/lidar_shapes.py <work-dir> <model: public/model/downt
          where it stood (prep.py then leaves it out). After them come additions: a State building footprint
          (tools/model/footprints.py) that the map lacks and the lidar shows standing, with the footprint's outline;
          then anything else the survey classified as a building, 60 m2 or more, with the lidar's own outline.
+         The additions are sorted by place, so a run that covers more ground renumbers them. Anything keyed by
+         one of these numbers (two records in data/model/facades-commons.json) has to be moved to the building's
+         new number after such a run: match the buildings by outline between the old and the new model.
 prep.py reads the result as <inputs-dir>/osm/shapes.json. Run prep.py first if the map changed, so <model> is current.
 """
 import numpy as np,json,math,sys
