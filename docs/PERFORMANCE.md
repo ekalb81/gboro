@@ -691,6 +691,37 @@ drew 10 to 20 tiles each (176 to 439 ms of tile drawing in a frame); after, no f
 **Not checked:** Safari. `?fps` shows the plan in its last line (`res: sharp (default,
 watching)`), and `?fps&res=safe` against `?fps&res=sharp` compares the two on any machine.
 
+## When the light changes (seventh pass)
+
+The still picture is cached in tiles, and the cache was thrown out whenever the sun had moved 1.5 degrees up or 3
+degrees round: every six to twelve minutes, day and night. Each time, `renderStatic()` rebuilt the ground texture and
+the shadow mask in one go (about 0.5 s in headless Chromium at 1600x900), and then every tile in view was redrawn
+whole, one a frame.
+
+What actually depends on the sun's position is the shadow mask alone, and only while the sun casts shadows (above 2
+degrees, not in rain). Lit windows and lamps follow three thresholds (evening, night, lamps on), which are in the key
+on their own.
+
+- The key (`stateKey`) carries the sun's position only while there are shadows. At night and in rain nothing is
+  rebuilt or redrawn as the sun moves.
+- The ground texture is rebuilt only when the weather changes (its colours depend on nothing else).
+- An out-of-date tile in view is replaced a step at a time within the frame's tile allowance, on canvases of its own,
+  and the old one is shown until the new one is done. It used to be redrawn whole on the spot.
+
+Measured by moving the page's clock 14 minutes on at midday, twice (headless Chromium, 1600x900, 42 s after each):
+
+| | before | after |
+| --- | --- | --- |
+| `renderStatic()` ms | 513, 481 | 52, 49 |
+| frames that drew a tile whole | 16, 16 (527 and 484 ms of drawing) | 0, 0 |
+| longest frame ms (usual frame 73 to 89 in software) | 420, 362 | 202, 173 |
+| the same at 10 PM: `renderStatic()` runs | 2 | 0 |
+
+Splitting each tile into a layer that never changes (buildings and what stands on the ground) and one that does
+(ground and shadows) was considered and not done: it would save the buildings' redraw, a second or two of background
+drawing per sun step, at the cost of a second canvas for every tile (double the tile memory by day). With the redraw
+off the frame's critical path, that is not worth the memory.
+
 ## What is left, and whether to change engines
 
 - **After the fifth pass** a tile is drawn without copying from a canvas just drawn on and without making or freeing one, and
