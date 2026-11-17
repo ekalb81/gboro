@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { digestFileName, messageText, digestFileText, getAccessToken, gmailClient, htmlToText } from '../scripts/gmail.mjs';
+import { digestFileName, messageText, digestFileText, getAccessToken, gmailClient, htmlToText, newDigests } from '../scripts/gmail.mjs';
 import { parseDigest } from '../scripts/lib.mjs';
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -102,4 +102,39 @@ test('gives up after the last retry, and never retries other errors', async () =
   const denied = gmailClient('tok', async () => { calls++; return { ok: false, status: 403, headers: new Map(), text: async () => 'insufficientPermissions' }; }, { sleep: async () => {}, gapMs: 0 });
   await assert.rejects(denied.getMessage('m1'), /failed \(403\)/);
   assert.equal(calls, 1);
+});
+
+// A message as Gmail returns it, with a plain-text body.
+const digestMsg = (id, iso, body = 'ITEM | a') => ({
+  id,
+  internalDate: String(Date.parse(iso)),
+  payload: { headers: [{ name: 'Subject', value: 'Greensboro update' }], mimeType: 'text/plain', body: { data: Buffer.from(body).toString('base64url') } },
+});
+
+test('new digests cost one request each, and saved ones cost none', async () => {
+  const inbox = { a: digestMsg('a', '2026-11-17T10:02:00Z'), b: digestMsg('b', '2026-11-17T10:32:00Z') };
+  const asked = [];
+  const gmail = { getMessage: async (id, format) => (asked.push([id, format]), inbox[id]) };
+
+  const first = await newDigests(gmail, ['a', 'b'], new Map());
+  assert.deepEqual(asked, [['a', 'full'], ['b', 'full']]);
+  assert.deepEqual(first.files.map((f) => f.name), ['2026-11-17T1002Z.txt', '2026-11-17T1032Z.txt']);
+  assert.match(first.files[0].text, /^Gmail-Id: a$/m);
+
+  asked.length = 0;
+  const again = await newDigests(gmail, ['a', 'b'], new Map([['2026-11-17T1002Z.txt', 'a'], ['2026-11-17T1032Z.txt', 'b']]));
+  assert.deepEqual(asked, []);
+  assert.deepEqual(again, { files: [], skipped: 2 });
+});
+
+test('a second digest in the same minute is kept, and a hand-saved file counts as the message', async () => {
+  const inbox = { a: digestMsg('a', '2026-11-17T10:02:10Z'), b: digestMsg('b', '2026-11-17T10:02:50Z', 'nothing today') };
+  const gmail = { getMessage: async (id) => inbox[id] };
+  const warned = [];
+  const both = await newDigests(gmail, ['a', 'b'], new Map(), (m) => warned.push(m));
+  assert.deepEqual(both.files.map((f) => f.name), ['2026-11-17T1002Z.txt', '2026-11-17T1002Z-b.txt']);
+  assert.equal(warned.length, 1);
+
+  const byHand = await newDigests(gmail, ['a'], new Map([['2026-11-17T1002Z.txt', null]]));
+  assert.deepEqual(byHand, { files: [], skipped: 1 });
 });

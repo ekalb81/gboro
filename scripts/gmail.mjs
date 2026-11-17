@@ -134,3 +134,36 @@ export function digestFileText(message) {
   const received = new Date(Number(message.internalDate)).toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Subject: ${header(message, 'Subject') || ''}\nReceived: ${received}\nGmail-Id: ${message.id}\n\n${messageText(message).trim()}\n`;
 }
+
+// Download the digests that are not saved yet. `saved` maps each file name already in data/raw to the Gmail id
+// written in it (null for a hand-saved file, which has none). A message whose id is already saved costs no
+// request at all, and every other message costs one: Gmail's quota is counted per request, and the publish
+// run starts with an empty folder, so asking for each message's date first only doubled the work.
+export async function newDigests(gmail, ids, saved = new Map(), warn = console.warn) {
+  const have = new Set([...saved.values()].filter(Boolean));
+  const files = [];
+  let skipped = 0;
+  for (const id of ids) {
+    if (have.has(id)) {
+      skipped++;
+      continue;
+    }
+    const msg = await gmail.getMessage(id, 'full');
+    const base = digestFileName(msg.internalDate);
+    let name = `${base}.txt`;
+    if (saved.has(name)) {
+      // Same minute. A hand-saved file names no Gmail id, so it counts as this message.
+      if (!saved.get(name)) {
+        skipped++;
+        continue;
+      }
+      name = `${base}-${id}.txt`; // a second digest in the same minute: keep both
+    }
+    const text = digestFileText(msg);
+    if (!/^ITEM\s*\|/m.test(text)) warn(`  ${base}: no ITEM lines (saved anyway; ingest will ignore it)`);
+    saved.set(name, id);
+    have.add(id);
+    files.push({ name, text });
+  }
+  return { files, skipped };
+}

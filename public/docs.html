@@ -315,7 +315,7 @@ py tools\model\refresh.py</code></pre>
   </ol>
   <p>Because every run starts clean and refetches, items from a source that is down for a run drop off the site until the next good run. The weather, crime, restaurants and council video keep their last copy instead.</p>
   <p>Cloudflare Pages is wired up as an alternative host. Switching hosts, taking the site down and the reasons behind these choices are in <a href="https://github.com/ekalb81/gboro/blob/main/PUBLISHING.md">PUBLISHING.md</a>.</p>
-  <div class="note">GitHub often starts scheduled runs 5 to 15 minutes late, and pauses the schedule on a public repository after 60 days without a commit. If the site stops updating, re-enable the workflow under Actions.</div>
+  <div class="note">GitHub starts scheduled runs late and skips many of them, so the gap between refreshes is often hours, not 30 minutes; <a href="data/status.json">data/status.json</a> says when the last refresh ran and which sources came through. GitHub also pauses the schedule on a public repository after 60 days without a commit. If the site stops updating, re-enable the workflow under Actions.</div>
 </section>
 
 <section id="secrets">
@@ -389,7 +389,8 @@ npm run serve</code></pre>
     <tr><td><code>data/</code></td><td><code>sources.json</code> (news feeds and Bluesky accounts), <code>civic-config.json</code> (council schedule), <code>model/</code> (small committed model inputs). <code>raw/</code> and <code>held.json</code> are generated and git-ignored</td></tr>
     <tr><td><code>tools/model/</code></td><td>The Python tools that build the model</td></tr>
     <tr><td><code>test/</code></td><td>Tests for parsing, dates, placement, privacy rules and every collector, with saved fixtures. Run with <code>npm test</code></td></tr>
-    <tr><td><code>.github/workflows/publish.yml</code></td><td>The one workflow</td></tr>
+    <tr><td><code>.github/workflows/publish.yml</code></td><td>Collects the data and publishes the site</td></tr>
+    <tr><td><code>.github/workflows/checks.yml</code></td><td>Checks each pull request: tests, every script parses, the site builds</td></tr>
     <tr><td><code>README.md</code>, <code>PUBLISHING.md</code>, <code>PRIVACY.md</code>, <code>docs/</code></td><td>Deeper notes on single topics</td></tr>
   </table></div>
 </section>

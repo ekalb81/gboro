@@ -8,9 +8,18 @@ every 30 min, on push to main, or by hand
   -> npm test
   -> python3 tools/model/refresh.py --publish   (about weekly: rebuild the downtown model from OpenStreetMap)
   -> node scripts/refresh.mjs     (each collector in scripts/collectors.json, then ingest)
-  -> check public/ has no private files
+  -> node scripts/check-site.mjs  (public/ has its files and nothing private)
   -> deploy public/ to the host named in DEPLOY_TARGET
 ```
+
+A second workflow, `.github/workflows/checks.yml`, runs on every pull request: the tests, a parse of
+every script, and a build of the site from the sample digest followed by the same
+`scripts/check-site.mjs`. It uses no secrets. Merging to `main` publishes at once, so wait for its
+green tick before merging. To make GitHub insist on it, add a branch protection rule for `main`
+that requires the status check named `checks` (Settings > Branches).
+
+Each refresh also writes `public/data/status.json`: when it ran and whether each collector came
+through. Open `https://ekalb81.github.io/gboro/data/status.json` to see how fresh the site is.
 
 **Nothing goes public until you set `DEPLOY_TARGET`.** Until then the workflow only builds on push
 or when run by hand, and scheduled runs are skipped.
@@ -81,7 +90,10 @@ fails the run.
 
 ## Things to know
 
-- GitHub runs schedules late when it's busy, often by 5 to 15 minutes.
+- GitHub runs schedules late when it's busy, and drops many of them. From 13 to 17 November 2026 the
+  half-hourly schedule started 19 runs where about 200 were due, with gaps of up to eight hours.
+  `status.json` shows when the last one ran. The cure is to start the workflow from outside
+  (a `workflow_dispatch` call from a hosted scheduler), which needs a token only the owner can make.
 - On a public repo, GitHub pauses scheduled workflows after 60 days with no commits. Re-enable
   under Actions if that happens.
 - To take the site down: delete the `DEPLOY_TARGET` variable, then unpublish under Settings > Pages
