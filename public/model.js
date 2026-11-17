@@ -209,7 +209,7 @@ const blds=MAP.B.map((b,i)=>{
   if(SPECIAL[b.id]==='kress'){delete b.tr;delete b.tb}
   const hm=(b.dk?b.dk.z1:0)||(b.tb>2.5?b.tb:0)||(b.id!==208115796&&b.lh>2.5?b.lh:0)||b.h||lv*3.6;if(b.lh>2.5&&!b.l&&!(F&&F.floors))lv=Math.max(1,Math.round(b.lh/3.8));const hpx=Math.min(250,hm*ZPM);
   const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
-  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
+  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',ax:b.ax||0,am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
   if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt;if(b.dk.cl&&Array.isArray(b.dk.cl[0]))o.cls=b.dk.cl.map(pairs);
     // a ramp's top is a tilted plane: z = sl[0] + sl[1]*gx + sl[2]*gy (model pixels), kept between its two end heights
@@ -1361,7 +1361,7 @@ function signText(cx,wl,z0,txt){
 // would touch one already down waits for a closer zoom, so the model is never papered over.
 const LABELS=[['tower','Lincoln Financial'],['jsb','Jefferson Standard'],['icrc','Civil Rights Museum'],['theatre','Carolina Theatre'],['city','Melvin Municipal'],['depot','Galyon Depot'],['tanger','Tanger Center'],['ballpark','First National Bank Field'],['kress','Kress Building'],[208219206,'Courthouse'],[414240404,'Cultural Center'],[366999616,'Renaissance Plaza'],[411854108,'Public Library']];
 const wrapLabel=t=>{if(t.length<=20)return[t];const w=t.split(' ');let best=null;for(let i=1;i<w.length;i++){const a=w.slice(0,i).join(' '),b=w.slice(i).join(' '),m=Math.max(a.length,b.length);if(!best||m<best.m)best={m,a,b}}if(!best)return[t.slice(0,19)+'…'];const cut=x=>x.length>28?x.slice(0,27).trimEnd()+'…':x;return[cut(best.a),cut(best.b)]};
-for(const b of blds){const park=b.t==='parking'||b.am==='parking';b.label=b.name||b.tn[0]||b.ad||(park?'Parking deck':'');b.lt=b.name?1:b.tn.length?2:3;b.more=b.name?b.tn.length:Math.max(0,b.tn.length-1)}
+for(const b of blds){const park=b.t==='parking'||b.am==='parking';b.label=b.name||b.tn[0]||(b.ax?'':b.ad)||(park?'Parking deck':'');b.lt=b.name?1:b.tn.length?2:3;b.more=b.name?b.tn.length:Math.max(0,b.tn.length-1)}
 for(const[k,t]of LABELS){const b=byId[k];if(b){b.label=t;b.lt=0}}
 const LAB=blds.filter(b=>b.label);for(const b of LAB){b.ll=wrapLabel(b.label);b.lsz=b.area*Math.max(8,b.htop||b.hpx)}LAB.sort((a,b)=>a.lt-b.lt||b.lsz-a.lsz);
 const LFONT='800 6.5px "Nunito Sans", system-ui, sans-serif',LFONT2='600 6px "Nunito Sans", system-ui, sans-serif';let labW=false;

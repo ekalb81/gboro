@@ -1,4 +1,5 @@
-"""Names for the model's buildings, from OpenStreetMap only (so a rebuild picks up new ones by itself).
+"""Names for the model's buildings, from OpenStreetMap (so a rebuild picks up new ones by itself), with the State's
+public address data filling in a street address where OpenStreetMap has nothing at all.
 
 For each building, in order of how much it says about the building:
   n   its own name: the OSM name, else addr:housename ("Guilford Building"), else a correction from
@@ -6,6 +7,11 @@ For each building, in order of how much it says about the building:
   tn  who is inside: named shops, restaurants, offices... mapped as points within the footprint, best known first
   ad  its street address, short ("304 S Elm St"), from the building or from a point inside it
 The renderer labels a building with the first of these it has. Closed places (disused:, was:) are left out.
+
+A building OpenStreetMap leaves with none of the three gets `ad` from the State's address data (tools/model/addresses.py):
+the 911 address points inside its outline, else the site address of the lot most of it stands on. One that only shares
+its lot's address (a garage behind a house, say) is marked ax=1, so the map does not print the same address twice.
+Nothing is ever made up: a building neither source knows stays without a label.
 """
 import re
 
@@ -85,6 +91,67 @@ def name_buildings(B,raw,g,overrides=None):
         if ten: b['tn']=ten[:8]
         if ad: b['ad']=ad
     return B
+
+OUTBUILDING={'garage','garages','shed','roof','carport','farm_auxiliary','hut','greenhouse','service'}
+
+def street_fixer(raw):
+    """Spelling of street names as OpenStreetMap has them ('McAdoo Avenue', 'SECU Boulevard'): the State's are in capitals."""
+    known={}
+    for e in raw:
+        t=e.get('tags') or {}
+        if e['type']=='way' and 'highway' in t and t.get('name'): known.setdefault(t['name'].lower(),t['name'])
+    return lambda st: known.get(st.lower(),st)
+
+def number_range(nums):
+    """['118','122','120'] -> '118-122'; a single number stays as it is."""
+    def key(n):
+        m=re.match(r'\d+',n); return (int(m.group()) if m else 0,n)
+    nums=sorted(set(nums),key=key)
+    return nums[0] if len(nums)==1 else nums[0]+'-'+nums[-1]
+
+def state_addresses(B,addr,g,raw=(),quiet=None):
+    """Give `ad` to every building that has no name, tenant or address yet. addr: data/model/addresses.json;
+    quiet: (x0,y0,x1,y1) in model tiles where no address is ever written (the keepsake house and its neighbours).
+    Returns how many buildings got one."""
+    fix=street_fixer(raw)
+    pts=[(*g({'lon':p[0],'lat':p[1]}),p[2],fix(p[3])) for p in addr.get('points',[])]
+    lots=[]
+    for q in addr.get('parcels',[]):
+        poly=[g({'lon':q['p'][i],'lat':q['p'][i+1]}) for i in range(0,len(q['p']),2)]
+        xs=[c[0] for c in poly];ys=[c[1] for c in poly]
+        lots.append((min(xs),max(xs),min(ys),max(ys),poly,q['a'][0],fix(q['a'][1])))
+    n=0
+    for b in B:
+        if b.get('n') or b.get('tn') or b.get('ad') or b.get('dk'): continue
+        poly=list(zip(b['p'][0::2],b['p'][1::2]))
+        xs=[p[0] for p in poly];ys=[p[1] for p in poly]
+        x0,x1,y0,y1=min(xs),max(xs),min(ys),max(ys)
+        if quiet and x1>quiet[0] and x0<quiet[2] and y1>quiet[1] and y0<quiet[3]: continue
+        inside=[p for p in pts if x0<=p[0]<=x1 and y0<=p[1]<=y1 and pip(p[0],p[1],poly)]
+        if inside:
+            # several addresses in one building: the street most of them are on, lowest to highest number
+            by={}
+            for p in inside: by.setdefault(p[3],set()).add(p[2])
+            st=sorted(by,key=lambda s:(-len(by[s]),s))[0]
+            ad=short_address(number_range(by[st]),st)
+            if ad: b['ad']=ad;n+=1
+            continue
+        # no address point inside: the lot that most of the building stands on (sampled on a 5 x 5 grid)
+        samp=[(x0+(x1-x0)*(i+.5)/5,y0+(y1-y0)*(j+.5)/5) for i in range(5) for j in range(5)]
+        samp=[s for s in samp if pip(s[0],s[1],poly)] or [(sum(xs)/len(xs),sum(ys)/len(ys))]
+        votes={}
+        for k,l in enumerate(lots):
+            if l[0]>x1 or l[1]<x0 or l[2]>y1 or l[3]<y0: continue
+            c=sum(1 for s in samp if pip(s[0],s[1],l[4]))
+            if c: votes[k]=c
+        if not votes: continue
+        k=max(votes,key=lambda k:(votes[k],-k))
+        if votes[k]*2<=len(samp): continue
+        ad=short_address(lots[k][5],lots[k][6])
+        if ad:
+            b['ad']=ad;n+=1
+            if b.get('t') in OUTBUILDING: b['ax']=1
+    return n
 
 def coverage(B):
     c={'name':0,'tenant':0,'address':0,'none':0}
