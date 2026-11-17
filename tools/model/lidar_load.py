@@ -26,8 +26,12 @@ X=[];Y=[];Z=[];C=[];tiles=[];tmin=1e30;tmax=-1e30
 for f in sorted(glob.glob(lasdir+'/*.las')):
     with laspy.open(f) as fh:
         h=fh.header;tb=[float(h.mins[0]),float(h.mins[1]),float(h.maxs[0]),float(h.maxs[1])]
-        # snap to the 2,500 ft tile grid
-        tb=[math.floor(tb[0]/2500+.01)*2500,math.floor(tb[1]/2500+.01)*2500,math.ceil(tb[2]/2500-.01)*2500,math.ceil(tb[3]/2500-.01)*2500]
+        # a whole tile's edges sit on the 2,500 ft grid (to within the point spacing); an order drawn as a box is cut
+        # wherever the box was, so an edge more than 10 ft off the grid is kept as it is
+        sn=lambda v,f:(f(v/2500)*2500 if abs(f(v/2500)*2500-v)<10 else v)
+        tb=[sn(tb[0],math.floor),sn(tb[1],math.floor),sn(tb[2],math.ceil),sn(tb[3],math.ceil)]
+        if any(o['used'] and o['bbox_ftus'][0]<=tb[0] and o['bbox_ftus'][1]<=tb[1] and o['bbox_ftus'][2]>=tb[2] and o['bbox_ftus'][3]>=tb[3] for o in tiles):
+            print('skip (inside a tile already read)',f,flush=True);continue
         tiles.append({'file':f.split('/')[-1],'bbox_ftus':tb,'points':int(h.point_count)})
         if tb[0]>bx1 or tb[2]<bx0 or tb[1]>by1 or tb[3]<by0: print('skip (outside model)',f,flush=True);tiles[-1]['used']=False;continue
         tiles[-1]['used']=True;n=0
