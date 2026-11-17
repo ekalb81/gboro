@@ -254,6 +254,7 @@ FW=[];GA=[];SR=[];GC=None;SIG=[]
 try:
     raw_el=json.load(open(INP+'osm/downtown-raw.json'))['elements']
     ndr={e['id']:e for e in raw_el if e['type']=='node'}
+    wyr={e['id']:e for e in raw_el if e['type']=='way'}
     lots=[];aisles=[]
     for e in raw_el:
         t=e.get('tags',{})
@@ -262,6 +263,15 @@ try:
             if hw in ('traffic_signals','stop','give_way') or t.get('crossing')=='traffic_signals':
                 x,y=g(e)
                 if inreg(x,y,1): SIG.append([round(x,2),round(y,2),{'traffic_signals':'s','stop':'p','give_way':'y'}.get(hw,'s'),t.get('direction','')])
+            continue
+        if e['type']=='relation':
+            # a surface lot drawn as an outline with islands cut out of it (a multipolygon): the outline is the lot
+            if t.get('amenity')=='parking' and t.get('parking','surface') in ('surface','street_side','lane') and 'building' not in t:
+                for m in e.get('members',[]):
+                    w=wyr.get(m.get('ref')) if m.get('type')=='way' and m.get('role','outer') in ('outer','') else None
+                    if not w or w['nodes'][0]!=w['nodes'][-1]: continue
+                    q=[g(ndr[i]) for i in w['nodes'] if i in ndr]
+                    if len(q)>=4 and any(inreg(x,y,2) for x,y in q): lots.append(q[:-1])
             continue
         if e['type']!='way': continue
         pts=[g(ndr[i]) for i in e.get('nodes',[]) if i in ndr]
