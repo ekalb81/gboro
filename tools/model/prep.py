@@ -205,7 +205,7 @@ try:
         if f: b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
 except FileNotFoundError: pass
 
-# measured heights: the 2024 NC lidar (flown 2024-02-03) where its downloaded tiles reach, the 2015 one north of them
+# measured heights: the 2024 NC lidar (flown 2024-02-03); a building outside the ordered tiles keeps its 2015 figure
 try:
     HT=json.load(open(INP+'osm/heights.json'))['buildings']
     for b in B:

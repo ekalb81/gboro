@@ -123,7 +123,7 @@ for k in range(1,n+1):
         add.append({'p':flat(q),'h':round(h,1),'area':round(q.area*81),'src':'lidar 2024 (classified as a building by the survey)'})
 add.sort(key=lambda nb:(round(min(nb['p'][1::2])),min(nb['p'][0::2])))
 new+=add
-json.dump({'tiers':tiers,'new':new,'source':'NC Emergency Management Phase 3 QL1 lidar flown 2024-02-03 (sdd.nc.gov), 1.5 m cells, inside the downloaded tiles; north of them the 2015 shapes (NC Phase III lidar 2015-02-03, NOAA dataset 6209) are kept, marked survey 2015. Outlines of buildings OpenStreetMap lacks come from the NC Emergency Management 2022 building footprints where they have one. Previous version: shapes-2015.json'},open(out,'w'))
+json.dump({'tiers':tiers,'new':new,'source':'NC Emergency Management Phase 3 QL1 lidar flown 2024-02-03 (sdd.nc.gov), 1.5 m cells, inside the downloaded tiles; outside them the 2015 shapes (NC Phase III lidar 2015-02-03, NOAA dataset 6209) are kept, marked survey 2015. Outlines of buildings OpenStreetMap lacks come from the NC Emergency Management 2022 building footprints where they have one. Previous version: shapes-2015.json'},open(out,'w'))
 print('from footprints',nfp,'from lidar only',len(add)-nfp);print('tiers',len(tiers),'redone',redone,'kept2015',kept,'old',len(old['tiers']),'| new',len(new),'of which old',n_old)
 print('old "new" buildings 2015h,2024h,standing,area:',rep)
 for nb in new[n_old:]:
