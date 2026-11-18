@@ -3,6 +3,7 @@
 # Nothing goes live until you choose a host by setting the repository variable DEPLOY_TARGET
 # (Settings > Secrets and variables > Actions > Variables) to "github-pages" or "cloudflare".
 # Until then this only runs on push or by hand, builds the site, and stops. See PUBLISHING.md.
+# Pull requests are checked by .github/workflows/checks.yml before they get here.
 
 name: Publish
 
@@ -10,7 +11,10 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '7,37 * * * *' # every 30 minutes, off the top of the hour when GitHub's queue is busiest
+    # Best effort. GitHub starts scheduled runs late and skips many when it is busy: asked twice an hour it ran
+    # about one in ten. So ask four times an hour, away from :00 and :30 when its queue is fullest, and take
+    # what comes. A run that does start refreshes everything; one that is skipped costs nothing.
+    - cron: '11,26,41,56 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,13 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45 # most runs take a minute or two; the weekly model rebuild adds about 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -45,55 +49,29 @@ jobs:
       # Every run starts from a clean checkout and refetches recent data, so raw posts (which name
       # private people) are never stored in git or in an Actions cache. Add new sources'
       # secrets here and list the collector in scripts/collectors.json.
-      # The last good crime counts (citywide and per-division totals only, nothing personal) are kept
-      # between runs, so an FBI or City outage shows the previous numbers instead of none.
-      - name: Restore last crime counts
-        uses: actions/cache/restore@v4
+      # The last good copy of each public source is kept between runs, in one cache, so an outage shows the
+      # previous numbers instead of none: crime counts (citywide and per-division totals only, nothing personal),
+      # the weather reading, the City's YouTube feed (YouTube's feeds sometimes answer 404 for a while),
+      # restaurants and bars from OpenStreetMap (refreshed about once a day) and NCDOT's traffic counts
+      # (about once a week). To keep another file, add its path to this step and to "Save the data".
+      - name: Restore the last good data
+        uses: actions/cache/restore@v6
         with:
-          path: public/data/crime.json
-          key: crime-${{ github.run_id }}
-          restore-keys: crime-
-
-      # Same for the last weather reading (public NWS data), so a weather.gov outage keeps the last sky.
-      - name: Restore last weather
-        uses: actions/cache/restore@v4
-        with:
-          path: public/data/weather.json
-          key: weather-${{ github.run_id }}
-          restore-keys: weather-
-
-      # The City's YouTube feed (public videos only) is kept between runs, because YouTube's feeds
-      # sometimes answer 404 for a while; civic.mjs falls back to the last good copy.
-      - name: Restore last City YouTube feed
-        uses: actions/cache/restore@v4
-        with:
-          path: data/civic/youtube.xml
-          key: civic-youtube-${{ github.run_id }}
-          restore-keys: civic-youtube-
-
-      # Restaurants and bars from OpenStreetMap (public business listings) are refreshed about once a day,
-      # so the last copy is kept between runs and the collector skips the fetch while it is fresh.
-      - name: Restore last restaurants and bars
-        uses: actions/cache/restore@v4
-        with:
-          path: public/data/eats.json
-          key: eats-${{ github.run_id }}
-          restore-keys: eats-
-
-      # NCDOT's average daily traffic counts (public, yearly figures) are refreshed about once a week.
-      - name: Restore last traffic volumes
-        uses: actions/cache/restore@v4
-        with:
-          path: public/data/traffic-volumes.json
-          key: traffic-volumes-${{ github.run_id }}
-          restore-keys: traffic-volumes-
+          path: |
+            public/data/crime.json
+            public/data/weather.json
+            public/data/eats.json
+            public/data/traffic-volumes.json
+            data/civic/youtube.xml
+          key: site-data-${{ github.run_id }}
+          restore-keys: site-data-
 
       # The downtown model (public/model/) is rebuilt from fresh OpenStreetMap data about once a week, and at once
       # when tools/model/ or data/model/ change. The rebuilt files are kept between runs and deployed, never
       # committed: this workflow cannot write to the repository. If the rebuild fails, the last good model (or the
       # one in git) is published and the run carries on. See tools/model/refresh.py.
       - name: Restore last model build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: data/model-build
           key: model-build-${{ github.run_id }}
@@ -118,7 +96,7 @@ jobs:
 
       - name: Save model build
         if: steps.model.outputs.changed == 'true' && hashFiles('data/model-build/built.json') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: data/model-build
           key: model-build-${{ github.run_id }}
@@ -132,50 +110,22 @@ jobs:
           DRIVENC_KEY: ${{ secrets.DRIVENC_KEY }}
         run: node scripts/refresh.mjs
 
-      - name: Save crime counts
-        if: hashFiles('public/data/crime.json') != ''
-        uses: actions/cache/save@v4
+      - name: Save the data for the next run
+        uses: actions/cache/save@v6
         with:
-          path: public/data/crime.json
-          key: crime-${{ github.run_id }}
+          path: |
+            public/data/crime.json
+            public/data/weather.json
+            public/data/eats.json
+            public/data/traffic-volumes.json
+            data/civic/youtube.xml
+          key: site-data-${{ github.run_id }}
 
-      - name: Save weather
-        if: hashFiles('public/data/weather.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: public/data/weather.json
-          key: weather-${{ github.run_id }}
-
-      - name: Save City YouTube feed
-        if: hashFiles('data/civic/youtube.xml') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: data/civic/youtube.xml
-          key: civic-youtube-${{ github.run_id }}
-
-      - name: Save restaurants and bars
-        if: hashFiles('public/data/eats.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: public/data/eats.json
-          key: eats-${{ github.run_id }}
-
-      - name: Save traffic volumes
-        if: hashFiles('public/data/traffic-volumes.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: public/data/traffic-volumes.json
-          key: traffic-volumes-${{ github.run_id }}
-
+      # Fails the run, so nothing is deployed, if a page or data file is missing or private data is in public/.
       - name: Check the site has its files
-        run: |
-          for f in public/index.html public/village.js public/data/map.json public/data/items.json public/model/downtown.json; do
-            test -s "$f" || { echo "::error::$f is missing"; exit 1; }
-          done
-          # Held items and raw digests must never be in the published folder.
-          if find public -name 'held.json' -o -name '*.txt' | grep -q .; then echo "::error::private data in public/"; exit 1; fi
+        run: node scripts/check-site.mjs
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: public
           retention-days: 1
@@ -184,6 +134,7 @@ jobs:
     needs: build
     if: vars.DEPLOY_TARGET == 'github-pages'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -192,14 +143,15 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   deploy-cloudflare:
     needs: build
     if: vars.DEPLOY_TARGET == 'cloudflare'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: github-pages
           path: site

@@ -116,7 +116,7 @@
   <div class="flow">
     <div><span class="n">1</span><b>Collect</b>Seven collectors fetch from their sources. One failing never stops the others.<small>scripts/refresh.mjs, scripts/collectors.json</small></div>
     <div><span class="n">2</span><b>Ingest and filter</b>Posts and news become one list of items, placed in town, with the privacy rules applied.<small>scripts/ingest.mjs, scripts/lib.mjs</small></div>
-    <div><span class="n">3</span><b>Publish</b>Everything in <code>public/</code> is deployed as the whole site, every 30 minutes.<small>.github/workflows/publish.yml</small></div>
+    <div><span class="n">3</span><b>Publish</b>Everything in <code>public/</code> is deployed as the whole site, as often as GitHub runs it.<small>.github/workflows/publish.yml</small></div>
     <div><span class="n">4</span><b>Draw</b>The page loads the model and the data files, and turns them into the scene and the paper.<small>public/app.js, public/model.js</small></div>
   </div>
   <p>The collectors write small JSON files into <code>public/data/</code>. The model itself, <code>public/model/downtown.json</code>, is built separately and rarely (see <a href="#model">The downtown model</a>). There is no build step for the page: it is plain JavaScript modules and one canvas, with no packages to install.</p>
@@ -304,7 +304,7 @@ py tools\model\refresh.py</code></pre>
 
 <section id="publish">
   <h2>Publishing</h2>
-  <p>The site is live at <a href="https://ekalb81.github.io/gboro/">ekalb81.github.io/gboro</a>, on GitHub Pages. One workflow, <code>.github/workflows/publish.yml</code>, does everything. It runs every 30 minutes (at 7 and 37 past the hour), on every push to <code>main</code>, and on demand from the Actions tab.</p>
+  <p>The site is live at <a href="https://ekalb81.github.io/gboro/">ekalb81.github.io/gboro</a>, on GitHub Pages. One workflow, <code>.github/workflows/publish.yml</code>, does everything. It asks GitHub for a run four times an hour (at 11, 26, 41 and 56 past), on every push to <code>main</code>, and on demand from the Actions tab.</p>
   <ol>
     <li>Run the tests (<code>npm test</code>).</li>
     <li>Restore the last good copies of the weather, crime counts, restaurants and bars, and the City's YouTube feed from the Actions cache. These hold only public or aggregate data.</li>
@@ -315,7 +315,7 @@ py tools\model\refresh.py</code></pre>
   </ol>
   <p>Because every run starts clean and refetches, items from a source that is down for a run drop off the site until the next good run. The weather, crime, restaurants and council video keep their last copy instead.</p>
   <p>Cloudflare Pages is wired up as an alternative host. Switching hosts, taking the site down and the reasons behind these choices are in <a href="https://github.com/ekalb81/gboro/blob/main/PUBLISHING.md">PUBLISHING.md</a>.</p>
-  <div class="note">GitHub often starts scheduled runs 5 to 15 minutes late, and pauses the schedule on a public repository after 60 days without a commit. If the site stops updating, re-enable the workflow under Actions.</div>
+  <div class="note">GitHub starts scheduled runs late and skips many of them, so the gap between refreshes is often hours, not 30 minutes; <a href="data/status.json">data/status.json</a> says when the last refresh ran and which sources came through. GitHub also pauses the schedule on a public repository after 60 days without a commit. If the site stops updating, re-enable the workflow under Actions.</div>
 </section>
 
 <section id="secrets">
@@ -389,7 +389,8 @@ npm run serve</code></pre>
     <tr><td><code>data/</code></td><td><code>sources.json</code> (news feeds and Bluesky accounts), <code>civic-config.json</code> (council schedule), <code>model/</code> (small committed model inputs). <code>raw/</code> and <code>held.json</code> are generated and git-ignored</td></tr>
     <tr><td><code>tools/model/</code></td><td>The Python tools that build the model</td></tr>
     <tr><td><code>test/</code></td><td>Tests for parsing, dates, placement, privacy rules and every collector, with saved fixtures. Run with <code>npm test</code></td></tr>
-    <tr><td><code>.github/workflows/publish.yml</code></td><td>The one workflow</td></tr>
+    <tr><td><code>.github/workflows/publish.yml</code></td><td>Collects the data and publishes the site</td></tr>
+    <tr><td><code>.github/workflows/checks.yml</code></td><td>Checks each pull request: tests, every script parses, the site builds, the pages load</td></tr>
     <tr><td><code>README.md</code>, <code>PUBLISHING.md</code>, <code>PRIVACY.md</code>, <code>docs/</code></td><td>Deeper notes on single topics</td></tr>
   </table></div>
 </section>
@@ -440,7 +441,7 @@ npm run serve</code></pre>
     <li><b>The council schedule needs one update a year</b>, when the City posts the next year's dates.</li>
     <li><b>The keyless DriveNC route is unofficial</b> and could break; the keyed API is the one in use on the live site.</li>
     <li><b>Performance varies by browser.</b> Benchmarks so far are in Chromium. The model has been seen to run slowly in Safari on high-resolution screens, and that work is ongoing. The model is drawn at the screen's full resolution; where that makes frames slow it falls back to a lower resolution on that device for a week (add <code>?res=sharp</code> or <code>?res=safe</code> to the address to pick one).</li>
-    <li><b>Up to 30 minutes behind.</b> Data is as fresh as the last publish run, which GitHub may start late.</li>
+    <li><b>Often hours behind.</b> Data is as fresh as the last publish run, and GitHub skips many scheduled runs.</li>
   </ul>
 </section>
 

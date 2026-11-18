@@ -5,7 +5,7 @@
 // One collector failing (bad credentials, a site down) never stops the others: it is reported and the
 // run carries on, so the site still updates with whatever came through. Only an ingest failure fails the run.
 
-import { readFile, access, appendFile } from 'node:fs/promises';
+import { readFile, access, appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -40,6 +40,16 @@ function run(script, args = [], timeoutMin = 5) {
   return { ok: r.status === 0, why: r.status === 0 ? '' : `exit ${r.status ?? r.signal}`, secs };
 }
 
+// What the run did, published as public/data/status.json so anyone can see when the site last refreshed and
+// which sources came through. Only step names, results and timings or error codes: nothing a source returned.
+export function statusOf(rows, now = new Date()) {
+  return {
+    generatedAt: now.toISOString(),
+    ok: rows.every(([, result]) => result !== 'failed'),
+    steps: rows.map(([name, result, note]) => ({ name, result, note })),
+  };
+}
+
 async function main() {
   const cfg = await loadConfig();
   if (argv.includes('--list')) {
@@ -71,6 +81,10 @@ async function main() {
   const table = ['| Step | Result | Note |', '|---|---|---|', ...rows.map((r) => `| ${r.join(' | ')} |`)].join('\n');
   console.log(`\n${table}`);
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Data refresh\n\n${table}\n`);
+  if (!only) {
+    await mkdir(join(root, 'public', 'data'), { recursive: true });
+    await writeFile(join(root, 'public', 'data', 'status.json'), JSON.stringify(statusOf(rows), null, 2));
+  }
   if (!ing.ok) process.exitCode = 1;
 }
 
