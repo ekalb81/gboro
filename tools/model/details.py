@@ -1,11 +1,12 @@
 """Build public/model/details.json: the small real things the downtown model's streets and buildings leave out.
 
-Usage: python3 tools/model/details.py [inputs-dir] [model.json] [out.json]
-       python3 tools/model/details.py find-pools [inputs-dir] [model.json]     (lists pool-coloured patches in the aerial)
+Usage: python3 tools/model/details.py [inputs-dir] [model.json] [out.json] [--aerial image.jpg]
+       python3 tools/model/details.py find-pools [inputs-dir] [model.json] [--aerial image.jpg]
 
 Reads <inputs-dir>/osm/downtown-raw.json (the OpenStreetMap extract with all tags), data/model/details-extra.json (things
 OpenStreetMap does not have, checked by eye against the aerial, in longitude and latitude) and, for brick paving inside
-parks and plazas, <inputs-dir>/imagery/ortho-downtown-15cm.jpg. The model's bounds are read from the model file itself
+parks and plazas, the --aerial image and its JSON sidecar (defaults to <inputs-dir>/imagery/ortho-downtown-15cm.jpg).
+The model's bounds are read from the model file itself
 (public/model/downtown.json, GEO), so when the model grows this only needs running again, after prep.py.
 
 Writes, in the model's grid units (one unit = 9 m, x east, y south, from the north-west corner):
@@ -17,13 +18,19 @@ Writes, in the model's grid units (one unit = 9 m, x east, y south, from the nor
   D  ball diamonds: home plate, the unit direction to centre field, and the outfield outline
   BK brick paving read from the aerial inside parks and pedestrian areas: run-length rows, 1.5 m cells
 """
-import json, math, os, sys
+import argparse, json, math, os, sys
+from pathlib import Path
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.join(HERE, '..', '..')
 args = sys.argv[1:]; FIND = bool(args) and args[0] == 'find-pools'
 if FIND: args = args[1:]
-INP = (args[0] if args else '/mnt/project-files/village').rstrip('/') + '/'
-MODEL = args[1] if len(args) > 1 else os.path.join(ROOT, 'public', 'model', 'downtown.json')
-OUT = args[2] if len(args) > 2 else os.path.join(ROOT, 'public', 'model', 'details.json')
+parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+parser.add_argument('inputs', nargs='?', default='/mnt/project-files/village')
+parser.add_argument('model', nargs='?', default=os.path.join(ROOT, 'public', 'model', 'downtown.json'))
+parser.add_argument('out', nargs='?', default=os.path.join(ROOT, 'public', 'model', 'details.json'))
+parser.add_argument('--aerial', type=Path)
+args = parser.parse_args(args)
+INP = args.inputs.rstrip('/') + '/'; MODEL = args.model; OUT = args.out
+AERIAL = args.aerial or Path(INP + 'imagery/ortho-downtown-15cm.jpg')
 EXTRA = os.path.join(ROOT, 'data', 'model', 'details-extra.json')
 MAP = json.load(open(MODEL)); G = MAP['GEO']; M = MAP['M']; GX, GY = MAP['GX'], MAP['GY']
 KX, KY = G['mPerDegLon'], G['mPerDegLat']
@@ -51,21 +58,31 @@ def aerial():
     import numpy as np
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = None
-    meta = json.load(open(INP + 'imagery/ortho-downtown-15cm.json'))['bounds']
-    im = np.asarray(Image.open(INP + 'imagery/ortho-downtown-15cm.jpg').convert('RGB')).astype(np.float32) / 255
+    with AERIAL.with_suffix('.json').open() as sidecar:
+        provenance = json.load(sidecar)
+    meta = provenance['bounds']
+    if not FIND and args.aerial and not (meta['west'] <= G['west'] < G['east'] <= meta['east']
+                                         and meta['south'] <= G['south'] < G['north'] <= meta['north']):
+        raise ValueError('The aerial does not cover the model bounds')
+    with Image.open(AERIAL) as image:
+        if 'size' in provenance and tuple(provenance['size']) != image.size:
+            raise ValueError('The aerial image dimensions do not match its sidecar')
+        im = np.asarray(image if image.mode == 'RGB' else image.convert('RGB'))
     H, W = im.shape[:2]
     def px(x, y):            # grid -> image pixel
         lon, lat = ll(x, y); return ((lon - meta['west']) / (meta['east'] - meta['west']) * W, (meta['north'] - lat) / (meta['north'] - meta['south']) * H)
     def gr(i, j):            # image pixel -> grid
         return g(meta['west'] + i / W * (meta['east'] - meta['west']), meta['north'] - j / H * (meta['north'] - meta['south']))
-    r, gg, b = im[..., 0], im[..., 1], im[..., 2]; mx = im.max(-1); mn = im.min(-1); d = mx - mn + 1e-6
-    hue = np.where(mx == r, ((gg - b) / d) % 6, np.where(mx == gg, (b - r) / d + 2, (r - gg) / d + 4)) * 60
-    return dict(im=im, H=H, W=W, px=px, gr=gr, hue=hue, sat=(mx - mn) / (mx + 1e-6), mx=mx, mpp=(meta['north'] - meta['south']) * KY / H)
+    return dict(im=im, H=H, W=W, px=px, gr=gr, mpp=(meta['north'] - meta['south']) * KY / H)
 
 if FIND:
     import numpy as np
     from scipy import ndimage as ndi
-    A = aerial(); m = (A['hue'] > 160) & (A['hue'] < 197) & (A['sat'] > .22) & (A['mx'] > .5)
+    A = aerial(); im = A.pop('im').astype(np.float32) / 255
+    r, gg, b = im[..., 0], im[..., 1], im[..., 2]; mx = im.max(-1); mn = im.min(-1); d = mx - mn + 1e-6
+    hue = np.where(mx == r, ((gg - b) / d) % 6, np.where(mx == gg, (b - r) / d + 2, (r - gg) / d + 4)) * 60
+    sat = (mx - mn) / (mx + 1e-6)
+    m = (hue > 160) & (hue < 197) & (sat > .22) & (mx > .5)
     m = ndi.binary_opening(m, iterations=2); lab, n = ndi.label(m)
     for i, s in enumerate(ndi.find_objects(lab)):
         blob = lab[s] == i + 1; a = blob.sum() * A['mpp'] ** 2
@@ -80,8 +97,8 @@ if FIND:
                 elif q > rr + 4: break
             ring.append(ll(*A['gr'](cx + math.cos(t) * (rr + 1), cy + math.sin(t) * (rr + 1))))
         gx, gy = A['gr'](cx, cy)
-        print(json.dumps({'grid': [round(gx, 1), round(gy, 1)], 'm2': round(a), 'hue': round(float(A['hue'][s][blob].mean())),
-                          'sat': round(float(A['sat'][s][blob].mean()), 2), 'll': [[round(p[0], 6), round(p[1], 6)] for p in ring]}))
+        print(json.dumps({'grid': [round(gx, 1), round(gy, 1)], 'm2': round(a), 'hue': round(float(hue[s][blob].mean())),
+                          'sat': round(float(sat[s][blob].mean()), 2), 'll': [[round(p[0], 6), round(p[1], 6)] for p in ring]}))
     sys.exit()
 
 # ---------------------------------------------------------------- OpenStreetMap
@@ -183,6 +200,8 @@ try:
     from PIL import Image, ImageDraw
     AER = aerial()
 except Exception as ex:
+    if args.aerial:
+        raise
     AER = None; print('no aerial, so no brick paving read from it:', ex)
 if AER:
     R = 6; gw, gh = int(math.ceil(GX * R)), int(math.ceil(GY * R))
@@ -202,7 +221,10 @@ if AER:
     acc = np.zeros((gh, gw, 3), np.float32); n = 0
     for dy in (-k, 0, k):
         for dx in (-k, 0, k):
-            acc += AER['im'][np.clip(iy + dy, 0, AER['H'] - 1)][:, np.clip(ix + dx, 0, AER['W'] - 1)]; n += 1
+            ys = np.clip(iy + dy, 0, AER['H'] - 1)
+            xs = np.clip(ix + dx, 0, AER['W'] - 1)
+            acc += AER['im'][ys[:, None], xs].astype(np.float32) / 255
+            n += 1
     acc /= n; r, gg, b = acc[..., 0], acc[..., 1], acc[..., 2]; mx = acc.max(-1); mn = acc.min(-1)
     sat = (mx - mn) / (mx + 1e-6); lum = acc @ np.array([.3, .59, .11], np.float32)
     # brick pavers: salmon to red-brown (red well over green), mid-bright; dormant lawn is yellower, mulch darker
@@ -220,12 +242,12 @@ if AER:
             out.append(format(i - i0, 'x'))
         rows.append(','.join(out) if row.any() else '')
     BK = {'r': R, 'w': gw, 'h': gh, 'rows': rows}
-    # a playground whose ground is blue in the aerial has a poured rubber surface, not mulch
+    # Blue rubber can cover only part of a playground that also has turf or equipment.
     for a in A_:
         if a['k'] != 'play': continue
         m = Image.new('L', (gw, gh), 0); ImageDraw.Draw(m).polygon([(a['p'][i] * R, a['p'][i + 1] * R) for i in range(0, len(a['p']), 2)], fill=1)
         m = np.asarray(m).astype(bool)
-        if m.sum() and ((b - r > .06) & (b > gg) & m).sum() > .25 * m.sum(): a['s'] = 'rubber'
+        if m.sum() and ((b - r > .02) & (b > gg) & m).sum() > .10 * m.sum(): a['s'] = 'rubber'
     print('brick paving from the aerial:', int(brick.sum() * 2.25), 'm2')
 
 json.dump({'A': A_, 'L': L_, 'P': P_, 'D': D_, 'BK': BK}, open(OUT, 'w'), separators=(',', ':'))
