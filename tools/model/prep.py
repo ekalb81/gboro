@@ -4,7 +4,8 @@ the optional survey layers (lidar tiers and heights, roof colours, aerial vegeta
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
 osm/heights.json, addresses.json (tools/model/addresses.py; the copy in data/model/ is used when it is missing), imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
-painted parking lines from the aerial, checked into data/model/imagery/). Missing optional inputs are skipped.
+painted parking lines from the aerial, checked into data/model/imagery/), and parking-rows.json for surveyed lots.
+Missing optional inputs are skipped.
 Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
 """
@@ -271,7 +272,7 @@ try:
                     w=wyr.get(m.get('ref')) if m.get('type')=='way' and m.get('role','outer') in ('outer','') else None
                     if not w or w['nodes'][0]!=w['nodes'][-1]: continue
                     q=[g(ndr[i]) for i in w['nodes'] if i in ndr]
-                    if len(q)>=4 and any(inreg(x,y,2) for x,y in q): lots.append(q[:-1])
+                    if len(q)>=4 and any(inreg(x,y,2) for x,y in q): lots.append((w['id'],q[:-1]))
             continue
         if e['type']!='way': continue
         pts=[g(ndr[i]) for i in e.get('nodes',[]) if i in ndr]
@@ -290,10 +291,10 @@ try:
         elif (hw=='pedestrian' and t.get('area')=='yes') or t.get('place')=='square' or t.get('area:highway')=='pedestrian': kind='plaza'
         if kind: GA.append({'p':flat(pts[:-1]),'k':kind})
         if t.get('amenity')=='parking' and t.get('parking','surface') in ('surface','street_side','lane') and 'building' not in t:
-            lots.append(pts[:-1])
+            lots.append((e['id'],pts[:-1]))
         if hw=='service' and t.get('service')=='parking_aisle': aisles.append(pts)
     GA.sort(key=lambda a:a['k']!='plaza')
-    if lots: PL=[flat(q) for q in lots]
+    if lots: PL=[flat(q) for _,q in lots]
     try:
         from shapely.geometry import Polygon,LineString,Point
         from shapely.ops import unary_union
@@ -366,7 +367,21 @@ try:
                             cur={'x':cx,'y':cy,'dx':ax*sp,'dy':ay*sp,'n':1,'au':au_d,'ad':round(phi),'sp':sp};runs.append(cur)
                 for r_ in runs: SR.append([round(r_['x'],2),round(r_['y'],2),round(r_['dx'],3),round(r_['dy'],3),r_['n'],r_['au'],r_['ad'],round(r_['sp'],3),round(DP,3)])
         AL=[LineString(a) for a in aisles if len(a)>=2]
-        for li,q in enumerate(lots):
+        try:
+            with open(INP+'parking-rows.json') as survey: surveyed=json.load(survey)['rows']
+        except FileNotFoundError:
+            surveyed={}
+        for li,(lot_id,q) in enumerate(lots):
+            if str(lot_id) in surveyed:
+                # WGS84 centers of the first and last stalls. For one stall, the end sets the spacing and direction.
+                for lon,lat,end_lon,end_lat,count,axis,depth in surveyed[str(lot_id)]:
+                    x,y=g({'lon':lon,'lat':lat})
+                    end_x,end_y=g({'lon':end_lon,'lat':end_lat})
+                    intervals=max(1,count-1)
+                    dx,dy=(end_x-x)/intervals,(end_y-y)/intervals
+                    direction=math.degrees(math.atan2(dy,dx))
+                    SR.append([round(x,2),round(y,2),round(dx,3),round(dy,3),count,axis,round(direction),round(math.hypot(dx,dy),3),round(depth/M,3)])
+                continue
             lot=Polygon(q).buffer(0)
             if lot.area<WD*DP*2: continue
             usable=lot.buffer(-.3*Mi).difference(OB)

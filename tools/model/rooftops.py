@@ -17,7 +17,8 @@ A tall building leans away from the camera in the picture, so for buildings over
 fifth of the height) to where the pixels inside it are most alike before anything is read.
 
 Output: {"about": ..., "roofs": [[x, y, units, patches], ...]} in model tiles; x, y is a spot inside the outline;
-units are [x, y, width m, depth m, colour]; patches are [colour, [x, y, x, y, ...]].
+units are [x, y, width m, depth m, colour, optional display height m]; patches are [colour, [x, y, x, y, ...]].
+WGS84 roof surveys in data/model/roof-surveys.json replace the automatic readings. Debug images show the automatic pass.
 """
 import json, math, os, sys
 import numpy as np
@@ -237,12 +238,34 @@ def main():
     scale_x, scale_y = im.width / data['GX'], im.height / data['GY']
     if abs(scale_x / scale_y - 1) > .002:
         raise ValueError('Expected square aerial pixels over the model bounds')
+    survey_path = os.path.join(ROOT, 'data', 'model', 'roof-surveys.json')
+    try:
+        with open(survey_path, encoding='utf-8') as f:
+            surveys = json.load(f)
+    except FileNotFoundError:
+        surveys = {}
+    geo, meters = data['GEO'], data['M']
+
+    def g(lon, lat):
+        return [round((lon - geo['west']) * geo['mPerDegLon'] / meters, 3),
+                round((geo['north'] - lat) * geo['mPerDegLat'] / meters, 3)]
+
     B = data['B']
     roofs = []
     for b in B:
         if ids is not None and str(b['id']) not in ids:
             continue
-        r = read_roof(im, b, scale_x, scale_y, data['M'], debug if ids else None)
+        survey = surveys.get(str(b['id']))
+        if survey:
+            center = Polygon(list(zip(b['p'][::2], b['p'][1::2]))).representative_point()
+            units = [[*g(lon, lat), *unit] for lon, lat, *unit in survey['units']]
+            patches = [[color, [coord for lon, lat in zip(ring[::2], ring[1::2]) for coord in g(lon, lat)]]
+                       for color, ring in survey['patches']]
+            r = [round(center.x, 2), round(center.y, 2), units, patches]
+            if debug:
+                read_roof(im, b, scale_x, scale_y, data['M'], debug)
+        else:
+            r = read_roof(im, b, scale_x, scale_y, data['M'], debug)
         if r is not None:
             roofs.append(r)
     if ids is not None:
