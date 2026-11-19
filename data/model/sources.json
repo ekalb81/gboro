@@ -1,4 +1,5 @@
 {
- "$comment": "Baselines for the four-weekly source checks in tools/model/refresh.py. aerial_date is the flight date of the NC OneMap aerial the roof colours, ground and brick paving were read from: set it when a newer aerial has been processed.",
- "aerial_date": "2022-02-09"
+ "$comment": "Baselines for the four-weekly source checks in tools/model/refresh.py. aerial_year identifies the county orthophoto layer used for roof colours, ground and brick paving.",
+ "aerial_year": 2026,
+ "aerial_source": "Guilford County 2026 Orthos, acquired January to March 2026"
 }

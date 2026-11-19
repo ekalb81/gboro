@@ -7,7 +7,7 @@ Nothing is ever written back to the repository: the rebuilt model is only deploy
 A rebuild:
   1. fetches the model's box from OpenStreetMap (main API in tiles, Overpass as fallback),
      and the street addresses in it from NC OneMap (addresses.py; the copy in data/model/ is the fallback),
-  2. every four weeks checks for a newer NC OneMap aerial, new Mapillary street photos, a newer USGS lidar survey
+  2. every four weeks checks for a newer aerial, new Mapillary street photos, a newer USGS lidar survey
      and buildings in Overture Maps that the model lacks (each only reported, never applied),
   3. runs prep.py, trees.py and details.py on data/model/ (the survey layers kept in git) plus the fresh extract,
   4. writes what changed to the run summary. Big changes (a building appears or disappears, a height moves by more
@@ -38,6 +38,7 @@ OUTPUTS = ('downtown.json', 'trees.json', 'details.json')   # what a rebuild wri
 
 UA = 'gso-village/0.1 (community map of Greensboro; github.com/ekalb81/gboro)'
 ORTHO_URL = 'https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer'
+COUNTY_IMAGERY = 'https://gcgis.guilfordcountync.gov/imagery/rest/services/Imagery'
 M = 9.0                 # metres per model tile
 OSM_MARGIN = 0.0045     # degrees fetched around the model's box (about 400 to 500 m), so streets and names at the edge are whole
 OSM_TILE = 0.012        # degrees per OpenStreetMap API call; keeps each call well under the API's 50,000-node limit
@@ -165,6 +166,16 @@ def newest_date(catalog):
 
 
 def check_aerial(src, bx):
+    if 'aerial_year' in src:
+        catalog = json.loads(get(f'{COUNTY_IMAGERY}?f=json', timeout=60, tries=2))
+        layers = [re.fullmatch(r'Imagery/(\d{4})_Orthos', item['name']) for item in catalog['services']
+                  if item['type'] == 'ImageServer']
+        year = max(int(layer[1]) for layer in layers if layer)
+        base = src['aerial_year']
+        if year > base:
+            return (f'Guilford County lists {year} Orthos (model uses {base}). Verify downtown coverage and '
+                    'acquisition metadata before refreshing the aerial-derived layers.'), None
+        return None, f'newest Guilford County orthophoto layer {year}'
     q = urllib.parse.urlencode({'geometry': json.dumps({'x': (bx['w'] + bx['e']) / 2, 'y': (bx['n'] + bx['s']) / 2, 'spatialReference': {'wkid': 4326}}),
                                 'geometryType': 'esriGeometryPoint', 'returnCatalogItems': 'true', 'returnGeometry': 'false', 'f': 'json'})
     when = newest_date(json.loads(get(f'{ORTHO_URL}/identify?{q}', timeout=60, tries=2)))
@@ -320,7 +331,7 @@ def run_step(args):
 
 
 def keep_aerial_readings(made, cur):
-    """details.py reads two things from the 15 cm aerial, which is too big for git, so a rebuild here has neither:
+    """details.py reads two things from the aerial, which is too big for git, so a rebuild here has neither:
     brick paving (BK) and which playgrounds have a rubber surface. Carry both over from the details file that is up now."""
     made['BK'] = cur.get('BK')
     rubber = {json.dumps(a['p']) for a in cur.get('A', []) if a.get('k') == 'play' and a.get('s')}
@@ -436,7 +447,8 @@ def build(old, src, monthly, outdir, osm_raw=None):
             lines += ['**Big changes** (live now)', ''] + [f'- {c}' for c in big[:60]] + ([f'- and {len(big) - 60} more'] if len(big) > 60 else []) + ['']
         if small:
             lines += ['**Small changes**', ''] + [f'- {c}' for c in small[:40]] + ([f'- and {len(small) - 40} more'] if len(small) > 40 else []) + ['']
-        lines += ['**Checked**', ''] + [f'- {n}' for n in notes] + [f'- Heights and stepped shapes: lidar flown {survey}. Roof colours and ground: aerial flown {src.get("aerial_date", "?")}.']
+        aerial = src.get('aerial_source') or f'aerial flown {src.get("aerial_date", "?")}'
+        lines += ['**Checked**', ''] + [f'- {n}' for n in notes] + [f'- Heights and stepped shapes: lidar flown {survey}. Roof colours and ground: {aerial}.']
         return lines, kind
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -509,8 +521,10 @@ def publish(a):
     base = json.load(open(SOURCES)) if os.path.exists(SOURCES) else {}
     src = {k: v for k, v in base.items() if not k.startswith('$')}         # baselines from git, then what earlier runs saw
     src.update(json.load(open(src_path)) if os.path.exists(src_path) else {})
-    if base.get('aerial_date'):
-        src['aerial_date'] = base['aerial_date']                            # the aerial in use is whatever git says it is
+    for key in ('aerial_year', 'aerial_source', 'aerial_date'):
+        src.pop(key, None)
+        if key in base:
+            src[key] = base[key]
     monthly = a.monthly or not src.get('monthly_checked') or \
         (dt.date.today() - dt.date.fromisoformat(src['monthly_checked'])).days >= MONTHLY_DAYS
     old = json.load(open(os.path.join(cache, 'downtown.json') if cached else MODEL))

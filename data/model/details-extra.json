@@ -1,6 +1,27 @@
 {
- "about": "Things OpenStreetMap does not have, checked by eye against the NC OneMap 2024 aerial. Longitude, latitude. Read by tools/model/details.py.",
+ "about": "Things OpenStreetMap does not have, checked against the NC OneMap 2024 aerial unless the entry names another source. Longitude, latitude. Read by tools/model/details.py.",
  "areas": [
+  {
+   "k": "court",
+   "s": "basketball",
+   "note": "Rooftop basketball court at 302 W Market Street, traced from Guilford County 2026 Orthos.",
+   "ll": [
+    [-79.7930117, 36.0732069],
+    [-79.7927438, 36.0732006],
+    [-79.7927494, 36.073083],
+    [-79.7930172, 36.0730912]
+   ]
+  },
+  {
+   "k": "pool",
+   "note": "Outdoor pool at Hampton Inn & Suites, 222 W McGee Street, traced from Guilford County 2026 Orthos.",
+   "ll": [
+    [-79.7921937, 36.0689139],
+    [-79.7920603, 36.0689094],
+    [-79.7920603, 36.0688696],
+    [-79.7921948, 36.0688741]
+   ]
+  },
   {
    "k": "pool",
    "note": "apartments south of the depot",

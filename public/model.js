@@ -519,7 +519,7 @@ function settle(x,y,trig=.4,clear=.8){let k=KERB(x,y);if(!k||k[0]*M<=trig)return
   for(let n=0;n<4&&k&&k[0]*M>-clear+.05;n++){const mv=k[0]+clear/M;x+=k[1]*mv;y+=k[2]*mv;k=KERB(x,y)}
   if(x<.2||y<.2||x>GX-.2||y>GY-.2||(k&&k[0]>0)||BLDG(x,y))return null;return[x,y]}
 function polyPath(c,flat){c.beginPath();c.moveTo(flat[0],flat[1]);for(let i=2;i<flat.length;i+=2)c.lineTo(flat[i],flat[i+1])}
-// vegetation mask from the 2024 NC OneMap aerial (1.5 m cells); everything else downtown is paved
+// Older-model vegetation masks use 1.5 m cells; everything else downtown is paved
 const VG=(()=>{const v=MAP.VG;if(!v)return null;const a=new Uint8Array(v.w*v.h);v.rows.forEach((row,j)=>{let i=0,cur=0;row.split(',').forEach(t=>{const n=parseInt(t,16);if(cur)a.fill(1,j*v.w+i,j*v.w+i+n);i+=n;cur^=1})});return{r:v.r,w:v.w,h:v.h,a}})();
 const isVeg=(gx,gy)=>{if(!VG)return true;const i=Math.floor(gx*VG.r),j=Math.floor(gy*VG.r);return i>=0&&j>=0&&i<VG.w&&j<VG.h&&VG.a[j*VG.w+i]===1};
 function gcol(base,kind){let c=base;if(S.wx==='snow')c=mix(c,'#f5f7fb',kind==='road'?.15:kind==='walk'?.5:.72);if(S.wx==='pollen')c=mix(c,'#e8d860',.1);return c}
@@ -529,7 +529,7 @@ for(const r of MAP.R)r._bb=bbOf(r.p);for(const r of MAP.RL)r._bb=bbOf(r.p);for(c
 let TG=null;const inTG=bb=>!TG||!(bb[0]>TG[2]||bb[2]<TG[0]||bb[1]>TG[3]||bb[3]<TG[1]);
 // pools, courts, playgrounds, brick paving, benches and the like (public/details.js, from public/model/details.json)
 const DT=makeDetails(DET,{settle,P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,snowy:()=>S.wx==='snow',HI,SH});
-// The ground texture: one texel per 1.5 m. Where the 2022 aerial has been classified (MAP.GC) each texel takes the
+// The ground texture: one texel per 1.5 m. Where the county aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
 const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
 let GTEX=null,GCLS=null;
@@ -683,7 +683,7 @@ const pts0=[];
   // parked cars in surface lots
   const carCols=['#e6e6ea','#e6e6ea','#ecebe6','#c4c8d0','#b9bec8','#9aa0aa','#6b7280','#4a4f5c','#2f2f38','#2f2f38','#a8483a','#34508c','#6a7f96','#7d8a6a','#8a6a54'];
   // Parked cars sit in the lots' real stalls (tools/model/prep.py lays them out along each lot's painted rows and
-  // stall angle, read from the 2022 aerial), nose in, about two thirds full until the
+  // stall angle, read from the aerial), nose in, about two thirds full until the
   // page says how busy it is (see "how busy it is" below: each car keeps a number u, and is shown while u is under
   // its lot's share of stalls in use). Without stalls, a plain grid.
   if(ST.length)ST.forEach((st,i)=>{const u=hash(i*.731+3,st[6]);if(u>.9)return;const[x,y,ux,uy]=stallFrame(st);const L=4.4/M,Wd=1.85/M,j=(hash(i,9)-.5)*.25/M;const cx=x+ux*j,cy=y+uy*j;

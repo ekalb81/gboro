@@ -4,7 +4,7 @@ the optional survey layers (lidar tiers and heights, roof colours, aerial vegeta
 Usage: python3 tools/model/prep.py <osm-extract.json> [inputs-dir] [out.json]
 inputs-dir holds osm/shapes.json, osm/downtown-raw.json (also read for building names, tenants and addresses), osm/roofs.json, osm/facades.json,
 osm/heights.json, addresses.json (tools/model/addresses.py; the copy in data/model/ is used when it is missing), imagery/ortho-downtown.png and imagery/ground.json (tools/model/ground.py: ground classes and
-painted parking lines read from the 2022 aerial; a copy lives in data/model/imagery/); any that are missing are skipped.
+painted parking lines from the aerial, checked into data/model/imagery/). Missing optional inputs are skipped.
 Bridges, the underpass, skywalks (DK) and railroad crossings (LX) come from the extract's bridge and crossing tags.
 Laying out parking stalls needs shapely (pip install shapely); without it the lots are drawn with no stalls.
 """
@@ -117,7 +117,7 @@ try:
         t=SHP['tiers'].get(str(b['id']))
         if t: b['tb']=t['base'];b['tr']=t['tiers']
     for n,nb in enumerate(SHP['new']):
-        if nb.get('gone'): continue    # stood in an older survey, flat ground in the latest lidar; kept in the file so the numbering holds
+        if nb.get('gone'): continue    # keep obsolete entries in shapes.json so the survey IDs stay stable
         B.append({'p':nb['p'],'l':None,'h':None,'lh':nb['h'],'t':nb.get('t','yes'),'n':'','id':9100000000+n,'a':'','mat':'','rs':'','lidar_new':1})
 except FileNotFoundError: pass
 # a building that straddles the edge of the model is cut off at the edge, not left hanging over it
@@ -150,7 +150,7 @@ try:
         PT.append({'id':e['id'],'p':flat(pts),'h':num(t.get('height')),'mh':num(t.get('min_height')),'l':num(t.get('building:levels')),'rs':t.get('roof:shape',''),'rc':t.get('roof:colour',''),'ra':num(t.get('roof:angle')),'n':t.get('name',''),'a':t.get('amenity','')})
 except FileNotFoundError: pass
 
-# real roof colours (NC OneMap aerial, 2022) and a ground vegetation mask from the same aerial
+# Roof colours from roof_colours.py, with an optional vegetation mask from the older aerial.
 try:
     RC=json.load(open(INP+'osm/roofs.json'))
     for b in B:
@@ -248,7 +248,7 @@ for b in B:
 print('houses north of downtown',nh)
 
 # ---- the ground between the buildings: OSM footpaths, lawns, beds, woods and plazas; surface lots with their stalls
-# laid out along the mapped parking aisles at the stall angle painted on the 2022 aerial (imagery/ground.json from
+# laid out along the mapped parking aisles at the stall angle read from the aerial (imagery/ground.json from
 # tools/model/ground.py); and the aerial's ground classes for everything else.
 FW=[];GA=[];SR=[];GC=None;SIG=[]
 try:
@@ -331,7 +331,7 @@ try:
             if r['c']<=2: obst.append(ln.buffer(([16,14,12,10,8][r['c']]/2+3.6)*Mi))
             elif r['c']<=4: obst.append(ln.buffer(([16,14,12,10,8][r['c']]/2+.3)*Mi));RDL.append((ln,([16,14,12,10,8][r['c']]/2+.4)*Mi))
         OB=unary_union([o for o in obst if o.is_valid])
-        placed=[];tree_ix=[]
+        placed=[]
         def place_along(line,usable,lot_i,AH=AH):
             L=line.length
             if L<WD: return
@@ -356,8 +356,10 @@ try:
                         d=off+(k_+.5)*sp;ex,ey=a_[0]+ax*d+nx*AH,a_[1]+ay*d+ny*AH
                         poly_=Polygon([(ex-ax*sp/2,ey-ay*sp/2),(ex+ax*sp/2,ey+ay*sp/2),(ex+ax*sp/2+ux*DP,ey+ay*sp/2+uy*DP),(ex-ax*sp/2+ux*DP,ey-ay*sp/2+uy*DP)])
                         if poly_.intersection(usable).area<poly_.area*.88: cur=None;continue
-                        if any(poly_.intersection(q).area>poly_.area*.12 for q in placed if q.bounds[0]<poly_.bounds[2] and q.bounds[2]>poly_.bounds[0] and q.bounds[1]<poly_.bounds[3] and q.bounds[3]>poly_.bounds[1]): cur=None;continue
-                        placed.append(poly_)
+                        left,top,right,bottom=poly_.bounds
+                        if any(poly_.intersection(q).area>poly_.area*.12 for q,(x0,y0,x1,y1) in placed
+                               if x0<right and x1>left and y0<bottom and y1>top): cur=None;continue
+                        placed.append((poly_,(left,top,right,bottom)))
                         cx,cy=ex+ux*DP/2,ey+uy*DP/2;au_d=round(math.degrees(math.atan2(uy,ux)))
                         if cur and cur['au']==au_d and abs(cx-(cur['x']+cur['dx']*cur['n']))<1e-6+.02 and abs(cy-(cur['y']+cur['dy']*cur['n']))<.02: cur['n']+=1
                         else:
@@ -375,7 +377,7 @@ try:
             for a,h in mine: place_along(a,usable,li,h)
             # whatever the mapped aisles leave over gets rows along the lot's long side (or the aisles' direction), back
             # to back with an aisle between each pair; most lots downtown have no aisles mapped at all
-            rest=usable.difference(unary_union([a.buffer(h) for a,h in mine]+[q for q in placed if q.intersects(lot)])) if mine else usable
+            rest=usable.difference(unary_union([a.buffer(h) for a,h in mine]+[q for q,_ in placed if q.intersects(lot)])) if mine else usable
             if rest.area>WD*DP*4:
                 if mine:  # follow the mapped aisles
                     sg=max(((p_,q_) for a,h in mine for p_,q_ in zip(list(a.coords),list(a.coords)[1:])),key=lambda e:math.dist(*e));phi=math.atan2(sg[1][1]-sg[0][1],sg[1][0]-sg[0][0])

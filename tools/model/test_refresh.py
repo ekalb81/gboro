@@ -1,5 +1,6 @@
 """Tests for tools/model/refresh.py. Run: python3 -m unittest tools/model/test_refresh.py"""
-import copy, os, sys, unittest
+import copy, json, os, sys, unittest
+from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import refresh as R
 
@@ -89,6 +90,17 @@ class Fetching(unittest.TestCase):
 
 
 class Checks(unittest.TestCase):
+    def test_new_county_imagery_is_reported_as_a_layer_year(self):
+        catalog = {'services': [{'type': 'ImageServer', 'name': 'Imagery/2027_Orthos'},
+                                {'type': 'ImageServer', 'name': 'Imagery/2026_Orthos'},
+                                {'type': 'MapServer', 'name': 'Imagery/2028_Orthos'}]}
+        with patch.object(R, 'get', return_value=json.dumps(catalog).encode()):
+            notice, detail = R.check_aerial({'aerial_year': 2026}, BOX)
+            self.assertIn('2027 Orthos', notice)
+            self.assertIsNone(detail)
+            self.assertEqual(R.check_aerial({'aerial_year': 2027}, BOX),
+                             (None, 'newest Guilford County orthophoto layer 2027'))
+
     def test_newest_flight_date_is_read_from_image_names(self):
         reply = {'catalogItems': {'features': [{'attributes': {'Name': 'OF6i0_37_000_10786402_20220209', 'OBJECTID': 20260930}},
                                                {'attributes': {'Name': 'OF6i0_37_000_10786402_20260214', 'Year': 2026}},
