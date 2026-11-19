@@ -354,13 +354,17 @@ const lumOf=h=>{const n=parseInt(h.slice(1),16);return(n>>16)*.299+(n>>8&255)*.5
 function drawRoofReal(c,b){const R=b.rf,hp=b.hpx;
   if(R.patches.length)onPlane(c,hp,b.pts,()=>{for(const q of R.patches){c.beginPath();q.pts.forEach((v,i)=>i?c.lineTo(v[0],v[1]):c.moveTo(v[0],v[1]));c.closePath();c.fillStyle=surf(mix(q.col,HI,.06),true);c.fill()}});
   const us=R.units.slice().sort((a,q)=>a[0]+a[1]-q[0]-q[1]);
-  for(const[ux,uy,wm,dm,col] of us){let z=hp,on=b.pts;if(b.tiers)for(const t of b.tiers){const tz=Math.min(250,t.h*ZPM);if(tz>z&&pip(ux,uy,t.pts)){z=tz;on=t.pts}}
-    const hw=Math.max(.07,Math.min(.26,wm/M/2)),hd=Math.max(.07,Math.min(.26,dm/M/2)),box=[[ux-hw,uy-hd],[ux+hw,uy-hd],[ux+hw,uy+hd],[ux-hw,uy+hd]];
+  for(const[ux,uy,wm,dm,col,height] of us){let z=hp,on=b.pts;if(b.tiers)for(const t of b.tiers){const tz=Math.min(250,t.h*ZPM);if(tz>z&&pip(ux,uy,t.pts)){z=tz;on=t.pts}}
+    const surveyed=height!=null,area=wm*dm;
+    const hw=surveyed?wm/M/2:Math.max(.07,Math.min(.26,wm/M/2));
+    const hd=surveyed?dm/M/2:Math.max(.07,Math.min(.26,dm/M/2));
+    const box=[[ux-hw,uy-hd],[ux+hw,uy-hd],[ux+hw,uy+hd],[ux-hw,uy+hd]];
     // it must stand wholly on its roof, and (the tiers are already drawn) not behind a taller part of the building:
     // one that reaches further forward and whose span across the screen (x - y) takes in the unit's
     if(!box.every(v=>pip(v[0],v[1],on)))continue;if(b.tiers&&b.tiers.some(t=>{if(Math.min(250,t.h*ZPM)<=z+1||!t.pts.some(v=>v[0]+v[1]>ux+uy))return false;let a0=1e9,a1=-1e9;for(const v of t.pts){const a=v[0]-v[1];if(a<a0)a0=a;if(a>a1)a1=a}return ux-uy+hw+hd>a0&&ux-uy-hw-hd<a1}))continue;
+    if(surveyed){drawPrism(c,box,z,height*ZPM,col,mix(col,HI,.24));continue}
     if(lumOf(col)<100)poly(c,box.map(v=>P(v[0],v[1],z)),surf(mix(col,'#2a3442',.35),true));
-    else{const body=mix(col,'#c9cfd6',.45);drawPrism(c,box,z,wm*dm>8?4.5:3,body,mix(body,HI,.3));if(wm*dm>6){const tp=P(ux,uy,z+(wm*dm>8?4.5:3));circ(c,tp[0],tp[1],1.2,'#8a93a0')}}}}
+    else{const body=mix(col,'#c9cfd6',.45),h=area>8?4.5:3;drawPrism(c,box,z,h,body,mix(body,HI,.3));if(area>6){const tp=P(ux,uy,z+h);circ(c,tp[0],tp[1],1.2,'#8a93a0')}}}}
 // stepped roof levels measured by the lidar survey: each tier sits on the one below it
 function drawTiers(c,b){let z0=b.hpx;const fr_=litFrac(b);let wi=7;
   for(const t of b.tiers){const z1=Math.min(250,t.h*ZPM);if(z1<z0+3)continue;
