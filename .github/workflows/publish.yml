@@ -10,6 +10,13 @@ name: Publish
 on:
   push:
     branches: [main]
+    # A merge that only touches notes, tests or the pull request checks changes nothing on the site, so it
+    # does not publish. The next scheduled run picks up main as usual.
+    paths-ignore:
+      - '**.md'
+      - 'test/**'
+      - '.github/dependabot.yml'
+      - '.github/workflows/checks.yml'
   schedule:
     # Best effort. GitHub starts scheduled runs late and skips many when it is busy: asked twice an hour it ran
     # about one in ten. So ask four times an hour, away from :00 and :30 when its queue is fullest, and take
@@ -20,14 +27,16 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: publish
-  cancel-in-progress: false
-
 jobs:
   build:
     # Scheduled runs are skipped until a host is chosen, so they don't spend Actions minutes.
     if: github.event_name != 'schedule' || vars.DEPLOY_TARGET != ''
+    # One build at a time. A push to main replaces a build that is still going, since that one is building an
+    # older commit: two merges a minute apart used to collect and deploy twice. A scheduled or manual run never
+    # stops another; it waits its turn. Deploys have their own group below and are never stopped part-way.
+    concurrency:
+      group: publish-build
+      cancel-in-progress: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45 # most runs take a minute or two; the weekly model rebuild adds about 15
     steps:
@@ -52,7 +61,7 @@ jobs:
       # The last good copy of each public source is kept between runs, in one cache, so an outage shows the
       # previous numbers instead of none: crime counts (citywide and per-division totals only, nothing personal),
       # the weather reading, the City's YouTube feed (YouTube's feeds sometimes answer 404 for a while),
-      # restaurants and bars from OpenStreetMap (refreshed about once a day) and NCDOT's traffic counts
+      # restaurants and bars from OpenStreetMap (refreshed about once a week) and NCDOT's traffic counts
       # (about once a week). To keep another file, add its path to this step and to "Save the data".
       - name: Restore the last good data
         uses: actions/cache/restore@v6
@@ -133,6 +142,9 @@ jobs:
   deploy-github-pages:
     needs: build
     if: vars.DEPLOY_TARGET == 'github-pages'
+    concurrency:
+      group: publish-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -148,6 +160,9 @@ jobs:
   deploy-cloudflare:
     needs: build
     if: vars.DEPLOY_TARGET == 'cloudflare'
+    concurrency:
+      group: publish-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

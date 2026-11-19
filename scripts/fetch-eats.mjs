@@ -2,14 +2,14 @@
 // Usage: node scripts/fetch-eats.mjs [--source=auto|overpass|osm-api] [--keep-chains] [--if-older-than=HOURS]
 //
 // --if-older-than: do nothing if eats.json was made less than HOURS ago. The publish workflow runs every
-// 30 minutes but places change slowly, so it refreshes them about once a day. If a fetch fails, the
+// few minutes but places change slowly, so it refreshes them about once a week. If a fetch fails, the
 // existing eats.json is left as it was.
 //
 // auto (default): Overpass first, and the main OSM API if Overpass doesn't answer. Overpass servers are often
 //                 busy or unreachable, so a scheduled job shouldn't depend on them alone.
 // overpass: one query to the Overpass API, the right tool for reading OSM data.
 // osm-api: tiles of the main OSM API's /map call around each hub. Heavier (whole map tiles from OSM's
-//          editing API), so run it at most daily; places change slowly.
+//          editing API), so run it rarely; places change slowly.
 
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -42,15 +42,17 @@ const box = (() => {
 
 async function fromOverpass() {
   const bb = `${box.s},${box.w},${box.n},${box.e}`;
-  const q = `[out:json][timeout:90];(
+  const q = `[out:json][timeout:40];(
     nwr["amenity"~"^(restaurant|food_court|fast_food|cafe|ice_cream|bar|pub|biergarten|nightclub)$"]["name"](${bb});
     nwr["craft"~"^(brewery|distillery|winery)$"]["name"](${bb});
   );out body center;`; // body keeps node coordinates; center adds them for ways
+  // A healthy server answers this in a few seconds. Give a busy one 45 and move on: waiting two minutes for
+  // each mirror before the fallback only held up the rest of the publish run.
   const mirrors = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   let last;
   for (const url of mirrors) {
     try {
-      const r = await fetch(url, { method: 'POST', headers: { ...UA, 'content-type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: AbortSignal.timeout(120e3) });
+      const r = await fetch(url, { method: 'POST', headers: { ...UA, 'content-type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: AbortSignal.timeout(45e3) });
       if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
       return (await r.json()).elements;
     } catch (e) { last = e; console.warn(`  ${url} failed: ${e.message}`); }
