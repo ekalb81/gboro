@@ -178,8 +178,8 @@
     <tr><td>Weather and alerts</td><td>National Weather Service</td><td>None</td><td><code>npm run weather</code></td><td>Every run</td></tr>
     <tr><td>Road closures</td><td>NCDOT DriveNC</td><td>Optional</td><td><code>npm run roads</code></td><td>Every run</td></tr>
     <tr><td>Council meetings, city events</td><td>The City's schedule, its YouTube feed, news</td><td>None</td><td><code>npm run civic</code></td><td>Every run</td></tr>
-    <tr><td>Crime counts</td><td>FBI Crime Data Explorer, City open data</td><td>FBI part only</td><td><code>npm run crime</code></td><td>Every run</td></tr>
-    <tr><td>Restaurants and bars</td><td>OpenStreetMap</td><td>None</td><td><code>npm run eats</code></td><td>About once a day</td></tr>
+    <tr><td>Crime counts</td><td>FBI Crime Data Explorer, City open data</td><td>FBI part only</td><td><code>npm run crime</code></td><td>Every 6 hours</td></tr>
+    <tr><td>Restaurants and bars</td><td>OpenStreetMap</td><td>None</td><td><code>npm run eats</code></td><td>About once a week</td></tr>
     <tr><td>Traffic on each street</td><td>NCDOT average daily traffic counts</td><td>None</td><td><code>npm run volumes</code></td><td>About once a week</td></tr>
   </table></div>
 
@@ -220,7 +220,7 @@
   <p>Only totals are ever requested or stored. The City fetcher asks for four fields (incident id, division, offence code, report date) and never for addresses, coordinates or anything about victims; a test checks this.</p>
 
   <h3>Restaurants and bars <span class="src">OpenStreetMap</span></h3>
-  <p><code>scripts/fetch-eats.mjs</code> asks OpenStreetMap for named restaurants, bars, pubs, nightclubs, cafes, takeout and breweries around Greensboro. Chains (anything with a <code>brand</code> tag) are left out. It tries the Overpass API first and, because Overpass is often busy, falls back to about 40 small requests to the main OpenStreetMap API. Places change slowly, so the publish run only refetches when its copy is more than 20 hours old.</p>
+  <p><code>scripts/fetch-eats.mjs</code> asks OpenStreetMap for named restaurants, bars, pubs, nightclubs, cafes, takeout and breweries around Greensboro. Chains (anything with a <code>brand</code> tag) are left out. It tries the Overpass API first and, because Overpass is often busy, falls back to about 40 small requests to the main OpenStreetMap API. Places change slowly, so the publish run only refetches when its copy is about a week old.</p>
   <p>Opening hours come from OSM's <code>opening_hours</code> tag for the common shapes. Where hours are missing or too unusual to parse, the site uses typical hours for that kind of place and says it is a guess.</p>
 </section>
 
@@ -304,7 +304,7 @@ py tools\model\refresh.py</code></pre>
 
 <section id="publish">
   <h2>Publishing</h2>
-  <p>The site is live at <a href="https://ekalb81.github.io/gboro/">ekalb81.github.io/gboro</a>, on GitHub Pages. One workflow, <code>.github/workflows/publish.yml</code>, does everything. It asks GitHub for a run four times an hour (at 11, 26, 41 and 56 past), on every push to <code>main</code>, and on demand from the Actions tab.</p>
+  <p>The site is live at <a href="https://ekalb81.github.io/gboro/">ekalb81.github.io/gboro</a>, on GitHub Pages. One workflow, <code>.github/workflows/publish.yml</code>, does everything. It asks GitHub for a run four times an hour (at 11, 26, 41 and 56 past), on every push to <code>main</code> that changes more than notes or tests, and on demand from the Actions tab. One build runs at a time: a new push replaces a build still going for an older commit, and a scheduled run waits its turn.</p>
   <ol>
     <li>Run the tests (<code>npm test</code>).</li>
     <li>Restore the last good copies of the weather, crime counts, restaurants and bars, and the City's YouTube feed from the Actions cache. These hold only public or aggregate data.</li>
