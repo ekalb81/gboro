@@ -7,11 +7,11 @@
 
 const TZ = 'America/New_York';
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const clockFormat = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', second: 'numeric', year: 'numeric', month: 'numeric', day: 'numeric', hourCycle: 'h23' });
 
 /** The clock in Greensboro: { y, m, d, day: 0 Monday to 6 Sunday, min: minutes since midnight (with a fraction) }. */
 export function clockAt(date = new Date()) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', second: 'numeric', year: 'numeric', month: 'numeric', day: 'numeric', hourCycle: 'h23' })
-    .formatToParts(date).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(clockFormat.formatToParts(date).map((x) => [x.type, x.value]));
   return { y: +p.year, m: +p.month, d: +p.day, day: DAYS.indexOf(p.weekday.toLowerCase()), min: (+p.hour % 24) * 60 + +p.minute + +p.second / 60 };
 }
 
