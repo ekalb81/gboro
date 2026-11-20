@@ -10,11 +10,14 @@
 // ?time=day|dusk|night, ?date=2026-06-13 (the season), ?view=0..3 (which corner you look from).
 
 import { clockAt, parseWhen, nowDoing, sayDoing, planDay, dayRand } from './homeday.js';
+import { dist, makeRoute, mowRoute } from './house-routes.js';
+export { mowRoute } from './house-routes.js';
 
 const C = { lawn: '#6fb650', rough: '#8fbf5f', clay: '#cf5a36', clayD: '#a84528', mortar: '#f5dba6', asphalt: '#57566a', gravel: '#d9c9a8', paver: '#c9b79c', mulch: '#7a4a35', wood: '#9a744e', woodD: '#7d5c3c', glass: '#7fa9c9', glow: '#ffd75e', plum: '#2c2147', hi: '#fff6e4', stone: '#a8a39a', pine: '#2b7448', night: '#1f1d44' };
 const rad = Math.PI / 180;
 const LAT = 36.0726, LON = -79.792; // downtown, as in model.js: near enough for the sun
 const TW = 12, TH = 6, ZP = 13.5; // model pixels per metre: across, down, up
+const SIDES = [['E', 'S'], ['W', 'S'], ['W', 'N'], ['E', 'N']];
 
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const mixCache = new Map();
@@ -37,50 +40,6 @@ function sunPos(d) {
   return { alt: alt / rad, az: ((A / rad + 180) % 360 + 360) % 360 };
 }
 
-// ---------- routes ----------
-const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
-/** A walk along points: where you are after d metres, and which way you face. */
-function makeRoute(pts) {
-  const seg = []; let len = 0;
-  for (let i = 0; i < pts.length - 1; i++) { const l = dist(pts[i], pts[i + 1]); if (l > 1e-6) { seg.push({ a: pts[i], b: pts[i + 1], l, at: len }); len += l; } }
-  return { pts, seg, len, at(d) {
-    if (!seg.length) return { x: pts[0][0], y: pts[0][1], hx: 0, hy: 1 };
-    d = clamp(d, 0, len); let s = seg[seg.length - 1]; for (const q of seg) if (d <= q.at + q.l) { s = q; break; }
-    const t = (d - s.at) / s.l; return { x: s.a[0] + (s.b[0] - s.a[0]) * t, y: s.a[1] + (s.b[1] - s.a[1]) * t, hx: (s.b[0] - s.a[0]) / s.l, hy: (s.b[1] - s.a[1]) / s.l };
-  } };
-}
-
-/** The mowing round: up and down each patch in stripes, round the fire ring, pushing the mower between patches. */
-export function mowRoute(lot, W = 0.9) {
-  const pts = [], stripes = [];
-  // things to steer round: the fire ring, and any trunk standing in a patch
-  const obst = [{ x: lot.fire.x, y: lot.fire.y, r: lot.fire.r + 0.25 }, ...lot.trees.map((t) => ({ x: t.x, y: t.y, r: 0.9 }))];
-  lot.mow.forEach((m, mi) => {
-    const [x0, y0, x1, y1] = m; const n = Math.max(1, Math.floor((x1 - x0) / W));
-    if (mi === 1) { pts.push(lot.doors.gateIn, lot.doors.gateOut, [x0 + W / 2, lot.doors.gateOut[1]]); } // out through the gate once; the front patches join
-    for (let i = 0; i < n; i++) {
-      const x = x0 + W * (i + 0.5), down = i % 2 === 0, s = down ? 1 : -1; let ya = down ? y0 : y1; const yb = down ? y1 : y0;
-      let from = pts.length; pts.push([x, ya]);
-      const hit = obst.filter((o) => Math.abs(x - o.x) < o.r && o.y + o.r > y0 && o.y - o.r < y1).sort((p, q) => s * (p.y - q.y));
-      for (const o of hit) { // up to it, round it on the nearer side, and on
-        const dx = x - o.x, hc = Math.sqrt(o.r * o.r - dx * dx), side = dx >= 0 ? 1 : -1, yin = o.y - s * hc;
-        // one standing at the patch's edge: the stripe starts on its ring
-        if (s * (yin - ya) > 0) { pts.push([x, yin]); stripes.push({ x, ya, yb: yin, par: i % 2, mi, from, to: pts.length - 1 }); } else pts[pts.length - 1] = [x, yin];
-        const a0 = Math.atan2(-s * hc, dx); let da = Math.atan2(s * hc, dx) - a0;
-        if (side * s > 0 && da < 0) da += 2 * Math.PI; if (side * s < 0 && da > 0) da -= 2 * Math.PI;
-        for (let k = 1; k < 6; k++) pts.push([o.x + o.r * Math.cos(a0 + da * k / 6), o.y + o.r * Math.sin(a0 + da * k / 6)]);
-        ya = o.y + s * hc; from = pts.length; pts.push([x, ya]);
-      }
-      if (s * (yb - ya) > 0) { pts.push([x, yb]); stripes.push({ x, ya, yb, par: i % 2, mi, from, to: pts.length - 1 }); }
-    }
-  });
-  const route = makeRoute(pts);
-  // metres along the route at which each stripe starts and ends
-  const atPt = [0]; for (let i = 1; i < pts.length; i++) atPt.push(atPt[i - 1] + dist(pts[i - 1], pts[i]));
-  for (const s of stripes) { s.d0 = atPt[s.from]; s.d1 = atPt[s.to]; }
-  return { route, stripes, W };
-}
-
 export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const Q = new URLSearchParams(location.search);
   let ctx = canvas.getContext('2d'), sheet = null;
@@ -89,7 +48,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const CX = (lot.base[0] + lot.base[2]) / 2, CY = (lot.base[1] + lot.base[3]) / 2;
   const uv = (x, y) => { const a = x - CX, b = y - CY; return rot === 0 ? [a, b] : rot === 1 ? [b, -a] : rot === 2 ? [-a, -b] : [-b, a]; };
   const P = (x, y, z = 0) => { const [u, v] = uv(x, y); return [(u - v) * TW, (u + v) * TH - z * ZP]; };
-  const VIS = () => [['E', 'S'], ['W', 'S'], ['W', 'N'], ['E', 'N']][rot];
+  const VIS = () => SIDES[rot];
   const FACE = { S: 1, W: 0.9, E: 0.8, N: 0.68 };
 
   // ---------- the clock ----------
@@ -494,24 +453,52 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   // ---------- draw order ----------
   // Everything that stands up has a box on the ground. A thing is drawn before another when it lies wholly behind it
   // along either ground axis as seen from this corner; only pairs that can overlap on screen are compared.
-  function sortObjs(objs) {
-    for (const o of objs) { const c = [uv(o.x0, o.y0), uv(o.x1, o.y0), uv(o.x1, o.y1), uv(o.x0, o.y1)]; o.u0 = Math.min(...c.map((p) => p[0])); o.u1 = Math.max(...c.map((p) => p[0])); o.v0 = Math.min(...c.map((p) => p[1])); o.v1 = Math.max(...c.map((p) => p[1]));
-      const pad = o.pad || 0; o.sx0 = (o.u0 - o.v1) * TW - pad; o.sx1 = (o.u1 - o.v0) * TW + pad; o.sy0 = (o.u0 + o.v0) * TH - (o.h || 0) * ZP - pad; o.sy1 = (o.u1 + o.v1) * TH + 2; o.n = 0; o.after = []; }
+  const orderByView = [];
+  function projected(o) {
+    const [u, v] = uv(o.x0, o.y0), [U, V] = uv(o.x1, o.y1);
+    const u0 = Math.min(u, U), u1 = Math.max(u, U), v0 = Math.min(v, V), v1 = Math.max(v, V), pad = o.pad || 0;
+    return { ...o, u0, u1, v0, v1, sx0: (u0 - v1) * TW - pad, sx1: (u1 - v0) * TW + pad,
+      sy0: (u0 + v0) * TH - (o.h || 0) * ZP - pad, sy1: (u1 + v1) * TH + 2, depth: u0 + v0 + u1 + v1 };
+  }
+  function orderLinks(objs, from, counts) {
+    const links = [];
     const E = 0.01;
-    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++) {
+    for (let i = 0; i < objs.length; i++) for (let j = Math.max(i + 1, from); j < objs.length; j++) {
       const a = objs[i], b = objs[j]; if (a.sx1 < b.sx0 || b.sx1 < a.sx0 || a.sy1 < b.sy0 || b.sy1 < a.sy0) continue;
       const ab = a.u1 <= b.u0 + E || a.v1 <= b.v0 + E, ba = b.u1 <= a.u0 + E || b.v1 <= a.v0 + E;
-      let first = ab && !ba ? a : ba && !ab ? b : null;
-      if (!first && !ab && !ba) first = a.u0 + a.v0 + a.u1 + a.v1 <= b.u0 + b.v0 + b.u1 + b.v1 ? a : b; // overlapping footprints: nearer middle last
-      if (!first) continue; const second = first === a ? b : a; first.after.push(second); second.n++;
+      if (ab && ba) continue;
+      const aFirst = ab || (!ba && a.depth <= b.depth); // overlapping footprints: nearer middle last
+      (links[aFirst ? i : j] ??= []).push(aFirst ? j : i);
+      counts[aFirst ? j : i]++;
     }
-    const out = [], ready = objs.filter((o) => !o.n), left = new Set(objs);
-    const key = (o) => o.u0 + o.v0 + o.u1 + o.v1;
+    return links;
+  }
+  function sortObjs(moving) {
+    let graph = orderByView[rot];
+    if (!graph) {
+      const objs = fixed.map(projected), counts = objs.map(() => 0);
+      graph = orderByView[rot] = { objs, counts, links: orderLinks(objs, 0, counts) };
+    }
+    if (!moving.length && graph.sorted) return graph.sorted;
+    const objs = graph.objs.concat(moving.map(projected));
+    const counts = graph.counts.concat(moving.map(() => 0));
+    const extra = orderLinks(objs, fixed.length, counts);
+    const out = [], ready = [], left = new Set();
+    for (let i = 0; i < objs.length; i++) { left.add(i); if (!counts[i]) ready.push(i); }
+    const consume = (links) => {
+      if (links) for (const i of links) if (--counts[i] === 0 && left.has(i)) ready.push(i);
+    };
     while (left.size) {
-      if (!ready.length) { let m = null; for (const o of left) if (!m || key(o) < key(m)) m = o; m.n = 0; ready.push(m); }
-      ready.sort((a, b) => key(b) - key(a)); const o = ready.pop(); if (!left.has(o)) continue; left.delete(o); out.push(o);
-      for (const k of o.after) if (--k.n === 0 && left.has(k)) ready.push(k);
+      if (!ready.length) { let m; for (const i of left) if (m == null || objs[i].depth < objs[m].depth) m = i; counts[m] = 0; ready.push(m); }
+      ready.sort((a, b) => objs[b].depth - objs[a].depth);
+      const i = ready.pop();
+      if (!left.delete(i)) continue;
+      out.push(objs[i]);
+      // The original pair order puts each fixed object's static edges before its moving edges.
+      consume(graph.links[i]);
+      consume(extra[i]);
     }
+    if (!moving.length) graph.sorted = out;
     return out;
   }
 
@@ -643,7 +630,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     }
 
     // everything standing, back to front
-    const objs = fixed.slice();
+    const objs = [];
     for (const car of who.cars) { const x = lot.street[0] + 1.5, y = car.y; objs.push({ x0: x - 0.9, y0: y - 2.2, x1: x + 0.9, y1: y + 2.2, h: 1.6, draw: () => {
       box([x - 0.9, y - 2.2, x + 0.9, y + 2.2], 0.25, 0.95, car.col); box([x - 0.8, y - 1.1, x + 0.8, y + 1.3], 0.95, 1.5, mix(C.glass, C.plum, 0.35), mix(car.col, C.hi, 0.15));
       for (const yy of [y - 1.4, y + 1.4]) for (const xx of [x - 0.9, x + 0.9]) disc(xx, yy, 0.2, 0.22, T('#26232e')); } }); }

@@ -35,6 +35,7 @@ for (const f of (await readdir(rawDir)).filter((f) => f.endsWith('.txt'))) {
 
 const lines = [];
 const report = [];
+let succeeded = 0;
 const keep = (name, found) => {
   const fresh = found.filter((l) => {
     const url = l.split('|')[7].trim();
@@ -44,15 +45,19 @@ const keep = (name, found) => {
   });
   lines.push(...fresh);
   report.push(`  ${name}: ${found.length} recent, ${fresh.length} new`);
+  succeeded++;
 };
 
-for (const s of sources.rss || []) {
-  try {
-    const xml = await (await get(s.url, 'application/rss+xml, application/atom+xml, application/xml, text/xml')).text();
-    keep(s.name, feedItems(s, parseFeed(xml), { since }));
-  } catch (e) {
-    report.push(`  ${s.name}: FAILED (${e.message})`);
-  }
+const rss = sources.rss || [];
+const results = await Promise.allSettled(rss.map(async (s) => {
+  const xml = await (await get(s.url, 'application/rss+xml, application/atom+xml, application/xml, text/xml')).text();
+  return feedItems(s, parseFeed(xml), { since });
+}));
+// The first configured source still wins when more than one finds the same URL.
+for (const [i, s] of rss.entries()) {
+  const result = results[i];
+  if (result.status === 'fulfilled') keep(s.name, result.value);
+  else report.push(`  ${s.name}: FAILED (${result.reason.message})`);
 }
 
 for (const s of sources.bluesky || []) {
@@ -65,9 +70,11 @@ for (const s of sources.bluesky || []) {
 }
 
 console.log(report.join('\n'));
+const allFailed = report.length > 0 && !succeeded;
 const stamp = new Date().toISOString().slice(0, 16).replace(':', '');
 const file = `feeds-${stamp}Z.txt`;
-if (!lines.length) console.log('No new feed items.');
+if (allFailed) console.error('All configured feeds failed.');
+else if (!lines.length) console.log('No new feed items.');
 else if (dryRun) console.log(`Would save ${lines.length} new items to data/raw/${file}:\n${lines.join('\n')}`);
 else {
   // Append, never overwrite: a second run in the same minute must not drop the first run's items.
@@ -80,5 +87,6 @@ else {
 
 if (!dryRun && !argv.includes('--no-ingest')) {
   const r = spawnSync(process.execPath, [join(root, 'scripts', 'ingest.mjs')], { stdio: 'inherit' });
-  process.exit(r.status ?? 1);
+  process.exitCode = r.status ?? 1;
 }
+if (allFailed) process.exitCode ||= 1;

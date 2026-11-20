@@ -27,31 +27,36 @@ const tile = (name, bg, pinned = false) => el('span', { className: 'tile', style
 const ext = (href, text) => el('a', { href, target: '_blank', rel: 'noopener noreferrer', textContent: text, onclick: (e) => e.stopPropagation() });
 
 async function loadJSON(url, fallback = null) {
-  try { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return await r.json(); } catch { return fallback; }
+  try { const r = await fetch(url, { cache: 'no-cache' }); if (!r.ok) throw new Error(r.status); return await r.json(); } catch { return fallback; }
 }
 
 // ---------- time ----------
-const etDate = (d) => d.toLocaleDateString('en-CA', { timeZone: TZ });
-const dayOf = (it) => (it.start ? (it.allDay ? it.start : etDate(new Date(it.start))) : null);
-const isToday = (it) => dayOf(it) === etDate(new Date());
-function isOver(it) {
-  const now = Date.now();
+const etDate = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format;
+function dayOf(it) {
+  if (!it.start || it.allDay) return it.start || null;
+  const time = Date.parse(it.start);
+  return Number.isFinite(time) ? etDate(time) : 'Invalid Date';
+}
+function isOver(it, now, today) {
   if (it.end) return new Date(it.end).getTime() < now;
   if (!it.start) return false;
-  if (it.allDay) return it.start < etDate(new Date());
+  if (it.allDay) return it.start < today;
   return new Date(it.start).getTime() + 3 * 3600e3 < now;
 }
-const isNow = (it) => it.start && !it.allDay && Date.parse(it.start) - 3600e3 <= Date.now() && !isOver(it);
+const allDayLabel = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format;
+const timedLabel = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format;
 function fmtWhen(it) {
   if (!it.start) return null;
-  if (it.allDay) return new Date(it.start + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
-  return new Date(it.start).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(':00', '');
+  const time = Date.parse(it.allDay ? it.start + 'T12:00:00Z' : it.start);
+  if (!Number.isFinite(time)) return 'Invalid Date';
+  return it.allDay ? allDayLabel(time) : timedLabel(time).replace(':00', '');
 }
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).replace(':00', '');
 
 // ---------- state ----------
 let model, placer, mapInfo;
 let items = [], digests = 0, generatedAt = null, council = { lit: false };
+let itemContent, itemVersion = 0;
 let weather = null, roads = { events: [] }, eats = null, places = [];
 let picked = null; // building the paper is showing
 
@@ -92,8 +97,7 @@ const DEMO_ROADS = [
   { id: 'd4', kind: 'work', full: false, road: 'McConnell Rd', lat: 36.0600, lon: -79.7268, text: 'Demo: outside downtown, so the paper only.' },
 ].map((e) => ({ ...e, upcoming: false, start: null, end: null }));
 
-function liveRoads() {
-  const now = Date.now();
+function liveRoads(now = Date.now()) {
   return (roads.events || [])
     .filter((e) => !e.end || new Date(e.end).getTime() > now)
     .map((e) => (e.upcoming && e.start && new Date(e.start).getTime() <= now ? { ...e, upcoming: false } : e))
@@ -147,6 +151,7 @@ const MOST_OUTSIDE = 70; // people drawn at places and events, however much is g
 let volumes; // NCDOT count stations on the model, once loaded
 
 function buildScene() {
+  const time = Date.now(), today = etDate(time);
   const clock = CLOCKQ || clockOf();
   const now = CLOCKQ ? { day: clock.day, min: clock.min } : etNow();
   const wxKind = weather ? (weather.precip === 'storm' ? 'storm' : weather.precip === 'rain' ? 'rain' : weather.precip === 'snow' ? 'snow' : 'clear') : 'clear';
@@ -154,7 +159,7 @@ function buildScene() {
     wx: wxKind, intensity: weather?.intensity, cloudy: weather?.sky === 'cloudy', fog: !!weather?.fog, windMph: weather?.windMph || 0, windGustMph: weather?.windGustMph || 0, windFromDeg: weather?.windFromDeg ?? null, tempF: weather?.tempF ?? null,
     council: { lit: council.lit, inSession: council.inSession },
     lit: new Map(), strings: new Set(), crowds: [], trucks: [], bubbles: [], focus: [],
-    roads: liveRoads().filter((e) => e.onModel && !e.upcoming).map((e) => ({ gx: e.gx, gy: e.gy, kind: e.kind, full: !!e.full })),
+    roads: liveRoads(time).filter((e) => e.onModel && !e.upcoming).map((e) => ({ gx: e.gx, gy: e.gy, kind: e.kind, full: !!e.full })),
   };
   // Open restaurants and bars light their storefronts and have people out front at their busy hours.
   const openB = new Set(), shutB = new Set();
@@ -176,8 +181,8 @@ function buildScene() {
   // Today's items at a place on the model: string lights and a crowd while they're on, a chatter bubble all day.
   for (const it of items) {
     const s = spots.get(it.id);
-    if (!s || !isToday(it) || isOver(it)) continue;
-    const on = isNow(it) || it.allDay;
+    if (!s || dayOf(it) !== today || isOver(it, time, today)) continue;
+    const on = it.allDay || Date.parse(it.start) - 3600e3 <= time;
     if (it.kind === 'council') continue; // City Hall has its own lights and flag
     if (it.accountType !== 'individual') scene.bubbles.push({ id: s.bid, gx: s.gx, gy: s.gy, text: shortTitle(it.title) });
     if (s.bid != null) scene.focus.push(s.bid);
@@ -189,7 +194,7 @@ function buildScene() {
     else scene.crowds.push({ gx: s.gx, gy: s.gy, n: 6, event: true });
   }
   scene.focus = [...new Set(scene.focus)].slice(0, 6);
-  scene.signs = AREAS.map(([id, lat, lon]) => ({ id, lat, lon, name: SIGN_NAME[id], n: items.filter((it) => it.district === id && !isDowntown(it) && !isOver(it)).length }));
+  scene.signs = AREAS.map(([id, lat, lon]) => ({ id, lat, lon, name: SIGN_NAME[id], n: items.filter((it) => it.district === id && !isDowntown(it) && !isOver(it, time, today)).length }));
   scene.bubbles = scene.bubbles.slice(0, 12);
   // Never more people at places than the model can draw smoothly: events keep theirs, the rest thin out evenly.
   const total = scene.crowds.reduce((a, c) => a + c.n, 0);
@@ -257,16 +262,21 @@ function kindOf(it) {
   return k ? [k[1], k[2]] : ['cal', '#8a5a2b'];
 }
 const showOnModel = (bid) => model.highlight(bid != null ? model.building(bid) : picked);
-function itemLi(it) {
+function readerNode(tag, key, props, ...kids) {
+  const node = el(tag, props, ...kids);
+  node.dataset.readerKey = key;
+  return node;
+}
+function itemLi(it, past = false) {
   const civic = it.platform === 'City of Greensboro';
   const when = fmtWhen(it);
   const s = spots.get(it.id);
   const [ic, bg] = kindOf(it);
-  const li = el('li', { className: ['it', isOver(it) ? 'past' : '', s ? 'go' : ''].join(' ').trim() },
+  const li = readerNode('li', `item:${it.id}`, { className: ['it', past ? 'past' : '', s ? 'go' : ''].join(' ').trim() },
     tile(ic, bg, !!s),
     el('div', { className: 'body' },
       el('div', { className: 't', textContent: it.title }),
-      el('div', { className: 'm', textContent: [isOver(it) ? 'Earlier' : null, when, it.venue].filter(Boolean).join(' · ') }),
+      el('div', { className: 'm', textContent: [past ? 'Earlier' : null, when, it.venue].filter(Boolean).join(' · ') }),
       el('div', { className: 'm' },
         civic ? `${it.scheduled === 'usual' ? 'Usual schedule, check the city site' : it.recording ? 'Recording on the City’s YouTube' : it.account || 'City of Greensboro'} ` : `${it.platform} · ${it.account || 'a local post'} `,
         /^https:\/\//.test(it.url) ? ext(it.url, civic ? (/youtube\.com/.test(it.url) ? 'Watch ↗' : 'Details ↗') : 'View post ↗') : null)));
@@ -274,76 +284,71 @@ function itemLi(it) {
   else if (s) li.onclick = () => model.lookAt({ cx: s.gx, cy: s.gy, hpx: 0 });
   return li;
 }
-const byTime = (a, b) => (isOver(a) - isOver(b)) || (a.start || '9999').localeCompare(b.start || '9999');
+const byStart = (a, b) => (a.start || '9999').localeCompare(b.start || '9999');
 
 // Downtown items under day headings; the far future folds away so the paper stays short.
-function dayGroup(it) {
-  const d = dayOf(it);
+function dayGroup(d, today) {
   if (!d) return 'Any day';
-  const today = etDate(new Date());
   const diff = Math.round((Date.parse(d) - Date.parse(today)) / 86400e3);
   if (diff <= 0) return 'Today';
   if (diff === 1) return 'Tomorrow';
   if (diff < 7) return new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long' });
   return 'Later on';
 }
-function renderDowntown() {
-  const list = items.filter((it) => isDowntown(it) && it.kind !== 'council').sort(byTime);
-  const live = list.filter((it) => !isOver(it)), past = list.filter(isOver);
+function renderDowntown(ended, today) {
+  const list = items.filter((it) => isDowntown(it) && it.kind !== 'council');
+  const live = list.filter((it) => !ended.has(it)), past = list.filter((it) => ended.has(it));
   const box = $('downtown');
   box.replaceChildren();
   if (!live.length) box.append(el('div', { className: 'sub', textContent: 'Nothing posted for downtown right now.' }));
   const groups = new Map();
-  for (const it of live) { const g = dayGroup(it); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
+  for (const it of live) { const g = dayGroup(dayOf(it), today); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
   let shown = 0;
   for (const [g, its] of groups) {
     const ul = el('ul', {}, ...its.map((it) => itemLi(it)));
-    if (g === 'Later on' || shown > 24) box.append(el('details', {}, el('summary', { textContent: `${g === 'Later on' ? 'Later on' : g} (${its.length})` }), ul));
-    else box.append(el('div', { className: 'day-h', textContent: g }), ul);
+    const key = g === 'Later on' ? 'later' : `day:${dayOf(its[0])}`;
+    if (g === 'Later on' || shown > 24) box.append(readerNode('details', key, {}, el('summary', { textContent: `${g} (${its.length})` }), ul));
+    else box.append(readerNode('div', key, { className: 'day-h', textContent: g }), ul);
     shown += its.length;
   }
-  if (past.length) box.append(el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it)))));
+  if (past.length) box.append(readerNode('details', 'earlier', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it, true)))));
 }
 
-function renderAround() {
+function renderAround(ended) {
   const names = Object.fromEntries((mapInfo.districts || []).map((d) => [d.id, d.name]));
   names.board = 'All over town'; names.away = 'Out of town';
   const order = ['college-hill', 'uncg', 'westside', 'north', 'coliseum', 'ncat', 'southeast', 'board', 'away'];
   const box = $('aroundList');
-  const open = new Set([...box.querySelectorAll('details.area[open]')].map((d) => d.id));
   box.replaceChildren(el('div', { className: 'sub', textContent: 'The model covers downtown and the neighbourhood just north of it. Everything else, by area; the signposts at the edge of the model point to each one.' }));
   const rest = items.filter((it) => !isDowntown(it));
   const groups = [...new Set([...order, ...rest.map((it) => it.district)])];
   for (const g of groups) {
-    const list = rest.filter((it) => it.district === g).sort(byTime);
-    const live = list.filter((it) => !isOver(it));
+    const list = rest.filter((it) => it.district === g);
+    const live = list.filter((it) => !ended.has(it));
     if (!list.length) continue;
     const ul = el('ul', {}, ...live.map((it) => itemLi(it)));
-    const past = list.filter(isOver);
-    if (past.length) ul.append(el('li', {}, el('details', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it))))));
+    const past = list.filter((it) => ended.has(it));
+    if (past.length) ul.append(el('li', {}, readerNode('details', 'earlier', {}, el('summary', { textContent: `Earlier (${past.length})` }), el('ul', {}, ...past.map((it) => itemLi(it, true))))));
     const d = el('details', { className: 'area', id: `area-${g}` }, el('summary', {}, `${names[g] || g} `, el('span', { className: 'n', textContent: `· ${live.length} coming up` })), ul);
-    d.open = open.has(d.id);
     box.append(d);
   }
 }
 
-function renderCityHall() {
-  const meetings = items.filter((it) => it.kind === 'council' && !isOver(it)).sort(byTime);
+function renderCityHall(meetings, line) {
   const box = $('cityhall');
-  const line = councilLine(council);
   box.replaceChildren(
     el('div', { textContent: line ? `${line}. The Melvin Municipal Office Building is lit.` : 'No council meeting today. The Melvin Municipal Office Building lights up on meeting nights.' }),
-    meetings.length ? el('ul', {}, ...meetings.slice(0, 3).map((it) => itemLi(it))) : null);
+    meetings.length ? el('ul', {}, ...meetings.map((it) => itemLi(it))) : null);
   const city = model.building('city');
-  if (city) box.firstChild.append(' ', el('a', { href: '#', textContent: 'Show me', onclick: (e) => { e.preventDefault(); showBuilding(city, true); } }));
+  if (city) box.firstChild.append(' ', readerNode('a', 'show-city', { href: '#', textContent: 'Show me', onclick: (e) => { e.preventDefault(); showBuilding(city, true); } }));
 }
 
-function renderRoads() {
-  const list = liveRoads().sort((a, b) => (b.onModel - a.onModel) || (a.upcoming - b.upcoming));
+function renderRoads(list) {
+  list.sort((a, b) => (b.onModel - a.onModel) || (a.upcoming - b.upcoming));
   const ul = $('roads');
   ul.replaceChildren(...list.map((e) => {
     const when = [e.start && e.upcoming ? `from ${fmtWhen({ start: e.start })}` : null, e.end ? `until ${fmtWhen({ start: e.end })}` : null].filter(Boolean).join(' ');
-    const li = el('li', { className: `it${e.onModel ? ' go' : ''}` },
+    const li = readerNode('li', `road:${e.id}`, { className: `it${e.onModel ? ' go' : ''}` },
       tile(e.kind === 'crash' ? 'alert' : 'cone', e.kind === 'crash' ? '#c0321f' : e.kind === 'work' ? '#e0662a' : '#b8452f', e.onModel && !e.upcoming),
       el('div', { className: 'body' },
         el('div', { className: 't' }, e.road || 'Road', e.upcoming ? ' (coming up)' : ''),
@@ -354,30 +359,26 @@ function renderRoads() {
     return li;
   }));
   if (!list.length) ul.append(el('li', { className: 'm', textContent: 'No closures or crashes reported in Greensboro right now.' }));
-  const when = roads.generatedAt ? hhmm(roads.generatedAt) : '';
-  $('roadsSource').textContent = roads.source === 'demo' ? 'Demo closures, not live.' : `From NCDOT DriveNC${when ? `, checked ${when}` : ''}. Downtown ones are on the model as barrels, cones or a stopped car.`;
 }
 
-function placeLi(p, now) {
+function placeLi(p, hours) {
   const [ic, bg] = BARS.has(p.kind) ? ['beer', '#c99a00'] : p.kind === 'cafe' ? ['coffee', '#8a5a2b'] : ['food', '#b8452f'];
-  const li = el('li', { className: `it${p.bid != null ? ' go' : ''}` },
+  const li = readerNode('li', `place:${p.id}`, { className: `it${p.bid != null ? ' go' : ''}` },
     tile(ic, bg, p.bid != null),
     el('div', { className: 'body' },
       el('div', { className: 't', textContent: p.name }),
       el('div', { className: 'm', textContent: [KIND_LABEL[p.kind], p.address].filter(Boolean).join(' · ') }),
-      el('div', { className: 'm', textContent: p.guessed ? `${openLine(p, now)} (hours not listed, so a guess)` : openLine(p, now) })));
+      el('div', { className: 'm', textContent: p.guessed ? `${hours} (hours not listed, so a guess)` : hours })));
   if (p.bid != null) { li.onclick = () => showBuilding(model.building(p.bid), true); li.onmouseenter = () => showOnModel(p.bid); li.onmouseleave = () => showOnModel(null); }
   return li;
 }
-function renderEats() {
+function renderEats(open, hours) {
   const box = $('eats');
   if (!eats) { box.replaceChildren(el('div', { className: 'sub', textContent: 'No restaurants and bars yet.' })); return; }
-  const now = etNow();
-  const open = places.filter((p) => isOpen(p.week, now));
   const bars = open.filter((p) => BARS.has(p.kind));
   box.replaceChildren(
     el('div', { className: 'stat' }, tile('beer', '#c99a00'), el('div', { textContent: `${open.length} of ${places.length} local places downtown are open now, ${bars.length} of them bars. Open ones have their storefronts lit, with people out front at their busy hours.` })),
-    el('details', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, now)))));
+    readerNode('details', 'open-now', {}, el('summary', { textContent: 'Open now' }), el('ul', {}, ...open.sort((a, b) => a.name.localeCompare(b.name)).map((p) => placeLi(p, hours.get(p))))));
 }
 
 const KIND = { house: 'House', detached: 'House', residential: 'House', apartments: 'Apartments', garage: 'Garage', garages: 'Garages',
@@ -387,12 +388,16 @@ const KIND = { house: 'House', detached: 'House', residential: 'House', apartmen
 function showBuilding(b, look = false) {
   picked = b;
   model.highlight(b);
+  if (b && look) model.lookAt(b);
+  renderPaper();
+  if (!b) return;
+  if (matchMedia('(max-width:900px)').matches) $('card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  else $('paper').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderBuilding(b, here, ps, hours, ended) {
   const box = $('card');
   if (!b) { box.replaceChildren(); return; }
-  if (look) model.lookAt(b);
-  const here = items.filter((it) => spots.get(it.id)?.bid === b.id).sort(byTime);
-  const ps = places.filter((p) => p.bid === b.id);
-  const now = etNow();
   // every building gets its real name, else who is inside, else its street address; one nobody has on record is
   // called what it is (see tools/model/names.py), never given a made-up name
   const name = b.name || b.label || ps[0]?.name || b.ad || KIND[b.t] || (b.am === 'parking' ? 'Parking deck' : 'Building');
@@ -400,35 +405,107 @@ function showBuilding(b, look = false) {
   const shown = new Set([name, ...ps.map((p) => p.name)].map(norm));
   const inside = (b.tn || []).filter((t) => !shown.has(norm(t)));
   const where = b.ad && b.ad !== name ? b.ad : '';
-  const card = el('div', { className: 'card' },
+  const card = readerNode('div', `building:${b.id}`, { className: 'card' },
     el('button', { title: 'Close', ariaLabel: 'Close', onclick: () => showBuilding(null) }, icon('close')),
     el('div', { className: 't', textContent: name }),
     where ? el('div', { className: 'sub', textContent: where }) : null,
     inside.length ? el('div', { className: 'sub', textContent: `Inside: ${inside.join(', ')}` }) : null,
     !here.length && !ps.length ? el('div', { className: 'sub', textContent: 'Nothing posted here right now.' }) : null,
-    ps.length ? el('ul', {}, ...ps.map((p) => placeLi(p, now))) : null,
-    here.length ? el('ul', {}, ...here.map((it) => itemLi(it))) : null);
+    ps.length ? el('ul', {}, ...ps.map((p) => placeLi(p, hours.get(p)))) : null,
+    here.length ? el('ul', {}, ...here.map((it) => itemLi(it, ended.has(it)))) : null);
   box.replaceChildren(card);
-  if (matchMedia('(max-width:900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  else $('paper').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function readerRef(paper, node) {
+  const row = node?.closest('[data-reader-key], [id]');
+  if (!row || !paper.contains(row)) return () => null;
+  if (row.id) return () => $(row.id);
+  const rootId = row.parentElement.closest('[id]').id;
+  const selector = `[data-reader-key="${CSS.escape(row.dataset.readerKey)}"]`;
+  return () => row.isConnected ? row : $(rootId)?.querySelector(selector);
+}
+
+function updatePaper(updates) {
+  const paper = $('paper');
+  const scroller = matchMedia('(max-width:900px)').matches ? document.scrollingElement : paper;
+  const top = scroller.scrollTop;
+  const rect = paper.getBoundingClientRect();
+  // Keep the same row in view if new content moves it down the page.
+  const anchor = top > 0 ? document.elementFromPoint(rect.left + 40, Math.max(0, rect.top) + 4)?.closest('[data-reader-key], [id]') : null;
+  const anchorY = anchor?.getBoundingClientRect().top;
+  const findAnchor = readerRef(paper, anchor);
+  const focused = document.activeElement;
+  const findFocus = readerRef(paper, focused);
+  const disclosures = [...paper.querySelectorAll('details[open]')].map((d) => readerRef(paper, d));
+
+  for (const update of updates) update();
+  for (const find of disclosures) {
+    const details = find();
+    if (details?.matches('details') && !details.open) details.open = true;
+  }
+  if (focused && !focused.isConnected) {
+    const row = findFocus();
+    const focus = row?.matches(focused.tagName) ? row : row?.querySelector(focused.tagName);
+    focus?.focus({ preventScroll: true });
+  }
+  const nextAnchor = findAnchor();
+  scroller.scrollTop = nextAnchor?.offsetHeight && nextAnchor !== paper
+    ? scroller.scrollTop + nextAnchor.getBoundingClientRect().top - anchorY : top;
+}
+
+const paperKeys = new Map();
 function renderPaper() {
+  const now = Date.now(), today = etDate(now);
+  const ended = new Set(items.filter((it) => isOver(it, now, today)));
+  // An item can move to Earlier even when the feed is unchanged.
+  const itemState = `${itemVersion}:${items.map((it) => ended.has(it) ? '1' : '0').join('')}`;
+  const updates = [];
+  const queue = (id, key, render) => {
+    if (paperKeys.get(id) === key) return;
+    updates.push(() => { render(); paperKeys.set(id, key); });
+  };
+  const setText = (id, text) => queue(id, text, () => { $(id).textContent = text; });
+
   const when = generatedAt ? hhmm(generatedAt) : null;
-  const live = items.filter((it) => !isOver(it)).length;
-  $('status').textContent = `${live} things coming up${digests ? `, from ${digests} digest${digests === 1 ? '' : 's'}` : ''}${when ? `. Updated ${when}.` : '.'}`;
-  renderDowntown(); renderCityHall(); renderRoads(); renderEats(); renderAround();
-  if (picked) showBuilding(picked);
+  const live = items.length - ended.size;
+  setText('status', `${live} things coming up${digests ? `, from ${digests} digest${digests === 1 ? '' : 's'}` : ''}${when ? `. Updated ${when}.` : '.'}`);
+  queue('downtown', `${today}:${itemState}`, () => renderDowntown(ended, today));
+  queue('aroundList', itemState, () => renderAround(ended));
+
+  const meetings = items.filter((it) => it.kind === 'council' && !ended.has(it)).slice(0, 3);
+  const line = councilLine(council);
+  queue('cityhall', JSON.stringify([line, meetings]), () => renderCityHall(meetings, line));
+  const events = liveRoads(now);
+  queue('roads', JSON.stringify(events), () => renderRoads(events));
+  const checked = roads.generatedAt ? hhmm(roads.generatedAt) : '';
+  setText('roadsSource', roads.source === 'demo' ? 'Demo closures, not live.' : `From NCDOT DriveNC${checked ? `, checked ${checked}` : ''}. Downtown ones are on the model as barrels, cones or a stopped car.`);
+
+  const clock = etNow();
+  const open = places.filter((p) => isOpen(p.week, clock));
+  const ps = picked ? places.filter((p) => p.bid === picked.id) : [];
+  const hours = new Map([...new Set([...open, ...ps])].map((p) => [p, openLine(p, clock)]));
+  queue('eats', JSON.stringify(open.map((p) => [p.id, hours.get(p)])), () => renderEats(open, hours));
+  const here = picked ? items.filter((it) => spots.get(it.id)?.bid === picked.id).sort((a, b) => ended.has(a) - ended.has(b)) : [];
+  queue('card', JSON.stringify([picked?.id, here.map((it) => [it, ended.has(it)]), ps.map((p) => hours.get(p))]), () => renderBuilding(picked, here, ps, hours, ended));
+
+  if (updates.length) updatePaper(updates);
 }
 
 // ---------- refresh loops ----------
 async function refreshItems() {
   const [data, civic] = await Promise.all([loadJSON('data/items.json', { items: [], digests: 0, generatedAt: null }), loadCivic()]);
-  items = [...(data.items || []), ...(civic.items || [])].sort(byTime);
+  const next = [...(data.items || []), ...(civic.items || [])];
+  const content = JSON.stringify(next);
+  const changed = itemContent !== content;
+  if (changed) {
+    items = next.sort(byStart);
+    itemContent = content;
+    itemVersion++;
+  }
   digests = data.digests || 0;
   generatedAt = data.generatedAt || civic.generatedAt;
   council = councilState(items);
-  placeItems();
+  return changed;
 }
 async function refreshWeather() {
   weather = Q.get('weather') ? previewWeather(Q.get('weather')) : await loadJSON('data/weather.json', null);
@@ -442,7 +519,9 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees, home, details, roofs, yards] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null), loadJSON('model/yards.json', null)]);
+const geometry = Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null), loadJSON('model/yards.json', null)]);
+const readings = Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
+const [map, info, eatsData, trees, home, details, roofs, yards] = await geometry;
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
@@ -485,7 +564,8 @@ const dropHint = () => $('hint').classList.add('gone');
 $('village').addEventListener('pointerdown', dropHint, { once: true });
 setTimeout(dropHint, 12e3);
 placeOnModel();
-await Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
+await readings;
+placeItems();
 // Average daily traffic at NCDOT's count stations (scripts/fetch-traffic-volumes.mjs). Without the file the model
 // uses a figure typical of each street's class.
 loadJSON('data/traffic-volumes.json').then((v) => {
@@ -496,7 +576,7 @@ loadJSON('data/traffic-volumes.json').then((v) => {
 refreshScene();
 renderPaper();
 
-setInterval(async () => { await refreshItems(); refreshScene(); renderPaper(); }, 60e3);
+setInterval(async () => { if (await refreshItems()) placeItems(); refreshScene(); renderPaper(); }, 60e3);
 setInterval(async () => { await refreshWeather(); refreshScene(); }, 5 * 60e3);
-setInterval(async () => { await refreshRoads(); refreshScene(); renderRoads(); }, 5 * 60e3);
+setInterval(async () => { await refreshRoads(); refreshScene(); renderPaper(); }, 5 * 60e3);
 setInterval(() => { council = councilState(items); refreshScene(); renderAlerts(); }, 30e3); // opening hours and council state turn over by the clock

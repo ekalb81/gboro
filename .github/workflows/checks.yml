@@ -59,9 +59,17 @@ jobs:
       - name: Detect model changes
         id: changed
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || ! git diff --quiet HEAD^1 HEAD -- public/ tools/model/ data/model/ 'scripts/audit-*' .github/actions/audit-model .github/workflows/checks.yml package.json; then
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || ! git diff --quiet HEAD^1 HEAD -- tools/model/prep.py tools/model/test_prep.py; then
+            echo "prep=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || ! git diff --quiet HEAD^1 HEAD -- public/ tools/model/ data/model/ 'scripts/audit-*' 'test/*.browser.mjs' .github/actions/audit-model .github/workflows/checks.yml package.json; then
             echo "model=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Check parking geometry
+        if: steps.changed.outputs.prep == 'true'
+        run: |
+          python3 -m pip install --quiet numpy pillow shapely
+          python3 -m unittest tools/model/test_prep.py
       - name: Check modeled streets and traffic in Chrome
         if: steps.changed.outputs.model == 'true'
         uses: ./.github/actions/audit-model

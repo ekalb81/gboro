@@ -26,7 +26,7 @@ const bg = document.createElement('canvas');
 
 // ---------- data ----------
 async function loadJSON(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
   return r.json();
 }
@@ -46,6 +46,7 @@ async function refreshItems() {
       if (!byDistrict.has(it.district)) byDistrict.set(it.district, []);
       byDistrict.get(it.district).push(it);
     }
+    markersUntil = 0;
     const when = new Date(data.generatedAt || civic.generatedAt).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
     document.getElementById('status').textContent =
       `${items.length} things happening, from ${data.digests} digest${data.digests === 1 ? '' : 's'}${civicCount ? ' and the city calendar' : ''}. Updated ${when}.`;
@@ -59,24 +60,21 @@ async function refreshItems() {
 }
 
 // ---------- time helpers ----------
-const etDate = (d) => d.toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+const dateFormat = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+const etDate = (d) => Number.isFinite(+d) ? dateFormat.format(d) : 'Invalid Date';
+const hourFormat = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hour12: false });
+const allDayFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+const timedFormat = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 function fmtWhen(it) {
   if (!it.start) return null;
-  if (it.allDay) return new Date(it.start + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
-  return new Date(it.start).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(':00', '');
+  const time = Date.parse(it.allDay ? it.start + 'T12:00:00Z' : it.start);
+  if (!Number.isFinite(time)) return 'Invalid Date';
+  return it.allDay ? allDayFormat.format(time) : timedFormat.format(time).replace(':00', '');
 }
 const dayOf = (it) => (it.start ? (it.allDay ? it.start : etDate(new Date(it.start))) : null);
-const isToday = (it) => dayOf(it) === etDate(new Date());
-function isOver(it) {
-  const now = Date.now();
-  if (it.end) return new Date(it.end).getTime() < now;
-  if (!it.start) return false;
-  if (it.allDay) return it.start < etDate(new Date());
-  return new Date(it.start).getTime() + 3 * 3600e3 < now;
-}
-function etHour() {
-  return +new Date().toLocaleString('en-US', { timeZone: TZ, hour: 'numeric', hour12: false }) % 24;
-}
+const expiresAt = (it) => it.end ? Date.parse(it.end) : it.start && !it.allDay ? Date.parse(it.start) + 3 * 3600e3 : Infinity;
+const isOver = (it, now = Date.now()) => it.allDay && it.start && !it.end ? it.start < etDate(now) : expiresAt(it) < now;
+const etHour = (now = Date.now()) => +hourFormat.format(now) % 24;
 
 // ---------- map building ----------
 function stampRoad(x, y) {
@@ -260,8 +258,9 @@ function stepWalker(f) {
 // Crowds gather outside places with something on today.
 function spawnCrowds() {
   folks = folks.filter((f) => f.kind === 'walk');
+  const now = Date.now(), today = etDate(now);
   for (const d of map.districts) {
-    const n = (byDistrict.get(d.id) || []).filter((it) => isToday(it) && !isOver(it)).length;
+    const n = (byDistrict.get(d.id) || []).filter((it) => dayOf(it) === today && !isOver(it, now)).length;
     for (let i = 0; i < Math.min(8, n * 3); i++) {
       const side = rnd() < 0.5;
       folks.push({ kind: 'crowd', px: side ? d.x * T - 6 - rnd() * 8 : (d.x + d.w) * T + 2 + rnd() * 8, py: (d.y + d.h) * T - 9 + rnd() * 6, skin: pick(SKIN), shirt: pick(SHIRT), step: rnd() * 10, say: null });
@@ -407,17 +406,30 @@ function drawWeather(t) {
 function markerRect(d) {
   return { x: d.x * T + (d.w * T >> 1) - 5, y: d.y * T - (d.id === 'downtown' ? 22 : 14), w: 11, h: 11 };
 }
-function drawMarkers(t) {
+let markers = [], markersFrom = 0, markersUntil = 0, skyHour;
+function updateMarkers(now) {
+  if (now >= markersFrom && now < markersUntil) return;
+  markersFrom = now;
+  markersUntil = now - now % 60000 + 60000; // also picks up midnight and the hour used for the sky
+  skyHour = etHour(now);
+  markers = [];
   for (const d of map.districts) {
-    const list = (byDistrict.get(d.id) || []).filter((it) => !isOver(it));
-    if (!list.length) continue;
+    const list = (byDistrict.get(d.id) || []).filter((it) => !isOver(it, now));
+    for (const it of list) {
+      const end = expiresAt(it);
+      if (end < markersUntil) markersUntil = end + 1;
+    }
+    if (list.length) markers.push({ d, count: list.length, color: catColor(list[0].category) });
+  }
+}
+function drawMarkers(t) {
+  for (const { d, count, color } of markers) {
     const r = markerRect(d), bob = Math.round(Math.sin(t / 400 + d.x) * 1.5);
-    const color = catColor(list[0].category);
     ctx.fillStyle = '#2b2418'; ctx.fillRect(r.x - 1, r.y - 1 + bob, r.w + 2, r.h + 2);
     ctx.fillStyle = color; ctx.fillRect(r.x, r.y + bob, r.w, r.h);
     ctx.fillRect(r.x + 4, r.y + r.h + bob, 3, 2);
     ctx.fillStyle = '#fffbea'; ctx.font = 'bold 8px monospace'; ctx.textBaseline = 'top';
-    const label = list.length > 1 ? String(list.length) : '!';
+    const label = count > 1 ? String(count) : '!';
     ctx.fillText(label, r.x + (r.w - ctx.measureText(label).width) / 2, r.y + 2 + bob);
   }
   if (selected) {
@@ -433,11 +445,11 @@ function skyAlpha(h) {
 }
 
 function frame(t) {
-  ctx.drawImage(bg, 0, 0);
-  drawShops(ctx, t);
+  updateMarkers(Date.now());
+  drawShops(ctx, t, bg);
   for (const f of folks) if (f.kind === 'walk') stepWalker(f);
   for (const f of [...folks].sort((a, b) => a.py - b.py)) drawPerson(f, t);
-  const a = Math.min(0.6, skyAlpha(etHour()) + (wx.precip !== 'none' ? 0.1 : 0));
+  const a = Math.min(0.6, skyAlpha(skyHour) + (wx.precip !== 'none' ? 0.1 : 0));
   if (a) {
     ctx.fillStyle = `rgba(16,24,64,${a})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'rgba(255,214,110,.85)';
@@ -462,10 +474,15 @@ function tickClock() {
 }
 
 // ---------- side list & interaction ----------
+let listKey;
 function renderList() {
+  const shown = selected ? items.filter((it) => it.district === selected) : items;
+  const now = Date.now(), today = etDate(now);
+  const ended = new Set(shown.filter((it) => isOver(it, now)));
+  const key = JSON.stringify([selected, today, shown, [...ended].map((it) => it.id)]);
+  if (key === listKey) return;
   const ul = document.getElementById('list');
   ul.innerHTML = '';
-  const shown = selected ? items.filter((it) => it.district === selected) : items;
   const filter = document.getElementById('filter');
   if (selected) {
     const d = map.districts.find((x) => x.id === selected);
@@ -478,7 +495,7 @@ function renderList() {
     filter.hidden = true;
     document.getElementById('listTitle').textContent = "What's going on";
   }
-  const sorted = [...shown].sort((a, b) => isOver(a) - isOver(b));
+  const sorted = [...shown].sort((a, b) => ended.has(a) - ended.has(b));
   for (const it of sorted) {
     const li = document.createElement('li');
     const d = map.districts.find((x) => x.id === it.district);
@@ -487,7 +504,7 @@ function renderList() {
     t.append(dot, it.title);
     const when = fmtWhen(it);
     const m1 = document.createElement('div'); m1.className = 'm';
-    m1.textContent = [isOver(it) ? 'Earlier' : isToday(it) ? 'Today' : null, when, it.venue || d?.name].filter(Boolean).join(' · ');
+    m1.textContent = [ended.has(it) ? 'Earlier' : dayOf(it) === today ? 'Today' : null, when, it.venue || d?.name].filter(Boolean).join(' · ');
     const m2 = document.createElement('div'); m2.className = 'm';
     const civic = it.platform === 'City of Greensboro';
     m2.textContent = civic
@@ -499,11 +516,12 @@ function renderList() {
       m2.append(a);
     }
     li.append(t, m1, m2);
-    if (isOver(it)) li.style.opacity = 0.55;
+    if (ended.has(it)) li.style.opacity = 0.55;
     li.onclick = () => select(it.district);
     ul.append(li);
   }
   if (!sorted.length) ul.innerHTML = '<li class="m">Nothing here right now.</li>';
+  listKey = key;
 }
 
 function select(id) { selected = id; renderList(); }
@@ -522,12 +540,11 @@ canvas.addEventListener('mousemove', (e) => { canvas.style.cursor = hit(e) ? 'po
 canvas.addEventListener('click', (e) => { const d = hit(e); select(d ? (selected === d.id ? null : d.id) : null); });
 
 // ---------- boot ----------
-map = await loadJSON('data/map.json');
-await loadEats();
+[map] = await Promise.all([loadJSON('data/map.json'), loadEats()]);
 buildBackground();
 for (let i = 0; i < 40; i++) folks.push(newWalker());
 await refreshItems();
-await refreshWeather();
+await refreshWeather(); // crowd and weather placement share the seeded random sequence
 initRoads({ T, ctx, canvas, map });
 tickClock();
 setInterval(refreshWeather, 5 * 60e3);

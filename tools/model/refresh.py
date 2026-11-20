@@ -353,8 +353,13 @@ def keep_roof_colours(new, old):
     return n
 
 
-def build(old, src, monthly, outdir, osm_raw=None):
-    """Rebuild into outdir (downtown.json, trees.json, details.json). Returns (report_lines, kind)."""
+def file_digest(path):
+    with open(path, 'rb') as fh:
+        return hashlib.file_digest(fh, 'sha256').hexdigest()
+
+
+def build(old, src, monthly, outdir, osm_raw=None, retry=None):
+    """Rebuild into outdir, or retry failed sidecars against the same downtown model and OSM snapshot."""
     bx = box_of(old)
     notices, notes = [], []
     tmp = tempfile.mkdtemp(prefix='model-refresh-')
@@ -365,54 +370,67 @@ def build(old, src, monthly, outdir, osm_raw=None):
 
         # 1. OpenStreetMap
         raw, how = (json.load(open(osm_raw)), 'saved extract') if osm_raw else fetch_osm(bx)
-        geom = to_geometry(raw)
-        nb = buildings_in_box(geom, bx)
-        mapped = sum(1 for b in old['B'] if not b.get('lidar_new'))
-        if nb < 0.8 * mapped:
-            raise RuntimeError(f'only {nb} buildings came back from OpenStreetMap against {mapped} in the model; refusing a partial extract')
-        json.dump(raw, open(os.path.join(inp, 'osm', 'downtown-raw.json'), 'w'))
-        json.dump(geom, open(os.path.join(tmp, 'osm.json'), 'w'))
-        notes.append(f'OpenStreetMap via {how}: {len(geom["elements"])} mapped features, {nb} buildings in the model\'s box.')
-
-        # 1b. Street addresses for the buildings OpenStreetMap has none for: a fresh copy from the State, else the one in git
-        kept = os.path.join(inp, 'addresses.json')
-        have = json.load(open(kept)) if os.path.exists(kept) else {}
-        try:
-            sys.path.insert(0, HERE)
-            import addresses
-            fresh = addresses.fetch((bx['w'], bx['s'], bx['e'], bx['n']), get=lambda u: get(u, timeout=120, tries=2))
-            if len(fresh['points']) < 0.8 * len(have.get('points', [])) or len(fresh['parcels']) < 0.8 * len(have.get('parcels', [])):
-                raise RuntimeError(f'only {len(fresh["points"])} address points and {len(fresh["parcels"])} parcels came back')
-            json.dump(fresh, open(kept, 'w'))
-            notes.append(f'Street addresses from NC OneMap: {len(fresh["points"])} address points, {len(fresh["parcels"])} parcels.')
-        except Exception as e:
-            notes.append(f'Street addresses: NC OneMap did not answer ({e}); using the copy in git'
-                         + (f' from {have["fetched"]}.' if have.get('fetched') else '.'))
-
-        # 2. Four-weekly checks
-        if monthly:
-            for label, fn in (('Aerial', lambda: check_aerial(src, bx)), ('Street photos', lambda: check_mapillary(src, bx)),
-                              ('Lidar', lambda: check_lidar(src, bx)), ('Overture', lambda: check_overture(src, old, bx))):
-                try:
-                    notice, note = fn()
-                    if notice: notices.append(notice)
-                    if note: notes.append(f'{label}: {note}.')
-                except Exception as e:
-                    notes.append(f'{label}: check failed ({e}).')
-            src['monthly_checked'] = dt.date.today().isoformat()
-
-        # 3. Rebuild: the model, then the trees and small details that are placed on it
+        raw_path = os.path.join(inp, 'osm', 'downtown-raw.json')
+        with open(raw_path, 'w') as fh:
+            json.dump(raw, fh)
+        osm_hash = file_digest(raw_path) if retry is not None else None
+        resumed = retry is not None and osm_hash == retry['osm_hash']
         out = os.path.join(outdir, 'downtown.json')
-        run_step([os.path.join(HERE, 'prep.py'), os.path.join(tmp, 'osm.json'), inp, out])
-        new = json.load(open(out))
-        if len(new.get('B', [])) < 0.8 * len(old.get('B', [])):
-            raise RuntimeError(f'rebuilt model has {len(new.get("B", []))} buildings against {len(old.get("B", []))}; refusing it')
-        if keep_roof_colours(new, old):
-            with open(out, 'w') as fh:
-                fh.write(json.dumps(new, separators=(',', ':')))
-        if box_of(new) != bx:
-            notes.append('The model\'s box changed in prep.py; trees and details were placed on the new one.')
+        if resumed:
+            shutil.copy(MODEL, out)
+            new = old
+            notes.append('OpenStreetMap extract matched the last attempt. Reused downtown.json and retried the remaining outputs.')
+        else:
+            geom = to_geometry(raw)
+            nb = buildings_in_box(geom, bx)
+            mapped = sum(1 for b in old['B'] if not b.get('lidar_new'))
+            if nb < 0.8 * mapped:
+                raise RuntimeError(f'only {nb} buildings came back from OpenStreetMap against {mapped} in the model; refusing a partial extract')
+            json.dump(geom, open(os.path.join(tmp, 'osm.json'), 'w'))
+            notes.append(f'OpenStreetMap via {how}: {len(geom["elements"])} mapped features, {nb} buildings in the model\'s box.')
+
+            # 1b. Street addresses for the buildings OpenStreetMap has none for: a fresh copy from the State, else the one in git
+            kept = os.path.join(inp, 'addresses.json')
+            have = json.load(open(kept)) if os.path.exists(kept) else {}
+            try:
+                sys.path.insert(0, HERE)
+                import addresses
+                fresh = addresses.fetch((bx['w'], bx['s'], bx['e'], bx['n']), get=lambda u: get(u, timeout=120, tries=2))
+                if len(fresh['points']) < 0.8 * len(have.get('points', [])) or len(fresh['parcels']) < 0.8 * len(have.get('parcels', [])):
+                    raise RuntimeError(f'only {len(fresh["points"])} address points and {len(fresh["parcels"])} parcels came back')
+                json.dump(fresh, open(kept, 'w'))
+                notes.append(f'Street addresses from NC OneMap: {len(fresh["points"])} address points, {len(fresh["parcels"])} parcels.')
+            except Exception as e:
+                notes.append(f'Street addresses: NC OneMap did not answer ({e}); using the copy in git'
+                             + (f' from {have["fetched"]}.' if have.get('fetched') else '.'))
+
+            # 2. Four-weekly checks
+            if monthly:
+                for label, fn in (('Aerial', lambda: check_aerial(src, bx)), ('Street photos', lambda: check_mapillary(src, bx)),
+                                  ('Lidar', lambda: check_lidar(src, bx)), ('Overture', lambda: check_overture(src, old, bx))):
+                    try:
+                        notice, note = fn()
+                        if notice: notices.append(notice)
+                        if note: notes.append(f'{label}: {note}.')
+                    except Exception as e:
+                        notes.append(f'{label}: check failed ({e}).')
+                src['monthly_checked'] = dt.date.today().isoformat()
+
+            # 3. Rebuild downtown before building the trees and small details placed on it.
+            run_step([os.path.join(HERE, 'prep.py'), os.path.join(tmp, 'osm.json'), inp, out])
+            new = json.load(open(out))
+            if len(new.get('B', [])) < 0.8 * len(old.get('B', [])):
+                raise RuntimeError(f'rebuilt model has {len(new.get("B", []))} buildings against {len(old.get("B", []))}; refusing it')
+            if keep_roof_colours(new, old):
+                with open(out, 'w') as fh:
+                    fh.write(json.dumps(new, separators=(',', ':')))
+            if box_of(new) != bx:
+                notes.append('The model\'s box changed in prep.py; trees and details were placed on the new one.')
+
+        failed = []
         for tool, name in (('trees.py', 'trees.json'), ('details.py', 'details.json')):
+            if resumed and name not in retry['files']:
+                continue
             cur = os.path.join(PUB, name)
             dst = os.path.join(outdir, name)
             try:
@@ -424,6 +442,7 @@ def build(old, src, monthly, outdir, osm_raw=None):
                     keep_aerial_readings(made, json.load(open(cur)))
                     json.dump(made, open(dst, 'w'), separators=(',', ':'))
             except Exception as e:
+                failed.append(name)
                 notes.append(f'{name} not rebuilt ({e}); the last one stays up.')
                 if os.path.exists(dst):
                     os.remove(dst)
@@ -449,7 +468,8 @@ def build(old, src, monthly, outdir, osm_raw=None):
             lines += ['**Small changes**', ''] + [f'- {c}' for c in small[:40]] + ([f'- and {len(small) - 40} more'] if len(small) > 40 else []) + ['']
         aerial = src.get('aerial_source') or f'aerial flown {src.get("aerial_date", "?")}'
         lines += ['**Checked**', ''] + [f'- {n}' for n in notes] + [f'- Heights and stepped shapes: lidar flown {survey}. Roof colours and ground: {aerial}.']
-        return lines, kind
+        partial = {'files': failed, 'osm_hash': osm_hash or file_digest(raw_path)} if failed else None
+        return lines, kind, partial, resumed
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -496,7 +516,15 @@ def publish(a):
     now = dt.datetime.now(dt.timezone.utc)
     ih = inputs_hash()
     age = lambda k: (now - dt.datetime.fromisoformat(meta[k])).total_seconds() / 3600 if meta.get(k) else 1e9
-    cached = meta.get('inputs') == ih and os.path.exists(os.path.join(cache, 'downtown.json'))
+    partial = meta.get('partial')
+    present = [name for name in OUTPUTS if os.path.isfile(os.path.join(cache, name))]
+
+    def cached_digests(names):
+        return {name: file_digest(os.path.join(cache, name)) for name in names}
+
+    cached = meta.get('inputs') == ih and 'downtown.json' in present
+    if cached and partial:
+        cached = partial['outputs'] == cached_digests(present)
 
     def use_cached():   # a build made from other tools or survey layers than those in git now is never used
         if cached:
@@ -504,7 +532,8 @@ def publish(a):
                 if os.path.exists(os.path.join(cache, name)):
                     shutil.copy(os.path.join(cache, name), os.path.join(PUB, name))
 
-    fresh = cached and age('built_at') < MAX_AGE_DAYS * 24
+    model_current = cached and age('built_at') < MAX_AGE_DAYS * 24
+    fresh = model_current and not partial and len(present) == len(OUTPUTS)
     waiting = meta.get('failed_inputs') == ih and age('failed_at') < RETRY_HOURS
     if not a.force and (fresh or waiting):
         use_cached()
@@ -527,14 +556,15 @@ def publish(a):
             src[key] = base[key]
     monthly = a.monthly or not src.get('monthly_checked') or \
         (dt.date.today() - dt.date.fromisoformat(src['monthly_checked'])).days >= MONTHLY_DAYS
+    retry = partial if model_current and not (monthly or a.force) else None
     old = json.load(open(os.path.join(cache, 'downtown.json') if cached else MODEL))
     if cached:
         use_cached()   # so the comparison of trees and details is against what is up now
     out = tempfile.mkdtemp(prefix='model-out-')
     try:
-        lines, kind = build(old, src, monthly, out, a.osm_raw)
+        lines, kind, partial, resumed = build(old, src, monthly, out, a.osm_raw, retry)
     except Exception as e:
-        meta['failed_at'] = now.isoformat(); meta['failed_inputs'] = ih
+        meta.update(failed_at=dt.datetime.now(dt.timezone.utc).isoformat(), failed_inputs=ih)
         json.dump(meta, open(meta_path, 'w'))
         shutil.rmtree(out, ignore_errors=True)
         cache_changed()
@@ -546,7 +576,13 @@ def publish(a):
         shutil.copy(os.path.join(PUB, name), os.path.join(cache, name))
     shutil.rmtree(out, ignore_errors=True)
     json.dump(src, open(src_path, 'w'), indent=1, sort_keys=True)
-    json.dump({'built_at': now.isoformat(), 'inputs': ih, 'kind': kind}, open(meta_path, 'w'))
+    built_at = meta['built_at'] if resumed else now.isoformat()
+    state = {'built_at': built_at, 'inputs': ih, 'kind': kind}
+    if partial:
+        partial['outputs'] = cached_digests(OUTPUTS)
+        state.update(partial=partial, failed_at=dt.datetime.now(dt.timezone.utc).isoformat(), failed_inputs=ih)
+        lines.append(f'\nThe remaining outputs will be retried in {RETRY_HOURS} hours.')
+    json.dump(state, open(meta_path, 'w'))
     cache_changed()
     summary('\n'.join(lines) + '\n')
     return 0
@@ -567,7 +603,7 @@ def main():
     src = {k: v for k, v in (json.load(open(SOURCES)) if os.path.exists(SOURCES) else {}).items() if not k.startswith('$')}
     out = tempfile.mkdtemp(prefix='model-out-')
     try:
-        lines, kind = build(json.load(open(MODEL)), src, a.monthly, out, a.osm_raw)
+        lines, _, _, _ = build(json.load(open(MODEL)), src, a.monthly, out, a.osm_raw)
         report = '\n'.join(lines) + '\n'
         print(report)
         if a.report:

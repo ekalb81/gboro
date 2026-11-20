@@ -1,4 +1,5 @@
 // Small read-only Gmail client and helpers for pulling Muse digests. No dependencies.
+import { Readable } from 'node:stream';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -41,19 +42,27 @@ export const RETRY_WAITS_MS = [5e3, 15e3, 30e3, 60e3, 60e3];
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function gmailClient(accessToken, fetchImpl = fetch, { sleep = sleepMs, waits = RETRY_WAITS_MS, gapMs = 100 } = {}) {
-  async function get(path, params = {}) {
+  let nextStart = Promise.resolve(), cooldown = Promise.resolve();
+  async function get(path, params = {}, signal) {
     const url = new URL(API + path);
     for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, v);
     for (let attempt = 0; ; attempt++) {
-      if (gapMs) await sleep(gapMs); // a steady pace keeps well under the per-minute quota
-      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${accessToken}` } });
+      // Space request starts while earlier responses are in flight. A rate limit pauses every queued start.
+      nextStart = nextStart.then(async () => {
+        if (gapMs) await sleep(gapMs);
+        let pause;
+        do { pause = cooldown; await pause; } while (pause !== cooldown);
+      });
+      await nextStart;
+      signal?.throwIfAborted();
+      const res = await fetchImpl(url, { headers: { authorization: `Bearer ${accessToken}` }, signal });
       if (res.ok) return res.json();
       const text = await res.text();
       if (isRateLimited(res.status, text) && attempt < waits.length) {
         const after = Number(res.headers?.get?.('retry-after')) * 1000;
         const wait = Math.max(waits[attempt], Number.isFinite(after) ? after : 0);
         console.warn(`  Gmail rate limit on ${path}; waiting ${Math.round(wait / 1000)}s (retry ${attempt + 1} of ${waits.length})`);
-        await sleep(wait);
+        cooldown = Promise.all([cooldown, sleep(wait)]).then(() => {});
         continue;
       }
       throw new Error(`Gmail ${path} failed (${res.status}): ${text}`);
@@ -71,7 +80,7 @@ export function gmailClient(accessToken, fetchImpl = fetch, { sleep = sleepMs, w
       } while (pageToken && ids.length < max);
       return ids.slice(0, max);
     },
-    getMessage: (id, format = 'full') => get(`/messages/${id}`, { format }),
+    getMessage: (id, format = 'full', signal) => get(`/messages/${id}`, { format }, signal),
   };
 }
 
@@ -139,18 +148,17 @@ export function digestFileText(message) {
 // written in it (null for a hand-saved file, which has none). A message whose id is already saved costs no
 // request at all, and every other message costs one: Gmail's quota is counted per request, and the publish
 // run starts with an empty folder, so asking for each message's date first only doubled the work.
-// `save` is called with each digest as it arrives, so if a later request fails the ones already downloaded
-// are kept.
+// Fetch a few messages ahead and save in list order so same-minute names and partial progress are predictable.
 export async function newDigests(gmail, ids, saved = new Map(), { save = async () => {}, warn = console.warn } = {}) {
   const have = new Set([...saved.values()].filter(Boolean));
+  const missing = [...new Set(ids)].filter((id) => !have.has(id));
   const files = [];
-  let skipped = 0;
-  for (const id of ids) {
-    if (have.has(id)) {
-      skipped++;
-      continue;
-    }
-    const msg = await gmail.getMessage(id, 'full');
+  let skipped = ids.length - missing.length;
+  const messages = Readable.from(missing).map(
+    async (id, { signal }) => [id, await gmail.getMessage(id, 'full', signal)],
+    { concurrency: 3, highWaterMark: 0 },
+  );
+  for await (const [id, msg] of messages) {
     const base = digestFileName(msg.internalDate);
     let name = `${base}.txt`;
     if (saved.has(name)) {
@@ -163,9 +171,8 @@ export async function newDigests(gmail, ids, saved = new Map(), { save = async (
     }
     const text = digestFileText(msg);
     if (!/^ITEM\s*\|/m.test(text)) warn(`  ${base}: no ITEM lines (saved anyway; ingest will ignore it)`);
-    saved.set(name, id);
-    have.add(id);
     await save({ name, text });
+    saved.set(name, id);
     files.push({ name, text });
   }
   return { files, skipped };

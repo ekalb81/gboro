@@ -87,7 +87,7 @@ function render(c) {
 
 async function refresh() {
   try {
-    const r = await fetch('data/crime.json', { cache: 'no-store' });
+    const r = await fetch('data/crime.json', { cache: 'no-cache' });
     if (!r.ok) throw new Error(r.status);
     render(await r.json());
   } catch {

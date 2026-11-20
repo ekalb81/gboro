@@ -7,7 +7,7 @@ const etDate = (d) => d.toLocaleDateString('en-CA', { timeZone: TZ });
 
 export async function loadCivic() {
   try {
-    const r = await fetch('data/civic.json', { cache: 'no-store' });
+    const r = await fetch('data/civic.json', { cache: 'no-cache' });
     if (!r.ok) return { items: [], generatedAt: null };
     return await r.json();
   } catch {

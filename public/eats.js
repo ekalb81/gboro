@@ -27,7 +27,7 @@ const hash = (s) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c
 
 export async function loadEats() {
   try {
-    const r = await fetch('data/eats.json', { cache: 'no-store' });
+    const r = await fetch('data/eats.json', { cache: 'no-cache' });
     if (!r.ok) throw new Error(r.status);
     data = await r.json();
   } catch {
@@ -39,6 +39,7 @@ export async function loadEats() {
 /** Called while the map is built, after roads and landmarks and before houses, so houses leave room for shops. */
 export function placeShops({ W, H, free, block }) {
   shops = [];
+  statusCache = { at: -Infinity };
   if (!data) return;
   // Central places claim their tile first; the rest spiral outward to the nearest free tile.
   const order = [...data.places].sort((a, b) => (BARS.has(b.kind) - BARS.has(a.kind)) || a.name.localeCompare(b.name));
@@ -76,7 +77,8 @@ function status() {
 
 // ---------- events from the digest ----------
 const norm = (s) => (s || '').toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
-const etDate = (d) => d.toLocaleDateString('en-CA', { timeZone: TZ });
+const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: TZ });
+const etDate = (d) => Number.isFinite(+d) ? dayFormat.format(d) : 'Invalid Date';
 
 /** Digest items whose venue is one of our places and that happen today and aren't over. */
 export function setEventItems(items) {
@@ -129,12 +131,23 @@ function drawLoiterers(ctx, s, n, t) {
   }
 }
 
-/** Shops and the people outside them. Drawn before the night tint so they darken with the town. */
-export function drawShops(ctx, t) {
-  if (!shops.length) return;
+// Paint the storefronts onto a copy of the town only when their doors or event pennants change.
+const town = document.createElement('canvas');
+let paintedHours, paintedEvents;
+export function drawShops(ctx, t, background) {
+  if (!shops.length) { ctx.drawImage(background, 0, 0); return; }
   const { open, now } = status();
   const evening = now.min >= 17 * 60 || now.min < 3 * 60;
-  for (const s of shops) drawShop(ctx, s, open.has(s.id));
+  if (paintedHours !== open || paintedEvents !== events) {
+    if (town.width !== background.width || town.height !== background.height) {
+      town.width = background.width; town.height = background.height;
+    }
+    const layer = town.getContext('2d');
+    layer.drawImage(background, 0, 0);
+    for (const s of shops) drawShop(layer, s, open.has(s.id));
+    paintedHours = open; paintedEvents = events;
+  }
+  ctx.drawImage(town, 0, 0);
   for (const s of shops) {
     const ev = events.has(s.id);
     if (!open.has(s.id) && !ev) continue;

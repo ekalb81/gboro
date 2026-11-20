@@ -1,7 +1,7 @@
 // Tiny static server for public/. Usage: node scripts/serve.mjs [port]
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { join, extname, normalize, dirname } from 'node:path';
+import { join, extname, normalize, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const pub = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -10,7 +10,7 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applic
 
 createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
-  const file = join(pub, path.endsWith('/') ? path + 'index.html' : path);
+  const file = join(pub, path.endsWith(sep) ? path + 'index.html' : path);
   if (!file.startsWith(pub)) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);

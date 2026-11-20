@@ -33,13 +33,13 @@ export async function checkSite(pub = join(root, 'public')) {
     if (!size) problems.push(`${f} is missing or empty`);
   }
   for (const p of await walk(pub).catch(() => [])) {
-    const rel = relative(pub, p);
-    if (isPrivate(rel.split(/[\\/]/).pop())) problems.push(`private data in public/: ${rel}`);
+    const rel = relative(pub, p).replaceAll('\\', '/');
+    if (isPrivate(rel.split('/').pop())) problems.push(`private data in public/: ${rel}`);
     if (rel.endsWith('.json')) {
       try {
         JSON.parse(await readFile(p, 'utf8'));
       } catch (e) {
-        (REQUIRED.includes(rel.replaceAll('\\', '/')) ? problems : warnings).push(`${rel} is not valid JSON (${e.message})`);
+        (REQUIRED.includes(rel) ? problems : warnings).push(`${rel} is not valid JSON (${e.message})`);
       }
     }
   }

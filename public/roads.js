@@ -40,7 +40,7 @@ async function refreshRoads() {
   const demo = new URLSearchParams(location.search).get('roads') === 'demo';
   let data;
   try {
-    data = demo ? { events: DEMO, source: 'demo', generatedAt: new Date().toISOString() } : await (await fetch('data/roads.json', { cache: 'no-store' })).json();
+    data = demo ? { events: DEMO, source: 'demo', generatedAt: new Date().toISOString() } : await (await fetch('data/roads.json', { cache: 'no-cache' })).json();
   } catch {
     return; // no roads.json yet: quiet streets
   }
