@@ -3,7 +3,7 @@
 // Starts scripts/serve.mjs on a spare port, opens the page in headless Chromium (Playwright) at a few fixed
 // scenarios, and prints a table: frames per second, frame interval p50/p95/max, the time the model's own code
 // takes per frame (from the ?bench timings in model.js), long tasks, JS heap, canvas memory, bytes loaded and the
-// time to the first drawn frame. The view, date, time of day and wind are fixed so runs compare.
+// time until the first frame callback finishes. The view, date, time of day and wind are fixed so runs compare.
 //
 // Options:
 //   --only name,name   run only these scenarios (see SCENARIOS below); 'steady', 'interaction', 'zoom' and 'tiles' name the groups
@@ -209,7 +209,7 @@ async function run(browser, base, sc) {
   await page.goto(base + '?' + qs);
   await page.waitForFunction(() => window.__bench && window.__bench.frames.length > 0, null, { timeout: 120000 });
   const loadWall = Date.now() - t0;
-  const firstFrame = await page.evaluate(() => window.__bench.frames[0].t);
+  const firstFrame = await page.evaluate(() => window.__bench.frames[0]);
   await page.waitForTimeout(3000); // settle: fonts, the first tiles, the live scene from app.js
   let warmS = 0; // --warm: also wait (up to 60 s) until the model has drawn ahead everything it wants to, as after a minute's look
   if (WARM && sc.gesture) { const w0 = Date.now(); await page.waitForFunction(() => window.__bench.aheadLeft === 0, null, { timeout: 60000, polling: 250 }).catch(() => {}); warmS = (Date.now() - w0) / 1000; }
@@ -287,7 +287,7 @@ async function run(browser, base, sc) {
     longTasks: r.long.length, longMs: Math.round(r.long.reduce((s, v) => s + v, 0)),
     tilesDrawn: r.tiles - tilesBefore[0], tileMs: Math.round(r.tileMs - tilesBefore[1]),
     heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), canvasMB: +r.mem.canvasMB.toFixed(1), canvas: `${r.mem.W}x${r.mem.H} vs${+r.mem.VS.toFixed(2)}`,
-    loadKB: Math.round(bytes / 1024), gzipKB: Math.round(gz / 1024), firstFrameMs: Math.round(firstFrame), loadWallMs: loadWall,
+    loadKB: Math.round(bytes / 1024), gzipKB: Math.round(gz / 1024), firstFrameStartMs: Math.round(firstFrame.t), firstFrameMs: Math.round(firstFrame.end), loadWallMs: loadWall,
     phases, errors, inter,
     ops: Object.fromEntries(Object.entries(r.ops).map(([k, v]) => [k, +(v / Math.max(1, r.frames.length)).toFixed(1)])),
   };
