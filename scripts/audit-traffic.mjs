@@ -208,6 +208,26 @@ try {
           return car.lane === next && Math.abs(car.s - .04) < .0001;
         });
         assert.ok(transfer, 'a car advancing at one tile per second exceeded its 50 ms travel distance across a lane boundary');
+
+        const merge = await page.evaluate(() => {
+          const { TF, tcars, addCar, step } = window.__tf;
+          const wide = TF.lanes.find(l => l.to.k === '20.53,224.53' && l.ch.n === 'West Washington Street' && l.tracks.length === 2);
+          const narrow = wide?.to.out.find(l => l !== wide.rev && l.ch.n === wide.ch.n && l.tracks.length === 1);
+          if (!wide || !narrow || wide.width <= narrow.width) return null;
+          for (const l of TF.lanes) l.cars.length = 0;
+          tcars.length = 0;
+          const cars = wide.tracks.map((_, track) => Object.assign(addCar(wide, wide.L - .01, track),
+            { ty: 2, v: 1, v0: 1, next: narrow, nextTrack: 0, go: true }));
+          step(.05);
+          const first = cars.find(c => c.lane === narrow);
+          const second = cars.find(c => c.lane === wide);
+          if (!first || !second) return null;
+          const settled = first.off[2] <= narrow.spacing;
+          const held = second.v === 0;
+          for (let i = 0; i < 300 && second.lane === wide; i++) step(.05);
+          return { settled, held, followed: second.lane === narrow && (first.lane !== narrow || first.s - second.s >= 5.31 / window.__audit.M) };
+        });
+        assert.deepEqual(merge, { settled: true, held: true, followed: true }, 'the two West Washington approach tracks did not merge one at a time');
       }
       await page.close();
     }

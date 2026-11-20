@@ -1477,8 +1477,11 @@ function stepTraffic(dt){
       l.cars.splice(l.cars.indexOf(c),1);
       if(nx){
         const [ox_,oy_,ux_,uy_]=trafficPose(c,l.L),track=c.nextTrack,[px,py]=lanePos(nx,0,track);
-        // Settle sooner when turning into a narrow street so the incoming pose does not carry over its kerb.
-        const blend=nx.width<l.width&&maneuver(l,nx)!=='through'?nx.width/(2.5*M):.9;
+        // Settle sooner at a narrower exit so the incoming pose does not carry over its kerb.
+        let blend=.9;
+        if(nx.width<l.width){
+          if(l.ch.n&&l.ch.n===nx.ch.n&&l.tracks.length>1&&nx.tracks.length===1)blend=.35;
+          else if(maneuver(l,nx)!=='through')blend=nx.width/(2.5*M)}
         if(nx===c.ringExit)c.ringExit=null;
         c.s=s;c.wait=0;c.wait2=0;c.go=false;c.next=null;c.from=l;c.lane=nx;c.track=track;c.taper=null;
         c.off=[ox_-px,oy_-py,Math.min(.9,nx.L,blend),ux_,uy_];
