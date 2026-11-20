@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { makeDetails } from '../public/details.js';
+import { makeBalconyPlans, makeDetails } from '../public/details.js';
 
 const load = async (f) => JSON.parse(await readFile(new URL(`../public/model/${f}`, import.meta.url), 'utf8'));
 const map = await load('downtown.json');
@@ -37,35 +37,44 @@ test('rooftop details name a building that exists', () => {
   for (const a of det.A) if (a.b) assert.ok(ids.has(a.b), `${a.k} on unknown building ${a.b}`);
 });
 
-test('CityView decks fill the roof setbacks and render at the top-floor level', () => {
-  const slabs = [], rails = [], windows = [];
+test('CityView terraces fill the lower footprint and draw floors and rails at deck height', () => {
+  const floors = [], rails = [];
+  const plan = makeBalconyPlans(det);
   const details = makeDetails(det, {
-    M: map.M, ZPM: 2, P: (x, y, z) => [x, y, z], mix: (color) => color,
-    drawPrism: (_canvas, q, base, height) => slabs.push({ q, base, height }),
+    M: map.M, ZPM: 2, P: (x, y, z) => [x, y, z], mix: (color) => color, surf: (color) => color,
     line: (_canvas, a, b) => rails.push([a, b]),
-    poly: (_canvas, q) => windows.push(q),
+    poly: (_canvas, q) => floors.push(q),
   });
+  const area = (q) => q.reduce((a, [x, y], i) => {
+    const [x1, y1] = q[(i + 1) % q.length];
+    return a + x * y1 - y * x1;
+  }, 0) / 2;
   for (const id of [414248814, 598164879]) {
     const { p } = map.B.find((b) => b.id === id);
-    const footprint = p.filter((_, i) => i % 2 === 0).map((x, i) => [x, p[2 * i + 1]]);
-    const building = { id, hpx: 28, lv: 4 };
-    slabs.length = rails.length = windows.length = 0;
-    details.balconies(null, building, true);
-    assert.ok(slabs.length > 0 && slabs.length < 4);
-    details.roof(null, building);
-    assert.equal(slabs.length, 4);
-    for (const { q, base, height } of slabs) {
+    const pts = p.filter((_, i) => i % 2 === 0).map((x, i) => [x, p[2 * i + 1]]);
+    const building = { id, pts, hpx: 28, lv: 4 };
+    const balcony = building.balcony = plan(building);
+    assert.equal(balcony.areas.length, 4);
+    assert.equal(balcony.z, 21);
+    for (const q of balcony.areas) {
       const [a, corner, b, recess] = q;
-      const i = footprint.findIndex(([x, y]) => x === a[0] && y === a[1]);
+      const i = pts.findIndex(([x, y]) => x === recess[0] && y === recess[1]);
       assert.ok(i >= 0);
-      assert.deepEqual(recess, footprint[(i + 1) % footprint.length]);
-      assert.deepEqual(b, footprint[(i + 2) % footprint.length]);
-      assert.notDeepEqual(corner, recess);
-      assert.equal(base, 0);
-      assert.equal(height, 21);
+      assert.deepEqual(a, pts[(i + pts.length - 1) % pts.length]);
+      assert.deepEqual(b, pts[(i + 1) % pts.length]);
+      assert.deepEqual(balcony.lower[i], corner);
     }
-    assert.ok(rails.every(([a, b]) => a[2] >= 21 && b[2] >= 21));
-    assert.equal(rails.filter(([a, b]) => a[2] > 21 && b[2] > 21).length, 8);
-    assert.ok(windows.length > 0 && windows.flat().every(([, , z]) => z > 0 && z < 21));
+    const deckArea = balcony.areas.reduce((a, q) => a + area(q), 0);
+    assert.ok(Math.abs(area(balcony.lower) - area(pts) - deckArea) < 1e-8);
+    for (const behind of [true, false]) {
+      floors.length = rails.length = 0;
+      details.balconies(null, building, behind);
+      assert.equal(floors.length, behind ? 4 : 0);
+      assert.ok(floors.flat().every(([, , z]) => z === 21));
+      assert.ok(rails.every(([a, b]) => a[2] >= 21 && b[2] >= 21));
+      const tops = rails.filter(([a, b]) => a[2] > 21 && b[2] > 21);
+      assert.equal(tops.length, 4);
+      for (const [[ax, ay], [bx, by]] of tops) assert.equal(by - ay <= bx - ax, behind);
+    }
   }
 });

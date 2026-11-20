@@ -24,18 +24,34 @@ const bbOf = (q, m = 1) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (
 const trace = (c, q, close = true) => { c.beginPath(); q.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]))); if (close) c.closePath(); };
 const mid = (q) => [q.reduce((a, p) => a + p[0], 0) / q.length, q.reduce((a, p) => a + p[1], 0) / q.length];
 
+export function makeBalconyPlans(DET) {
+  const byBuilding = new Map();
+  for (const { k, b, p } of DET?.A || []) {
+    if (k !== 'balcony') continue;
+    if (!byBuilding.has(b)) byBuilding.set(b, []);
+    byBuilding.get(b).push(pairs(p));
+  }
+  return (b) => {
+    const areas = byBuilding.get(b.id);
+    if (!areas) return null;
+    // Below the terraces the building fills the roof notches, making one continuous perimeter.
+    const replacements = new Map(areas.map(([, corner, , recess]) => [String(recess), corner]));
+    const lower = b.pts.map((p) => replacements.get(String(p)) || p);
+    return { lower, areas, corners: new Set(replacements.values()), z: (b.hpx / b.lv) * (b.lv - 1) };
+  };
+}
+
 export function makeDetails(DET, env) {
-  const { settle, P, M, mix, gcol, hash, pip, fr, poly, line, circ, eq, mk, inTG, lampsOn, snowy, HI, SH } = env;
-  const none = { under() {}, over() {}, low() {}, points: [], drawProp() {}, roof() {}, balconies() {}, balconyAreas: () => [], wet: () => false, has: false };
+  const { settle, P, M, mix, gcol, hash, pip, fr, poly, line, circ, eq, mk, inTG, lampsOn, snowy, surf, HI, SH } = env;
+  const none = { under() {}, over() {}, low() {}, points: [], drawProp() {}, roof() {}, balconies() {}, wet: () => false, has: false };
   if (!DET) return none;
   const m = (v) => v / M; // metres to grid units
   const areas = (DET.A || []).map((a) => { const q = pairs(a.p); return { ...a, q, bb: bbOf(q), c: mid(q) }; });
   const lines = (DET.L || []).map((l) => { const q = pairs(l.p); return { ...l, q, bb: bbOf(q) }; });
-  const ground = areas.filter((a) => !a.b), roofs = new Map(), terraces = new Map();
-  for (const a of areas) if (a.b) {
-    const byBuilding = a.k === 'balcony' ? terraces : roofs;
-    if (!byBuilding.has(a.b)) byBuilding.set(a.b, []);
-    byBuilding.get(a.b).push(a);
+  const ground = areas.filter((a) => !a.b), roofs = new Map();
+  for (const a of areas) if (a.b && a.k !== 'balcony') {
+    if (!roofs.has(a.b)) roofs.set(a.b, []);
+    roofs.get(a.b).push(a);
   }
   const wetAreas = ground.filter((a) => a.k === 'pool' || a.k === 'fountain');
   const diamonds = (DET.D || []).map((d) => { const q = pairs(d.p); return { ...d, q, bb: bbOf(q) }; });
@@ -224,36 +240,27 @@ export function makeDetails(DET, env) {
     }
   }
 
-  // The aerial establishes the deck plan. Deck height follows the top apartment floor.
-  const balconyAreas = (b) => (terraces.get(b.id) || []).map(({ q }) => ({ q, z: b.hpx * (1 - 1 / b.lv) }));
   function balconies(c, b, behind) {
-    for (const { q, z } of balconyAreas(b)) {
-      const [start, corner, end, recess] = q;
-      if ((corner[0] + corner[1] < recess[0] + recess[1]) !== behind) continue;
-      env.drawPrism(c, q, 0, z, b.wall, '#baaa8d');
-      const rail = z + 1.05 * env.ZPM, at = (p, h) => P(p[0], p[1], h);
+    const { areas, z } = b.balcony;
+    for (const q of areas) {
+      const at = (p, h) => P(p[0], p[1], h);
+      if (behind) poly(c, q.map((p) => at(p, z)), surf('#baaa8d', true));
+      const rail = z + 1.05 * env.ZPM;
       const metal = mix('#3f4246', HI, 0.15);
+      const [start, corner, end] = q;
       for (const [a, p] of [[start, corner], [corner, end]]) {
         const dx = p[0] - a[0], dy = p[1] - a[1];
+        if ((dy <= dx) !== behind) continue;
         const pos = (u, h) => P(a[0] + dx * u, a[1] + dy * u, h);
-        if (dy > dx) {
-          const floor = b.hpx / b.lv;
-          for (let i = 0; i < b.lv - 1; i++) {
-            const base = (i + .3) * floor, top = base + .43 * floor;
-            poly(c, [pos(.34, base), pos(.66, base), pos(.66, top), pos(.34, top)], '#3c5668', mix(b.wall, HI, .55));
-          }
-        }
         line(c, at(a, rail), at(p, rail), metal, .85);
         const n = Math.ceil(Math.hypot(dx, dy) * M / .9);
-        for (let i = 0; i < n; i++) line(c, pos(i / n, z), pos(i / n, rail), metal, .65);
+        for (let i = 0; i <= n; i++) line(c, pos(i / n, z), pos(i / n, rail), metal, .65);
       }
-      line(c, at(end, z), at(end, rail), metal, .65);
     }
   }
 
   // ---- rooftop pools and courts ----
   function roof(c, b) {
-    balconies(c, b, false);
     const list = roofs.get(b.id); if (!list) return;
     for (const a of list) {
       let z = b.hpx; if (b.tiers) for (const t of b.tiers) if (pip(a.c[0], a.c[1], t.pts)) z = Math.max(z, Math.min(250, t.h * env.ZPM));
@@ -266,5 +273,5 @@ export function makeDetails(DET, env) {
     for (const a of wetAreas) if (a.k === 'pool' && inTG(a.bb)) eq(a.q.map((p) => P(p[0], p[1])), '#8fe6ff', 0.55);
   }
   const wet = (gx, gy) => wetAreas.some((a) => gx > a.bb[0] && gx < a.bb[2] && gy > a.bb[1] && gy < a.bb[3] && pip(gx, gy, a.q));
-  return { under, over, low(c) { low(c); glow(); }, all: pts, points, drawProp, roof, balconies, balconyAreas, wet, has: true, roofIds: roofs };
+  return { under, over, low(c) { low(c); glow(); }, all: pts, points, drawProp, roof, balconies, wet, has: true, roofIds: roofs };
 }
