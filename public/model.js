@@ -14,7 +14,7 @@
 import { clockAt, nowDoing, dayRand } from './homeday.js';
 import { mowRoute } from './house.js';
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
-import { makeDetails } from './details.js';
+import { makeBalconyPlans, makeDetails } from './details.js';
 
 export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, yards: YARDS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
 MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
@@ -144,9 +144,10 @@ function erase(p){if(TGT.de)eraseOn(TGT.e,p);if(TGT.dg)eraseOn(TGT.g,p)}
 function eraseOn(e,p){e.globalCompositeOperation='destination-out';e.fillStyle='#000';e.fill(p);e.globalCompositeOperation='source-over'}
 function path(pts){const p=new Path2D();p.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)p.lineTo(pts[i][0],pts[i][1]);p.closePath();return p}
 function poly(c,pts,fill,stroke){const p=path(pts);c.fillStyle=fill;c.fill(p);if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke(p)}if(c===TGT.c)erase(p)}
-let LNE=false; // lines rub out the lit-window and glow layers under them too (as a scratch card did): set while a static thing is drawn under a clip
-function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke();
-  if(LNE&&c===TGT.c)for(const e of [TGT.de?TGT.e:null,TGT.dg?TGT.g:null])if(e){e.globalCompositeOperation='destination-out';e.beginPath();e.moveTo(a[0],a[1]);e.lineTo(b[0],b[1]);e.strokeStyle='#000';e.lineWidth=lw;e.stroke();e.globalCompositeOperation='source-over'}}
+function line(c,a,b,col,lw=1){c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=col;c.lineWidth=lw;c.stroke();}
+// Foreground rails and branches also cover the light shining from a window behind them.
+function solidLine(c,a,b,col,lw=1){line(c,a,b,col,lw);
+  if(c===TGT.c&&(TGT.de||TGT.dg))for(const e of [TGT.de?TGT.e:null,TGT.dg?TGT.g:null])if(e){e.globalCompositeOperation='destination-out';e.beginPath();e.moveTo(a[0],a[1]);e.lineTo(b[0],b[1]);e.strokeStyle='#000';e.lineWidth=lw;e.stroke();e.globalCompositeOperation='source-over'}}
 function fr(c,x,y,ww,hh,col){c.fillStyle=col;c.fillRect(x,y,ww,hh);if(c===TGT.c){if(TGT.de)TGT.e.clearRect(x,y,ww,hh);if(TGT.dg)TGT.g.clearRect(x,y,ww,hh)}}
 function circ(c,x,y,r,col){const p=new Path2D();p.arc(x,y,r,0,7);c.fillStyle=col;c.fill(p);if(c===TGT.c)erase(p)}
 const eq=(q,col,al)=>{TGT.de=TGT.wide=1;const e=TGT.e;e.fillStyle=col;if(al==null)e.fill(path(q));else{e.globalAlpha=al;e.fill(path(q));e.globalAlpha=1}};
@@ -201,6 +202,7 @@ function tidyOutline(q){const n=q.length;if(n<5||q.filter(v=>Math.abs(v[0]*6-Mat
       r[i]=k;r.splice((i+1)%r.length,1);did=hit=true}if(!did)break}
   return hit?r:null}
 for(const b of MAP.B)if(b.lidar_new&&!b.dk){const q=tidyOutline(pairs(b.p));if(q)b.p=q.flat()}
+const balconyPlan=makeBalconyPlans(DET);
 const blds=MAP.B.map((b,i)=>{
   let pts=pairs(b.p);let A=0;for(let k=0;k<pts.length;k++){const[a,c]=pts[k],[d,e]=pts[(k+1)%pts.length];A+=a*e-d*c}A/=2;if(A<0)pts.reverse();
   const area=Math.abs(A)*M*M;const t=b.t||'yes';const r=hash(b.id%9973,7);
@@ -208,8 +210,9 @@ const blds=MAP.B.map((b,i)=>{
   let lv=b.l||(F&&F.floors&&!b.h?F.floors:0);if(!lv){lv=({house:2,detached:2,residential:2,apartments:3,office:3,commercial:2,retail:2,industrial:1,parking:4,garage:1,shed:1,garages:1,school:2,university:3,dormitory:4,government:3,hotel:4,church:2,train_station:2,roof:1,yes:2})[t]||2;if((t==='yes'||t==='retail')&&r>.6)lv++;if(area<45)lv=1}
   if(SPECIAL[b.id]==='kress'){delete b.tr;delete b.tb}
   const hm=(b.dk?b.dk.z1:0)||(b.tb>2.5?b.tb:0)||(b.id!==208115796&&b.lh>2.5?b.lh:0)||b.h||lv*3.6;if(b.lh>2.5&&!b.l&&!(F&&F.floors))lv=Math.max(1,Math.round(b.lh/3.8));const hpx=Math.min(250,hm*ZPM);
-  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),sums=pts.map(p=>p[0]+p[1]);
-  const o={i,id:b.id,pts,t,name:b.n,tn:b.tn||[],ad:b.ad||'',ax:b.ax||0,am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
+  const balcony=balconyPlan({id:b.id,pts,lv,hpx}),footprint=balcony?.lower||pts;
+  const xs=footprint.map(p=>p[0]),ys=footprint.map(p=>p[1]),sums=footprint.map(p=>p[0]+p[1]);
+  const o={i,id:b.id,pts,balcony,footprint,t,name:b.n,tn:b.tn||[],ad:b.ad||'',ax:b.ax||0,am:b.a||'',lv,hm,hpx,area,special:SPECIAL[b.id]||'',minx:Math.min(...xs),maxx:Math.max(...xs),miny:Math.min(...ys),maxy:Math.max(...ys),key:(Math.min(...sums)+Math.max(...sums))/2,cx:xs.reduce((a,c)=>a+c,0)/xs.length,cy:ys.reduce((a,c)=>a+c,0)/ys.length};
   const pick=(arr,s=3)=>arr[Math.floor(hash(b.id%7919,s)*arr.length)];
   if(b.dk){o.deck=b.dk.k;o.dk=b.dk;o.z0=b.dk.z0*ZPM;o.wall=C.Concrete;o.roof=C.Asphalt;if(b.dk.cl&&Array.isArray(b.dk.cl[0]))o.cls=b.dk.cl.map(pairs);
     // a ramp's top is a tilted plane: z = sl[0] + sl[1]*gx + sl[2]*gy (model pixels), kept between its two end heights
@@ -270,8 +273,8 @@ function runsAlong(cls,gx,gy,ux,uy){let bd=1e9,dot=1;for(const l of cls)for(let 
 // that can overlap on screen by looking along the line of sight: on a vertical screen line (gx-gy fixed) the building
 // whose footprint is crossed first (smaller gx+gy) is farther away and is drawn first.
 (function orderBuildings(){
-  const n=blds.length;const sr=blds.map(b=>{let s0=1e9,s1=-1e9,u0=1e9,u1=-1e9;for(const[x,y] of b.pts){const s=x-y,u=x+y;if(s<s0)s0=s;if(s>s1)s1=s;if(u<u0)u0=u;if(u>u1)u1=u}return{s0,s1,u0,u1,top:(b.htop||b.hpx)+24}});
-  const cut=(b,sv)=>{const us=[];const p=b.pts;for(let k=0;k<p.length;k++){const a=p[k],q=p[(k+1)%p.length];const sa=a[0]-a[1],sb=q[0]-q[1];if((sa<sv)!==(sb<sv)){const t=(sv-sa)/(sb-sa);us.push(a[0]+a[1]+t*(q[0]+q[1]-a[0]-a[1]))}}return us.sort((x,y)=>x-y)};
+  const n=blds.length;const sr=blds.map(b=>{let s0=1e9,s1=-1e9,u0=1e9,u1=-1e9;for(const[x,y] of b.footprint){const s=x-y,u=x+y;if(s<s0)s0=s;if(s>s1)s1=s;if(u<u0)u0=u;if(u>u1)u1=u}return{s0,s1,u0,u1,top:(b.htop||b.hpx)+24}});
+  const cut=(b,sv)=>{const us=[];const p=b.footprint;for(let k=0;k<p.length;k++){const a=p[k],q=p[(k+1)%p.length];const sa=a[0]-a[1],sb=q[0]-q[1];if((sa<sv)!==(sb<sv)){const t=(sv-sa)/(sb-sa);us.push(a[0]+a[1]+t*(q[0]+q[1]-a[0]-a[1]))}}return us.sort((x,y)=>x-y)};
   const after=blds.map(()=>[]),indeg=new Array(n).fill(0);
   for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const A=sr[i],B=sr[j];const s0=Math.max(A.s0,B.s0),s1=Math.min(A.s1,B.s1);if(s1<=s0)continue;
     // screen-y overlap (model pixels): footprint u range times TH, raised by the height
@@ -348,7 +351,7 @@ function drawDeck(c,b){const d=b.dk,top=b.hpx,conc=gcol('#d6cfbf','walk'),asph=g
   else{const glass=mix(C['Haw River'],HI,.25);
     drawPrism(c,b.pts,b.z0,top-b.z0,d.cv?glass:conc,d.cv?'#d9d6cf':'#cfc8b8');
     if(d.cv)for(const s of visWalls(b.pts)){line(c,P(s.a[0],s.a[1],b.z0+1),P(s.q[0],s.q[1],b.z0+1),mix(C.Concrete,SH,.2),1.4);line(c,P(s.a[0],s.a[1],top-.5),P(s.q[0],s.q[1],top-.5),'#f1ede4',1);if(evening()){const n=Math.max(1,Math.round(s.L*M/3));for(let k=0;k<n;k++){const u0=(k+.12)/n,u1=(k+.88)/n,A=u=>[s.a[0]+(s.q[0]-s.a[0])*u,s.a[1]+(s.q[1]-s.a[1])*u],p0=A(u0),p1=A(u1);eq([P(p0[0],p0[1],b.z0+2),P(p1[0],p1[1],b.z0+2),P(p1[0],p1[1],top-1),P(p0[0],p0[1],top-1)],'#ffe9b0',.5)}}}}}
-function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}DT.balconies(c,b,true);drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b);if(b.rf)drawRoofReal(c,b);DT.roof(c,b)}
+function drawBuilding(c,b){if(b.deck){drawDeck(c,b);return}drawBuilding0(c,b);if(b.tiers&&b.special!=='tower')drawTiers(c,b);if(b.rf)drawRoofReal(c,b);DT.roof(c,b)}
 // The roof as the aerial shows it: patches of another colour laid on the roof, then the units standing on it (a pale
 // one is a box: an air handler or a vent; a dark one lies flat: a skylight or a hatch).
 const lumOf=h=>{const n=parseInt(h.slice(1),16);return(n>>16)*.299+(n>>8&255)*.587+(n&255)*.114};
@@ -375,28 +378,28 @@ function drawTiers(c,b){let z0=b.hpx;const fr_=litFrac(b);let wi=7;
       const nw=Math.floor(wl.L*M/(b.win||3.4));if(nw<1)continue;
       for(let z=z0+2.2;z+3.4<z1-2.5;z+=7.4)for(let j=0;j<nw;j++){const u0=(j+.28)/nw,u1=(j+.72)/nw;const q4=[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z+3.4),WP(wl,u0,z+3.4)];if(b.curtain){poly(c,q4,mix(glass,HI,.05))}else poly(c,q4,glass);lite(b,wi++,b.lv+Math.round(z/7.4),j,fr_,wl,q4)}}
     poly(c,t.pts.map(p=>P(p[0],p[1],z1)),surf(mix(b.roof,HI,.1),true),surf(mix(b.roof,SH,.3),true));z0=z1}}
-function drawBuilding0(c,b){
-  if(b.special==='tower'){drawLFT(c,b);return}
-  const pts=b.pts,hp=b.hpx;const fr_=litFrac(b);let wi=0;const walls=visWalls(pts);b.walls=walls;
+function drawFacades(c,b,pts,walls,lmin,lmax,fr_,wi){
+  const hp=b.hpx,lvpx=hp/b.lv,balcony=b.balcony;
+  const z0=lmin*lvpx,z1=lmax*lvpx;
   for(const wl of walls){
     const col=mix(b.wall,SH,.32*(1-wl.f));const{a,q}=wl;
-    poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],hp),P(a[0],a[1],hp)],col);
-    poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],3),P(a[0],a[1],3)],mix(col,SH,.18));
+    poly(c,[WP(wl,0,z0),WP(wl,1,z0),WP(wl,1,z1),WP(wl,0,z1)],col);
+    if(!lmin)poly(c,[P(a[0],a[1]),P(q[0],q[1]),P(q[0],q[1],3),P(a[0],a[1],3)],mix(col,SH,.18));
     if(b.canopy)continue;
     if(b.curtain){const gl=mix(mix(b.wall,'#2c3a48',.5),SH,.1+.3*(1-wl.f));poly(c,[WP(wl,0,3),WP(wl,1,3),WP(wl,1,hp-2),WP(wl,0,hp-2)],gl);const lvp=hp/b.lv;for(let l=1;l<b.lv;l++)line(c,WP(wl,0,l*lvp),WP(wl,1,l*lvp),mix(gl,HI,.25));const nm=Math.max(1,Math.round(wl.L*M/1.8));for(let k=1;k<nm;k++)line(c,WP(wl,k/nm,3),WP(wl,k/nm,hp-2),mix(gl,HI,.15));if(fr_)for(let l=0;l<b.lv;l++)for(let k=0;k<nm;k++)lite(b,wi++,l,k,fr_*.7,wl,[WP(wl,k/nm,l*lvp+1),WP(wl,(k+1)/nm,l*lvp+1),WP(wl,(k+1)/nm,(l+1)*lvp-1),WP(wl,k/nm,(l+1)*lvp-1)]);continue}
-    const lvpx=hp/b.lv;const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f));
-    if(b.upperWall)poly(c,[WP(wl,0,hp-lvpx),WP(wl,1,hp-lvpx),WP(wl,1,hp),WP(wl,0,hp)],mix(b.upperWall,SH,.32*(1-wl.f)));
-    if(b.cornice&&hp>10){poly(c,[WP(wl,0,hp-3),WP(wl,1,hp-3),WP(wl,1,hp),WP(wl,0,hp)],b.trim?mix(b.trim,SH,.3*(1-wl.f)):mix(col,HI,.35));line(c,WP(wl,0,hp-3.5),WP(wl,1,hp-3.5),mix(col,SH,.35))}
+    const glass=mix(mix(C['Haw River'],'#2a3442',.45),SH,.12+.3*(1-wl.f));
+    if(lmax===b.lv&&b.upperWall)poly(c,[WP(wl,0,hp-lvpx),WP(wl,1,hp-lvpx),WP(wl,1,hp),WP(wl,0,hp)],mix(b.upperWall,SH,.32*(1-wl.f)));
+    if(lmax===b.lv&&b.cornice&&hp>10){poly(c,[WP(wl,0,hp-3),WP(wl,1,hp-3),WP(wl,1,hp),WP(wl,0,hp)],b.trim?mix(b.trim,SH,.3*(1-wl.f)):mix(col,HI,.35));line(c,WP(wl,0,hp-3.5),WP(wl,1,hp-3.5),mix(col,SH,.35))}
     if(b.garage){for(let l=0;l<b.lv;l++){const z=l*lvpx+lvpx*.35,z2=z+lvpx*.42;const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z2),WP(wl,.03,z2)];poly(c,q4,mix(b.wall,SH,.55));if(fr_){const nb=Math.max(1,Math.round(wl.L*M/8));for(let k=0;k<nb;k++){const h=hash(b.id%977+1.9,wi++);if(h<.12)continue;const u0=.03+.94*(k+.08)/nb,u1=.03+.94*(k+.92)/nb;eq([WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z2),WP(wl,u0,z2)],'#e9ecd6',.2+.14*h)}}}continue}
-    const spacing=(b.win||3.4)/M;const nw=Math.floor(wl.L/spacing);
+    const spacing=(b.win||3.4)/M;const corner=balcony&&!lmin&&(balcony.corners.has(a)||balcony.corners.has(q));const nw=Math.max(corner?1:0,Math.floor(wl.L/spacing));
     // storefront
-    let l0=0;
-    if(b.shop&&wl.L*M>5){l0=1;const sz=Math.min(lvpx*.75,6.5);const q4=[WP(wl,.04,1.2),WP(wl,.96,1.2),WP(wl,.96,1.2+sz),WP(wl,.04,1.2+sz)];poly(c,q4,mix(glass,SH,.15));
+    let l0=lmin;
+    if(!lmin&&b.shop&&wl.L*M>5){l0=1;const sz=Math.min(lvpx*.75,6.5);const q4=[WP(wl,.04,1.2),WP(wl,.96,1.2),WP(wl,.96,1.2+sz),WP(wl,.04,1.2+sz)];poly(c,q4,mix(glass,SH,.15));
       const nd=Math.max(1,Math.floor(wl.L*M/8));for(let k=0;k<nd;k++){const u=(k+.5)/nd;line(c,WP(wl,u,1.2),WP(wl,u,1.2+sz),mix(col,SH,.1))}
       if(fr_){const sp=shopLit(b);for(let k=0;k<nd;k++){const h=hash(b.id%977+2.7,wi++);if(h>=sp)continue;const u0=.04+.92*(k+.1)/nd,u1=.04+.92*(k+.9)/nd;eq([WP(wl,u0,1.8),WP(wl,u1,1.8),WP(wl,u1,.9+sz),WP(wl,u0,.9+sz)],WARM[Math.floor(hash(b.id%977+4.1,k+wl.k)*5)%5],.7+.3*hash(b.id%977+6.3,k+wl.k))}}
       if(b.awn){const an=Math.max(4,Math.round(wl.L*M/1.2));for(let k=0;k<an;k++){const u0=.03+.94*k/an,u1=.03+.94*(k+1)/an;poly(c,[WP(wl,u0,2+sz),WP(wl,u1,2+sz),WP(wl,u1,sz-.5,.13),WP(wl,u0,sz-.5,.13)],surf(k%2?b.awn:mix(b.awn,HI,.12),true))}}}
     if(nw<1)continue;
-    for(let l=l0;l<b.lv;l++){
+    for(let l=l0;l<lmax;l++){
       const z=l*lvpx+lvpx*.3,wh=Math.max(2,lvpx*.45);if(z+wh>hp-(b.cornice?4:1.5))break;
       const ar=(b.arch&&l>=b.lv-2)||b.archAll;
       if(b.ribbon){const q4=[WP(wl,.03,z),WP(wl,.97,z),WP(wl,.97,z+wh),WP(wl,.03,z+wh)];poly(c,q4,glass);const ns=Math.max(1,Math.round(wl.L*M/5));for(let k=0;k<ns;k++){const u0=.03+.94*(k+.06)/ns,u1=.03+.94*(k+.94)/ns;lite(b,wi++,l,k*4,fr_,wl,[WP(wl,u0,z),WP(wl,u1,z),WP(wl,u1,z+wh),WP(wl,u0,z+wh)])}continue}
@@ -406,7 +409,20 @@ function drawBuilding0(c,b){
     }
     if(b.band){poly(c,[WP(wl,0,hp-8),WP(wl,1,hp-8),WP(wl,1,hp-4),WP(wl,0,hp-4)],mix(C.Mortar,SH,.3*(1-wl.f)))}
   }
-  let fi=0;for(let k=1;k<pts.length;k++)if(pts[k][0]+pts[k][1]>pts[fi][0]+pts[fi][1])fi=k;line(c,P(pts[fi][0],pts[fi][1]),P(pts[fi][0],pts[fi][1],hp),mix(b.wall,HI,.35));
+  let fi=0;for(let k=1;k<pts.length;k++)if(pts[k][0]+pts[k][1]>pts[fi][0]+pts[fi][1])fi=k;line(c,P(...pts[fi],z0),P(...pts[fi],z1),mix(b.wall,HI,.35));
+  return wi;
+}
+function drawBuilding0(c,b){
+  if(b.special==='tower'){drawLFT(c,b);return}
+  const pts=b.pts,hp=b.hpx,balcony=b.balcony,fr_=litFrac(b);const walls=visWalls(pts);b.walls=walls;
+  let first=0,wi=0;
+  if(balcony){
+    first=b.lv-1;
+    wi=drawFacades(c,b,balcony.lower,visWalls(balcony.lower),0,first,fr_,wi);
+    DT.balconies(c,b,true);
+  }
+  drawFacades(c,b,pts,walls,first,b.lv,fr_,wi);
+  if(balcony)DT.balconies(c,b,false);
   if(b.special==='kress'){const wl=walls.slice().sort((x,y)=>y.nx-x.nx)[0];if(wl){const col=mix(b.wall,SH,.32*(1-wl.f));
     const np=Math.max(3,Math.round(wl.L*M/3));for(let k=0;k<=np;k++){const u=k/np;line(c,WP(wl,u,9,.01),WP(wl,u,hp-1,.01),mix(col,HI,.45))}
     const A=P(wl.a[0],wl.a[1],0),Q=P(wl.q[0],wl.q[1],0);const flip=Q[0]<A[0];const du=1/(Math.abs(Q[0]-A[0])||1);const txt='KRESS',cols=txt.length*4-1;{const v0=.5-(cols+2)*du/2,v1=.5+(cols+2)*du/2;poly(c,[WP(wl,flip?1-v0:v0,hp-8,.015),WP(wl,flip?1-v1:v1,hp-8,.015),WP(wl,flip?1-v1:v1,hp-.5,.015),WP(wl,flip?1-v0:v0,hp-.5,.015)],'#3a3226')}for(const[u0,u1]of[[.16,.36],[.4,.6],[.64,.84]]){poly(c,[WP(wl,u0,9,.01),WP(wl,u1,9,.01),WP(wl,u1,hp-10,.01),WP(wl,u0,hp-10,.01)],mix('#4e5e44',SH,.2*(1-wl.f)));for(let z=12;z<hp-10;z+=5)line(c,WP(wl,u0,z,.012),WP(wl,u1,z,.012),'#8a9a6e');for(const u of[u0+(u1-u0)/3,u0+2*(u1-u0)/3])line(c,WP(wl,u,9,.012),WP(wl,u,hp-10,.012),'#8a9a6e')}
@@ -497,7 +513,7 @@ function rayHits(b,gx,gy,zpx){if(b.minx>gx+b.tmax+.5||b.maxx<gx-.05||b.miny>gy+b
   // a bridge deck is a slab between z0 and its top: it hides what the line of sight meets inside that slab only
   if(b.deck){const t1=(b.hpx-zpx)/(2*TH);if(t1<=0)return false;const t0=Math.max(0,(b.z0-zpx)/(2*TH));return segHits(gx+t0,gy+t0,t1-t0,b.pts)}
   const hit=(pts,top)=>{const t=(top-zpx)/(2*TH);return t>0&&segHits(gx,gy,t,pts)};
-  if(hit(b.pts,b.hpx+(b.special==='jsb'?12:0)))return true;if(b.tiers)for(const t of b.tiers)if(hit(t.pts,Math.min(250,t.h*ZPM)))return true;return DT.balconyAreas(b).some(({q,z})=>hit(q,z))}
+  if(hit(b.pts,b.hpx+(b.special==='jsb'?12:0)))return true;if(b.tiers)for(const t of b.tiers)if(hit(t.pts,Math.min(250,t.h*ZPM)))return true;return !!b.balcony&&hit(b.footprint,b.balcony.z)}
 /** Buildings standing between the viewer and any of the sample points [gx,gy,zpx]. */
 function blockersFor(smp){const out=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
   // rayHits' own first test, for all the samples at once
@@ -512,7 +528,7 @@ const RW=[16,14,12,10,8,4.5,5];
 // two metres out from the drawn kerb can run through the shopfronts of a narrow street.
 // BLDG(x,y): the building that covers a spot (not bridges or canopies).
 const BLDG=(()=>{const g=new Map(),K=4;for(const b of blds){if(b.deck||b.canopy)continue;for(let i=Math.floor(b.minx/K);i<=Math.floor(b.maxx/K);i++)for(let j=Math.floor(b.miny/K);j<=Math.floor(b.maxy/K);j++){const k=i*4096+j;let a=g.get(k);if(!a)g.set(k,a=[]);a.push(b)}}
-  return(x,y)=>{const a=g.get(Math.floor(x/K)*4096+Math.floor(y/K));if(a)for(const b of a)if(x>b.minx&&x<b.maxx&&y>b.miny&&y<b.maxy&&pip(x,y,b.pts))return b;return null}})();
+  return(x,y)=>{const a=g.get(Math.floor(x/K)*4096+Math.floor(y/K));if(a)for(const b of a)if(x>b.minx&&x<b.maxx&&y>b.miny&&y<b.maxy&&pip(x,y,b.footprint))return b;return null}})();
 // KERB(x,y,maxc): the drawn carriageway a spot is deepest inside, among streets of class maxc or busier:
 // [depth inside it (grid units; negative: that far outside), the way out (x, y), its class], or null with none near.
 const KERB=(()=>{const g=new Map(),K=2;for(const r of MAP.R){if(r.ar||r.c>5)continue;const q=pairs(r.p),hw=RW[r.c]/2/M;for(let k=0;k<q.length-1;k++){const a=q[k],b=q[k+1],sg=[a[0],a[1],b[0],b[1],hw,r.c];
@@ -534,7 +550,7 @@ const bbOf=f=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(let i=0;i<f.length;i+=2){co
 for(const r of MAP.R)r._bb=bbOf(r.p);for(const r of MAP.RL)r._bb=bbOf(r.p);for(const p of MAP.PK)p._bb=bbOf(p.p);for(const p of MAP.PL)p._bb=bbOf(p);for(const f of (MAP.FW||[]))f._bb=bbOf(f.p);for(const a of (MAP.GA||[]))a._bb=bbOf(a.p);
 let TG=null;const inTG=bb=>!TG||!(bb[0]>TG[2]||bb[2]<TG[0]||bb[1]>TG[3]||bb[3]<TG[1]);
 // pools, courts, playgrounds, brick paving, benches and the like (public/details.js, from public/model/details.json)
-const DT=makeDetails(DET,{settle,P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line,circ,eq,mk,inTG,lampsOn,onPlane,drawPrism,snowy:()=>S.wx==='snow',HI,SH});
+const DT=makeDetails(DET,{settle,P:(x,y,z)=>P(x,y,z),M,ZPM,mix,gcol,hash,pip,fr,poly,line:solidLine,circ,eq,mk,inTG,lampsOn,onPlane,surf,snowy:()=>S.wx==='snow',HI,SH});
 // The ground texture: one texel per 1.5 m. Where the county aerial has been classified (MAP.GC) each texel takes the
 // colour of what is really there (paving, asphalt, lawn, planting beds, bare ground); otherwise the vegetation mask.
 const GC_COL=['#bdb7ab','#8f8c94','#5cb648','#6f9a4a','#b98a64','#37a6dc','#a9a39a','#b3a596']; // 7: ballast along the tracks
@@ -654,7 +670,9 @@ function buildShadows(){SHM=null;
   if(SUN.alt<2||S.wx==='rain')return;
   const R=4,mc=mk(Math.ceil(GX*R),Math.ceil(GY*R)),m=mc.getContext('2d');m.setTransform(R,0,0,R,0,0);m.fillStyle=m.strokeStyle='#2c2147';
   const k=1/Math.tan(Math.max(4,SUN.alt)*rad),vx=-Math.sin(SUN.az*rad),vy=Math.cos(SUN.az*rad);
-  m.lineJoin='round';for(const b of blds){if(!b.canopy){m.lineWidth=.32;m.beginPath();b.pts.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.closePath();m.stroke()}const L=Math.min(b.hm*k,b.hm*8)/M;const sh=hull(b.pts.concat(b.pts.map(p=>[p[0]+vx*L,p[1]+vy*L])));m.beginPath();sh.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.closePath();m.fill()}
+  const trace=q=>{m.beginPath();q.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.closePath()};
+  const shadow=(q,hm)=>{const L=Math.min(hm*k,hm*8)/M;trace(hull(q.concat(q.map(p=>[p[0]+vx*L,p[1]+vy*L]))));m.fill()};
+  m.lineJoin='round';for(const b of blds){if(!b.canopy){m.lineWidth=.32;trace(b.footprint);m.stroke()}shadow(b.pts,b.hm);if(b.balcony)shadow(b.footprint,b.balcony.z/ZPM)}
   for(const o of pts0){if(o.kind==='tree'){const lf=look(o.sp,DOY,o.seed).leaf,r=o.r*.8/M,L=Math.min(o.h*.6*k,o.h*5)/M;m.globalAlpha=['loblolly','magnolia','cedar','holly'].includes(o.sp)?1:.35+.65*lf;m.beginPath();m.ellipse(o.gx+vx*L,o.gy+vy*L,r,r,0,0,7);m.fill();m.globalAlpha=1}else if(o.kind==='car'&&!o.hid){const L=Math.min(1.5*k,8)/M;m.beginPath();const r=o.r;const h=hull(r.concat(r.map(p=>[p[0]+vx*L,p[1]+vy*L])));h.forEach((p,i)=>i?m.lineTo(p[0],p[1]):m.moveTo(p[0],p[1]));m.fill()}}
   SHM={c:mc,R}}
 function drawShadows(c){if(!SHM)return;const R=SHM.R;
@@ -675,7 +693,7 @@ const pts0=[];
   MAP.RL.forEach(r=>{polyPath(m,r.p);m.lineWidth=8/M;m.stroke()});
   MAP.PL.forEach(p=>{polyPath(m,p);m.closePath();m.fill()});
   const[bc,bm]=mkMask();
-  blds.forEach(b=>{for(const mm of [m,bm]){mm.beginPath();b.pts.forEach((p,i)=>i?mm.lineTo(p[0],p[1]):mm.moveTo(p[0],p[1]));mm.closePath();mm.fill();mm.lineWidth=2.5/M;mm.stroke()}});
+  blds.forEach(b=>{for(const mm of [m,bm]){mm.beginPath();b.footprint.forEach((p,i)=>i?mm.lineTo(p[0],p[1]):mm.moveTo(p[0],p[1]));mm.closePath();mm.fill();mm.lineWidth=2.5/M;mm.stroke()}});
   const[rc,rm]=mkMask();MAP.R.forEach(r=>{if(r.ar||r.c>5)return;polyPath(rm,r.p);rm.lineWidth=(RW[r.c]+.6)/M;rm.stroke()});
   const px=m.getImageData(0,0,mw,mh).data,bpx=bm.getImageData(0,0,mw,mh).data,rpx=rm.getImageData(0,0,mw,mh).data;
   const at=(d,x,y)=>{if(x<=.3||y<=.3||x>=GX-.3||y>=GY-.3)return false;const i=((Math.floor(y*R))*mw+Math.floor(x*R))*4;return d[i]>128};
@@ -734,14 +752,14 @@ const pts0=[];
 // "Where We Met" (Janet Echelman, 2016) hangs over LeBauer Park's Great Lawn, the lawn in the park's north-west, not over
 // the playground: the spot is the lawn's middle measured on the aerial, as offsets from the park's own outline
 const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return{cx:x0+(x1-x0)*.295,cy:y0+(y1-y0)*.175,rx:22/M,ry:14/M}})();
-function drawTree(c,o){drawTreeSp(c,o,{P,fr,circ,poly,line,mix,surf,SH,HI,doy:DOY,lean:WIND.lean})}
+function drawTree(c,o){drawTreeSp(c,o,{P,fr,circ,poly,line:solidLine,mix,surf,SH,HI,doy:DOY,lean:WIND.lean})}
 const FLAGS=loadFlags(TREES);
 // A post-top street lamp, as on downtown's sidewalks: a footed post, a pale globe under a dark cap. Lit, the globe
 // glows and throws a soft pool on the pavement.
 function drawLamp(c,o){const[x,y]=P(o.gx,o.gy),X=Math.round(x),Y=Math.round(y);const on=lampsOn(),post='#3f3b4c';if(on)eg(x+.5,y,15,.3,.5);
   c.fillStyle='rgba(30,22,52,.22)';c.fillRect(X-1,Y,4,1);fr(c,X-1,Y-1,3,1,post);fr(c,X,Y-10,1,9,post);fr(c,X-1,Y-11,3,1,mix(post,HI,.25));fr(c,X-1,Y-13,3,2,on?'#ffe7a6':'#e4dfd2');fr(c,X-1,Y-14,3,1,post);fr(c,X,Y-15,1,1,post);
   if(on){ed([x+.5,y-12],'#fff2c4',2);eg(x+.5,y-11,6,.4)}}
-function drawString(c,o){[o.a,o.b].forEach(p=>line(c,P(p[0],p[1]),P(p[0],p[1],22),SH));if(!lampsOn())return;for(let k=0;k<=56;k++){const t=k/56;const gx=o.a[0]+(o.b[0]-o.a[0])*t,gy=o.a[1]+(o.b[1]-o.a[1])*t;ed(P(gx,gy,22-Math.sin(t*Math.PI*4)**2*5),k%2?'#ffe9a8':'#ffb98a')}}
+function drawString(c,o){[o.a,o.b].forEach(p=>solidLine(c,P(p[0],p[1]),P(p[0],p[1],22),SH));if(!lampsOn())return;for(let k=0;k<=56;k++){const t=k/56;const gx=o.a[0]+(o.b[0]-o.a[0])*t,gy=o.a[1]+(o.b[1]-o.a[1])*t;ed(P(gx,gy,22-Math.sin(t*Math.PI*4)**2*5),k%2?'#ffe9a8':'#ffb98a')}}
 function drawCar(c,gx,gy,ux,uy,z,col,ty){const k=CARS[ty]||CARS[0],L=k[0]/M,Wd=k[1]/M;
   // the shadow it stands on, a touch wider than the car and off to the right (on the ground only: none on a bridge)
   if(!z){const sh=rect(gx+.5/M,gy+.5/M,ux,uy,L+.3/M,Wd+.3/M);c.fillStyle='rgba(30,22,52,.28)';c.beginPath();sh.forEach((q,i)=>{const[x,y]=P(q[0],q[1]);i?c.lineTo(x,y):c.moveTo(x,y)});c.fill()}
@@ -757,13 +775,13 @@ function drawFountain(c,o){const r=7/M;const ring=[...Array(16)].map((_,k)=>[o.g
 // trees there as a trunk and a dotted outline of the crown, so what the canopy hides (a house, a path, parked cars)
 // can be seen. The patch is a few thousand pixels, redrawn only when the pointer has moved, never during a drag or zoom.
 let GHOST=false;
-function ghostTree(c,o){const b=P(o.gx,o.gy),hp=Math.min(o.h,32)*ZPM;line(c,[b[0]+.5,b[1]],[b[0]+.5,b[1]-hp*.5],'#5a4636',hp>30?2:1.4);
+function ghostTree(c,o){const b=P(o.gx,o.gy),hp=Math.min(o.h,32)*ZPM;solidLine(c,[b[0]+.5,b[1]],[b[0]+.5,b[1]-hp*.5],'#5a4636',hp>30?2:1.4);
   c.save();c.globalAlpha=.55;c.strokeStyle='#fff8e6';c.lineWidth=.7;c.setLineDash([2,2]);c.beginPath();c.ellipse(b[0]+.5,b[1]-hp*.64,Math.max(2,o.r*ZPM*.85),Math.max(2,o.r*ZPM*.7),0,0,7);c.stroke();c.restore()}
 function drawPoint(c,o){switch(o.kind){case'tree':GHOST?ghostTree(c,o):drawTree(c,o);break;case'lamp':drawLamp(c,o);break;case'string':drawString(c,o);break;case'car':drawCarS(c,o);break;case'fountain':drawFountain(c,o);break;case'prop':DT.drawProp(c,o);break;case'yard':drawYard(c,o);break}}
 // a thing in a work yard (see yards.json)
 function drawYard(c,o){let q=o.r.map(p=>[p[0],p[1]]);let A=0;for(let k=0;k<q.length;k++){const[a,b]=q[k],[d,e]=q[(k+1)%q.length];A+=a*e-d*b}if(A<0)q.reverse();
   if(o.what==='box'){const h=(o.L>7?2.8:o.L>4.5?2.2:1.7)*ZPM;drawPrism(c,q,0,h,mix(o.col,SH,.22),mix(o.col,'#d9d4c8',.35))}
-  else if(o.what==='stack'){drawPrism(c,q,0,1.1*ZPM,mix('#6b6660',SH,.3),'#8d8882');const[a,b,d]=q;for(let k=1;k<4;k++){const t=k/4;line(c,P(a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t,1.1*ZPM),P(b[0]+(q[2][0]-b[0])*t,b[1]+(q[2][1]-b[1])*t,1.1*ZPM),'#5a554f',.6)}}
+  else if(o.what==='stack'){drawPrism(c,q,0,1.1*ZPM,mix('#6b6660',SH,.3),'#8d8882');const[a,b,d]=q;for(let k=1;k<4;k++){const t=k/4;solidLine(c,P(a[0]+(d[0]-a[0])*t,a[1]+(d[1]-a[1])*t,1.1*ZPM),P(b[0]+(q[2][0]-b[0])*t,b[1]+(q[2][1]-b[1])*t,1.1*ZPM),'#5a554f',.6)}}
   else{const n=Math.max(3,Math.round(o.L/1.6)),ux=(o.r[1][0]-o.r[0][0]),uy=(o.r[1][1]-o.r[0][1]);   // a pile: heaped lumps along its length, biggest in the middle
     for(let k=0;k<n;k++){const t=(k+.5)/n-.5,hh=hash(o.gx*13+k,o.gy*7),x=o.gx+ux*t*.8+(hh-.5)*o.W/M*.4,y=o.gy+uy*t*.8+(hash(k,o.gx)-.5)*o.W/M*.4,r=Math.max(2.2,o.W*.8*(1-Math.abs(t)*.7)),p=P(x,y,0);
       c.fillStyle=mix('#7a7672',SH,.38);c.beginPath();c.ellipse(p[0],p[1]-r*.35,r*1.2,r*.85,0,0,7);c.fill();c.fillStyle=k%2?'#8f8a84':'#827d78';c.beginPath();c.ellipse(p[0]-r*.15,p[1]-r*.65,r*.8,r*.55,0,0,7);c.fill()}}}
@@ -800,8 +818,8 @@ function silhouette(b){if(b.sil)return b.sil;const o0=ox,o1=oy;ox=BOX;oy=BOY;con
   const prism=(pts,h,z0=0,hf)=>{const n=pts.length,H=q=>hf?hf(q[0],q[1])+3:h;const add=q=>{let A=0;for(let k=0;k<q.length;k++){const u=q[k],v=q[(k+1)%q.length];A+=u[0]*v[1]-v[0]*u[1]}if(A<0)q=q.slice().reverse();polys.push(q);q.forEach(([x,y],k)=>{k?p.lineTo(x,y):p.moveTo(x,y);if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y});p.closePath()};
     add(pts.map(q=>P(q[0],q[1],z0)));add(pts.map(q=>P(q[0],q[1],H(q))));for(let k=0;k<n;k++){const a=pts[k],c=pts[(k+1)%n];add([P(a[0],a[1],z0),P(c[0],c[1],z0),P(c[0],c[1],H(c)),P(a[0],a[1],H(a))])}};
   if(b.deck)prism(b.pts,b.hpx+3,b.z0,b.zf);
-  else prism(b.pts,b.hpx+(b.special?14:2));if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
-  for(const {q,z} of DT.balconyAreas(b))prism(q,z);
+  else prism(b.pts,b.hpx+(b.special?14:2),b.balcony?.z);if(b.tiers)for(const t of b.tiers)prism(t.pts,Math.min(250,t.h*ZPM)+(b.special?14:2));
+  if(b.balcony)prism(b.footprint,b.balcony.z);
   ox=o0;oy=o1;b.sil={p,box:[x0-1,y0-1,x1+1,y1+1],polys};return b.sil}
 // The outline of the union of overlapping polygons (filled nonzero), as closed loops with no overlaps, so that an
 // even-odd fill of the loops is the union. Vertical slabs between every vertex and crossing; in each slab the covered
@@ -871,7 +889,7 @@ function treeOcc(o){const o0=ox,o1=oy;ox=BOX;oy=BOY;const[x,y]=P(o.gx,o.gy);ox=o
 let occFor='';
 (function prepPoints(){for(const b of blds)silhouette(b);ox=BOX;oy=BOY;
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
-  for(const b of blds){b.box=boxOf(b.pts,(b.htop||b.hpx)+40,8)}
+  for(const b of blds){b.box=boxOf(b.footprint,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
     if(o.kind==='tree'){const hp=Math.max(9,o.h*2),rp=Math.max(3,o.r*1.9)+4;fp=[[o.gx,o.gy]];zmax=hp+4;pad=rp+1;smp=[[o.gx,o.gy,0]];
       o.occ=treeOcc(o)}
@@ -941,7 +959,7 @@ function clipPoint(o,tg){const ips=[];for(const b of o.bl){const q=silhouette(b)
   const X0=Math.floor(BT[0]*o.box[0]+BT[4]),Y0=Math.floor(BT[3]*o.box[1]+BT[5]),X1=Math.ceil(BT[0]*o.box[2]+BT[4]),Y1=Math.ceil(BT[3]*o.box[3]+BT[5]);if(X1<=X0||Y1<=Y0)return;
   const lit=lampsOn(),cs=[tg.c];if(tg.de||lit&&(o.kind==='lamp'||o.kind==='string'))cs.push(tg.e);if(tg.dg||lit&&o.kind==='lamp')cs.push(tg.g);
   for(const c of cs){c.save();c.setTransform(1,0,0,1,0,0);c.beginPath();c.rect(X0,Y0,X1-X0,Y1-Y0);c.clip();c.setTransform(...BT);for(const ip of ips)c.clip(ip,'evenodd')}
-  LNE=true;try{drawPoint(tg.c,o)}finally{LNE=false;for(const c of cs)c.restore()}}
+  try{drawPoint(tg.c,o)}finally{for(const c of cs)c.restore()}}
 function tileDone(t,ms,tx,ty,inFrame=true){CS.last.push(t.cards||0);if(CS.last.length>20)CS.last.shift();if(BM){if(BM.flush){const T0=performance.now();for(const k of ['c','e','g'])t[k].getImageData(0,0,1,1);ms+=performance.now()-T0} // software canvases draw lazily: count the drawing here
     BM.tiles++;BM.tileMs+=ms;if(bmF)bmF.td=(bmF.td||0)+1;if(bmF&&inFrame){bmF.nt=(bmF.nt||0)+1;bmF.tt=(bmF.tt||0)+ms;(bmF.tl||(bmF.tl=[])).push(+ms.toFixed(1))}}if(DBG)console.log('[dbg] tile',tx,ty,Math.round(ms)+'ms')}
 const newTile=()=>{makeRoom();return{c:takeCanvas(),e:NIL,g:NIL}};
@@ -1386,7 +1404,10 @@ cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.
   if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
 let lensAt=null;const LENS={c:null,e:null,g:null,de:0,dg:0,r:null,vs:0,ver:-1,t:0,S:0};let treePts=null;
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
-function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(!b.hull){ox=BOX;oy=BOY;const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}if(pip(sx,sy,b.hull))return b}return null}
+function buildingHull(b){if(b.hull)return b.hull;const o0=ox,o1=oy;ox=BOX;oy=BOY;
+  const at=(pts,z)=>pts.map(([x,y])=>P(x,y,z)),q=at(b.footprint,0).concat(at(b.pts,b.htop||b.hpx));
+  if(b.balcony)q.push(...at(b.footprint,b.balcony.z));ox=o0;oy=o1;return b.hull=hull(q)}
+function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(pip(sx,sy,buildingHull(b)))return b}return null}
 const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}if(drag)TB=Math.min(TB,2);drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 // (with reduced motion nothing draws unless asked, so the lens asks for one frame each time it moves or goes)
 let lensAsk=0;const lensKick=()=>{if(reduce&&!lensAsk)lensAsk=requestAnimationFrame(ts=>{lensAsk=0;frame(ts)})};
@@ -1698,8 +1719,8 @@ function frame(ts){const F0=performance.now();
   if(S.labels){
     if(!labW){labW=true;
       // a building whose roof is hidden behind a nearer one is not named (the tag would sit on the wrong building); landmarks always are
-      const o0=ox,o1=oy;ox=BOX;oy=BOY;for(const b of blds)if(!b.hull){const z=b.htop||b.hpx;b.hull=hull(b.pts.map(p=>P(p[0],p[1])).concat(b.pts.map(p=>P(p[0],p[1],z))))}
-      for(const b of LAB){if(!b.lt)continue;const q=P(b.cx,b.cy,b.htop||b.hpx);for(let j=b.i+1;j<blds.length;j++)if(pip(q[0],q[1],blds[j].hull)){b.lhid=1;break}}ox=o0;oy=o1;
+      const o0=ox,o1=oy;ox=BOX;oy=BOY;
+      for(const b of LAB){if(!b.lt)continue;const q=P(b.cx,b.cy,b.htop||b.hpx);for(let j=b.i+1;j<blds.length;j++)if(pip(q[0],q[1],buildingHull(blds[j]))){b.lhid=1;break}}ox=o0;oy=o1;
       for(const b of LAB){ctx.font=b.lt>1?LFONT2:LFONT;b.lw=Math.ceil(Math.max(...b.ll.map(t=>ctx.measureText(t).width)))+(b.lt>1?6:8)}ctx.font=LFONT}
     // f: label pixels per model pixel. Far out only the landmarks are named; names, then tenants, then addresses join on the way in.
     const f=VS*kx/LS,maxT=f<.3?0:f<.45?1:f<.95?2:3,put=[],said=new Set(),gap=f<.55?5:3;
@@ -1721,8 +1742,8 @@ function frame(ts){const F0=performance.now();
     for(let k=0;k<6;k++){const ax=right?bx+tw_+1+k:bx-2-k;ctx.fillStyle=SH;ctx.fillRect(ax,by+k,1,11-2*k);if(k<5){ctx.fillStyle=hot?'#fff7e0':C.Paper;ctx.fillRect(ax+(right?-1:1)*0,by+k+1,1,Math.max(0,9-2*k))}}
     ctx.fillStyle=g.n?'#8a3b2b':SH;ctx.fillText(t,bx+4,by+2);signRects.push({id:g.id,name:g.name,x:Math.min(bx,bx-7),y:by,w:tw_+8,h:22+12})}
   // the building picked in the paper: a gold outline and a bobbing marker above it
-  if(hiB){if(!hiB.hull){const o0=ox,o1=oy;ox=BOX;oy=BOY;const z=hiB.htop||hiB.hpx;hiB.hull=hull(hiB.pts.map(p=>P(p[0],p[1])).concat(hiB.pts.map(p=>P(p[0],p[1],z))));ox=o0;oy=o1}
-    const hp=new Path2D();hiB.hull.forEach(([x,y],i)=>{const[qx,qy]=LP([x+ox-BOX,y+oy-BOY]);i?hp.lineTo(qx+.5,qy+.5):hp.moveTo(qx+.5,qy+.5)});hp.closePath();
+  if(hiB){
+    const hp=new Path2D();buildingHull(hiB).forEach(([x,y],i)=>{const[qx,qy]=LP([x+ox-BOX,y+oy-BOY]);i?hp.lineTo(qx+.5,qy+.5):hp.moveTo(qx+.5,qy+.5)});hp.closePath();
     ctx.lineJoin='round';ctx.strokeStyle=SH;ctx.lineWidth=4;ctx.stroke(hp);ctx.strokeStyle='#ffd23f';ctx.lineWidth=2;ctx.stroke(hp);
     const[mx,my]=top(hiB);const bob=reduce?0:Math.round(Math.sin(T*4)*2);const x=Math.round(mx),y=Math.round(my)-14+bob;
     ctx.fillStyle=SH;ctx.fillRect(x-5,y-11,11,9);ctx.fillRect(x-3,y-2,7,2);ctx.fillRect(x-1,y,3,2);ctx.fillStyle='#ffd23f';ctx.fillRect(x-4,y-10,9,7);ctx.fillRect(x-2,y-3,5,2);ctx.fillRect(x,y-1,1,2);ctx.fillStyle=SH;ctx.fillRect(x-1,y-8,3,3)}
@@ -1757,7 +1778,7 @@ function update(scene){
 // Each area's signpost goes where a line from the middle of the model toward that area leaves the model,
 // a little inside the base, nudged off buildings and away from the other signs.
 function placeSigns(list){const G=MAP.GEO;const cx=GX/2,cy=GY/2,out=[];
-  const inB=(x,y)=>blds.some(b=>x>=b.minx-.4&&x<=b.maxx+.4&&y>=b.miny-.4&&y<=b.maxy+.4&&pip(x,y,b.pts));
+  const inB=(x,y)=>blds.some(b=>x>=b.minx-.4&&x<=b.maxx+.4&&y>=b.miny-.4&&y<=b.maxy+.4&&pip(x,y,b.footprint));
   for(const s of list){const tx=(s.lon-G.west)*G.mPerDegLon/M,ty=(G.north-s.lat)*G.mPerDegLat/M;let dx=tx-cx,dy=ty-cy;const Ln=Math.hypot(dx,dy)||1;dx/=Ln;dy/=Ln;
     const pad=2.5;let t=Infinity;if(dx)t=Math.min(t,((dx>0?GX-pad:pad)-cx)/dx);if(dy)t=Math.min(t,((dy>0?GY-pad:pad)-cy)/dy);
     let gx=cx+dx*t,gy=cy+dy*t;for(let k=0;k<20&&inB(gx,gy);k++){gx-=dx*.6;gy-=dy*.6}
@@ -1766,7 +1787,7 @@ function placeSigns(list){const G=MAP.GEO;const cx=GX/2,cy=GY/2,out=[];
 /** Building by OSM id (or landmark key), with its name and centre, for the paper. */
 const building=id=>byId[id]||null;
 /** Building whose footprint holds a grid point, or the nearest one within a tile or two. */
-function buildingAt(gx,gy,maxDist=2.2){let best=null,bd=maxDist;for(const b of blds){if(b.deck||gx<b.minx-bd||gx>b.maxx+bd||gy<b.miny-bd||gy>b.maxy+bd)continue;if(pip(gx,gy,b.pts))return b;let d=Infinity;for(let k=0;k<b.pts.length;k++){const[a0,a1]=b.pts[k],[q0,q1]=b.pts[(k+1)%b.pts.length];const dx=q0-a0,dy=q1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((gx-a0)*dx+(gy-a1)*dy)/L2)):0;d=Math.min(d,Math.hypot(a0+dx*t-gx,a1+dy*t-gy))}if(d<bd){bd=d;best=b}}return best}
+function buildingAt(gx,gy,maxDist=2.2){let best=null,bd=maxDist;for(const b of blds){if(b.deck||gx<b.minx-bd||gx>b.maxx+bd||gy<b.miny-bd||gy>b.maxy+bd)continue;const p=b.footprint;if(pip(gx,gy,p))return b;let d=Infinity;for(let k=0;k<p.length;k++){const[a0,a1]=p[k],[q0,q1]=p[(k+1)%p.length];const dx=q0-a0,dy=q1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((gx-a0)*dx+(gy-a1)*dy)/L2)):0;d=Math.min(d,Math.hypot(a0+dx*t-gx,a1+dy*t-gy))}if(d<bd){bd=d;best=b}}return best}
 /** Glide the camera to a building and hold it there for a while. */
 function lookAt(b){if(!b)return;if(ZG)land();[tgtX,tgtY]=camFor(b);tgtX=clampX(tgtX);tgtY=clampY(tgtY);if(reduce){camX=tgtX;camY=tgtY;requestAnimationFrame(frame)}else glide=true}
 let started=false,glide=false;

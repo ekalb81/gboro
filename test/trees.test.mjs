@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { look, windOn, dayOfYear, loadTrees, SPECIES } from '../public/trees.js';
+import { drawTree, look, windOn, dayOfYear, loadTrees, SPECIES } from '../public/trees.js';
 
 test('day of year follows Greensboro time', () => {
   assert.equal(dayOfYear(new Date('2026-01-01T12:00:00Z')), 1);
@@ -38,6 +38,36 @@ test('trees.json unpacks, and OSM-only trees are planted young', () => {
   assert.equal(t[0].sp, 'willowoak');
   assert.equal(t[0].h, 14);
   assert.ok(t[1].h < 7 && t[1].src === 'osm');
+});
+
+test('crown textures stay on foliage on sparse, flowering, and wind-bent trees', () => {
+  for (const [sp, h, r, seed, doy, lean, texture] of [
+    ['holly', 6.4, 4.9, 0.6919883187656524, 323, [3, 1], '#d8302a'],
+    ['redmaple', 7.7, 5.5, 0.7726628245909524, 323, [0, 0], 'fleck'],
+    ['crape', 4.8, 4.2, 0.05370194048737176, 205, [0, 0], '#e8609a'],
+    ['magnolia', 11.2, 4.7, 0.708529151892435, 150, [0, 0], '#fbf6e8'],
+  ]) {
+    const foliage = [], dots = [];
+    drawTree({}, { sp, h, r, seed }, {
+      P: () => [0, 0], doy, lean, SH: 'shade', HI: 'light',
+      mix: (a, b, t) => t === 0.22 ? 'fleck' : a,
+      surf: (col) => col,
+      line: () => {},
+      fr: (c, x, y, w, h, col) => { if (col === texture) dots.push([x + w / 2, y + h / 2]); },
+      circ: (c, x, y, r) => foliage.push((px, py) => Math.hypot(px - x, py - y) <= r),
+      poly: (c, points) => foliage.push((x, y) => {
+        const sides = points.map(([ax, ay], i) => {
+          const [bx, by] = points[(i + 1) % points.length];
+          return (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+        });
+        return sides.every(n => n >= 0) || sides.every(n => n <= 0);
+      }),
+    });
+    assert.ok(dots.length > 0, `${sp} should have texture`);
+    for (const [x, y] of dots) {
+      assert.ok(foliage.some(contains => contains(x, y)), `${sp} texture floats at ${x}, ${y}`);
+    }
+  }
 });
 
 test('the published model keeps both Gorrell Street trees in their planting areas', () => {

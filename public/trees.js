@@ -117,6 +117,11 @@ const dims = (o) => {
   return { hp, rp };
 };
 
+function inCircle(x, y, cx, cy, r) {
+  const dx = x - cx, dy = y - cy;
+  return dx * dx + dy * dy < r * r;
+}
+
 /**
  * Draw one tree with its base at P(o.gx, o.gy).
  * h: { P, fr, circ, poly, line, mix, surf, SH, HI, doy, lean:[x,y] (model px at the crown top) }.
@@ -166,7 +171,17 @@ export function drawTree(c, o, h) {
       fr(c, x, y - 3, 1, 3, trunkD);
       poly(c, [[x - w, y - 2], [x + w, y - 2], [tp[0], tp[1] - hp]], mix(g, SH, 0.2));
       poly(c, [[x - w + 1, y - 3], [x + 1, y - 3], [tp[0], tp[1] - hp + 1]], surf(mix(g, '#6ab060', 0.25), true));
-      if (lk.berries) for (let k = 0; k < 7; k++) fr(c, Math.round(x + (hash(s, k) - 0.5) * w * 1.4), Math.round(y - 4 - hash(k, s) * hp * 0.7), 1, 1, '#d8302a');
+      if (lk.berries) for (let k = 0; k < 7; k++) {
+        const by = Math.round(y - 4 - hash(k, s) * hp * 0.7);
+        // Keep the whole berry between the triangle edges at both ends of its pixel.
+        const t0 = (y - 2 - by) / (hp - ly - 2), t1 = (y - 3 - by) / (hp - ly - 2);
+        const left = Math.ceil(x - w + Math.max((lx + w) * t0, (lx + w) * t1));
+        const right = Math.floor(x + w + Math.min((lx - w) * t0, (lx - w) * t1) - 1);
+        if (left <= right) {
+          const bx = Math.round(x + (hash(s, k) - 0.5) * w * 1.4);
+          fr(c, Math.max(left, Math.min(right, bx)), by, 1, 1, '#d8302a');
+        }
+      }
       return;
     }
     // magnolia: dense, dark, glossy, low branched
@@ -176,7 +191,11 @@ export function drawTree(c, o, h) {
     circ(c, tp[0] - 1, tp[1] - hp * 0.58, rp * 0.85, surf(g, false));
     circ(c, tp[0] - rp * 0.35, tp[1] - hp * 0.68, rp * 0.4, surf(mix(g, '#8ad05a', 0.3), true));
     for (let k = 0; k < 6; k++) fr(c, Math.round(tp[0] + (hash(s, k) - 0.5) * rp * 1.4), Math.round(tp[1] - hp * 0.55 + (hash(k, s) - 0.5) * rp), 1, 1, mix(g, HI, 0.45));
-    if (lk.bloomAmt > 0) for (let k = 0; k < Math.round(8 * lk.bloomAmt); k++) fr(c, Math.round(tp[0] + (hash(s, k + 9) - 0.5) * rp * 1.5), Math.round(tp[1] - hp * 0.55 + (hash(k + 9, s) - 0.5) * rp * 1.2), 2, 2, lk.bloom);
+    if (lk.bloomAmt > 0) for (let k = 0; k < Math.round(8 * lk.bloomAmt); k++) {
+      const bx = Math.round(tp[0] + (hash(s, k + 9) - 0.5) * rp * 1.5);
+      const by = Math.round(tp[1] - hp * 0.55 + (hash(k + 9, s) - 0.5) * rp * 1.2);
+      if (inCircle(bx + 1, by + 1, tp[0], tp[1] - hp * 0.55, rp)) fr(c, bx, by, 2, 2, lk.bloom);
+    }
     return;
   }
 
@@ -258,32 +277,37 @@ export function drawTree(c, o, h) {
       const a = hash(s * 13 + k, 2.7) * 7, d = Math.sqrt(hash(k + 0.5, s * 5)) * 0.6;
       clumps.push({ cx: ccx + Math.cos(a) * d * rx, cy: ccy + Math.sin(a) * d * ry, r: Math.max(2, r0 * (0.42 + hash(k, 4.4) * 0.2) * thin), u: 0.45 + hash(k * 1.7, s * 9) * 0.55, alt: hash(k, s * 11) < 0.4 });
     }
-    clumps.sort((a, b) => a.cy - b.cy);
+    const visible = clumps.filter(q => q.u <= lk.leaf).sort((a, b) => a.cy - b.cy);
     // dark underside first, then the lit clumps, then highlights toward the sun (upper left)
-    if (lk.leaf > 0.55) circ(c, ccx + 1, ccy + 1, Math.min(rx, ry) * 0.92 * Math.sqrt(lk.leaf), shade);
-    for (const q of clumps) {
-      if (q.u > lk.leaf) continue;
+    const baseR = lk.leaf > 0.55 ? r0 * 0.92 * Math.sqrt(lk.leaf) : 0;
+    if (baseR) circ(c, ccx + 1, ccy + 1, baseR, shade);
+    for (const q of visible) {
       circ(c, q.cx + 0.5, q.cy + 0.8, q.r, shade);
     }
-    for (const q of clumps) {
-      if (q.u > lk.leaf) continue;
+    for (const q of visible) {
       circ(c, q.cx - 0.5, q.cy - 0.5, q.r * 0.82, surf(q.alt ? lk.col2 : lk.col, false));
     }
-    for (const q of clumps) {
-      if (q.u > lk.leaf || q.cx > ccx + rx * 0.2 || q.cy > ccy) continue;
+    for (const q of visible) {
+      if (q.cx > ccx + rx * 0.2 || q.cy > ccy) continue;
       circ(c, q.cx - q.r * 0.35, q.cy - q.r * 0.4, q.r * 0.38, surf(mix(q.alt ? lk.col2 : lk.col, '#fff2b0', 0.32), true));
     }
+    const onFoliage = (x, y) => inCircle(x, y, ccx + 1, ccy + 1, baseR) ||
+      visible.some(q => inCircle(x, y, q.cx + 0.5, q.cy + 0.8, q.r) ||
+        inCircle(x, y, q.cx - 0.5, q.cy - 0.5, q.r * 0.82));
     // leaf texture: a few darker flecks in the lit clumps
     for (let k = 0; k < Math.round(rx * ry * 0.12 * lk.leaf); k++) {
       const a = hash(s * 5 + k, 8.1) * 7, d = Math.sqrt(hash(k, s * 6)) * 0.7;
-      fr(c, Math.round(ccx + Math.cos(a) * d * rx), Math.round(ccy + Math.sin(a) * d * ry), 1, 1, mix(k % 2 ? lk.col : lk.col2, SH, 0.22));
+      const tx = Math.round(ccx + Math.cos(a) * d * rx), ty = Math.round(ccy + Math.sin(a) * d * ry);
+      if (onFoliage(tx + 0.5, ty + 0.5)) fr(c, tx, ty, 1, 1, mix(k % 2 ? lk.col : lk.col2, SH, 0.22));
     }
     // summer and spring flowers among the leaves (dogwood, crape myrtle, tulip poplar)
     if (lk.bloomAmt > 0 && !lk.bloomBare) {
       const n = Math.round(rx * ry * 0.3 * lk.bloomAmt);
       for (let k = 0; k < n; k++) {
         const a = hash(s * 3 + k, 5.5) * 7, d = Math.sqrt(hash(k, s * 2)) * 0.85;
-        fr(c, Math.round(ccx + Math.cos(a) * d * rx - 1), Math.round(ccy + Math.sin(a) * d * ry - 1), 2, shape === 'tulip' ? 1 : 2, k % 4 ? lk.bloom : mix(lk.bloom, HI, 0.35));
+        const bx = Math.round(ccx + Math.cos(a) * d * rx - 1), by = Math.round(ccy + Math.sin(a) * d * ry - 1);
+        const bh = shape === 'tulip' ? 1 : 2;
+        if (onFoliage(bx + 1, by + bh / 2)) fr(c, bx, by, 2, bh, k % 4 ? lk.bloom : mix(lk.bloom, HI, 0.35));
       }
     }
   }
