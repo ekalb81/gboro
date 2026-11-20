@@ -27,7 +27,7 @@ const tile = (name, bg, pinned = false) => el('span', { className: 'tile', style
 const ext = (href, text) => el('a', { href, target: '_blank', rel: 'noopener noreferrer', textContent: text, onclick: (e) => e.stopPropagation() });
 
 async function loadJSON(url, fallback = null) {
-  try { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return await r.json(); } catch { return fallback; }
+  try { const r = await fetch(url, { cache: 'no-cache' }); if (!r.ok) throw new Error(r.status); return await r.json(); } catch { return fallback; }
 }
 
 // ---------- time ----------
@@ -496,15 +496,16 @@ async function refreshItems() {
   const [data, civic] = await Promise.all([loadJSON('data/items.json', { items: [], digests: 0, generatedAt: null }), loadCivic()]);
   const next = [...(data.items || []), ...(civic.items || [])];
   const content = JSON.stringify(next);
-  if (itemContent !== content) {
+  const changed = itemContent !== content;
+  if (changed) {
     items = next.sort(byStart);
     itemContent = content;
     itemVersion++;
-    placeItems();
   }
   digests = data.digests || 0;
   generatedAt = data.generatedAt || civic.generatedAt;
   council = councilState(items);
+  return changed;
 }
 async function refreshWeather() {
   weather = Q.get('weather') ? previewWeather(Q.get('weather')) : await loadJSON('data/weather.json', null);
@@ -518,7 +519,9 @@ async function refreshRoads() {
 }
 
 // ---------- boot ----------
-const [map, info, eatsData, trees, home, details, roofs, yards] = await Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null), loadJSON('model/yards.json', null)]);
+const geometry = Promise.all([loadJSON('model/downtown.json'), loadJSON('data/map.json', { districts: [] }), loadJSON('data/eats.json', null), loadJSON('model/trees.json', null), loadJSON('model/house.json', null), loadJSON('model/details.json', null), loadJSON('model/roofs.json', null), loadJSON('model/yards.json', null)]);
+const readings = Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
+const [map, info, eatsData, trees, home, details, roofs, yards] = await geometry;
 mapInfo = { ...map, districts: info.districts };
 eats = eatsData;
 placer = makePlacer(map, eats?.places || []);
@@ -561,7 +564,8 @@ const dropHint = () => $('hint').classList.add('gone');
 $('village').addEventListener('pointerdown', dropHint, { once: true });
 setTimeout(dropHint, 12e3);
 placeOnModel();
-await Promise.all([refreshItems(), refreshWeather(), refreshRoads()]);
+await readings;
+placeItems();
 // Average daily traffic at NCDOT's count stations (scripts/fetch-traffic-volumes.mjs). Without the file the model
 // uses a figure typical of each street's class.
 loadJSON('data/traffic-volumes.json').then((v) => {
@@ -572,7 +576,7 @@ loadJSON('data/traffic-volumes.json').then((v) => {
 refreshScene();
 renderPaper();
 
-setInterval(async () => { await refreshItems(); refreshScene(); renderPaper(); }, 60e3);
+setInterval(async () => { if (await refreshItems()) placeItems(); refreshScene(); renderPaper(); }, 60e3);
 setInterval(async () => { await refreshWeather(); refreshScene(); }, 5 * 60e3);
 setInterval(async () => { await refreshRoads(); refreshScene(); renderPaper(); }, 5 * 60e3);
 setInterval(() => { council = councilState(items); refreshScene(); renderAlerts(); }, 30e3); // opening hours and council state turn over by the clock

@@ -27,7 +27,7 @@ const hash = (s) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c
 
 export async function loadEats() {
   try {
-    const r = await fetch('data/eats.json', { cache: 'no-store' });
+    const r = await fetch('data/eats.json', { cache: 'no-cache' });
     if (!r.ok) throw new Error(r.status);
     data = await r.json();
   } catch {
