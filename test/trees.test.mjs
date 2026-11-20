@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { drawTree, look, windOn, dayOfYear, loadTrees, SPECIES } from '../public/trees.js';
+import { drawTree, look, windOn, dayOfYear, loadTrees, treeOutlineParts, SPECIES } from '../public/trees.js';
 
 test('day of year follows Greensboro time', () => {
   assert.equal(dayOfYear(new Date('2026-01-01T12:00:00Z')), 1);
@@ -68,6 +68,25 @@ test('crown textures stay on foliage on sparse, flowering, and wind-bent trees',
       assert.ok(foliage.some(contains => contains(x, y)), `${sp} texture floats at ${x}, ${y}`);
     }
   }
+});
+
+test('tree occlusion keeps winter branches and wind-bent leaf clumps, without haze or fallen leaves', () => {
+  const tree = { sp: 'redmaple', h: 14, r: 6, seed: 0.5 };
+  const winter = treeOutlineParts(tree, [0, 0], 15);
+  assert.ok(winter.some(([kind, points]) => kind === 'p' && points.some(([x, y]) => x < -4 && y < -18)));
+  assert.ok(winter.every(([kind]) => kind === 'p'), 'winter haze must not hide objects in the crown');
+
+  const crowns = (lean, doy) => treeOutlineParts(tree, lean, doy).filter(([kind]) => kind === 'e');
+  const autumn = crowns([5, -2], 326);
+  assert.ok(autumn.length > 0 && autumn.length < crowns([5, -2], 200).length);
+  const [ , stillX, stillY] = crowns([0, 0], 326)[0];
+  const [ , bentX, bentY] = autumn[0];
+  assert.ok(bentX > stillX + 2 && bentY < stillY - 1);
+
+  const dropsLeaves = look(tree.sp, 326, tree.seed).litter > 0.5;
+  const groundRects = treeOutlineParts(tree, [5, -2], 326).filter(([kind, , y]) => kind === 'r' && y > -5);
+  assert.ok(dropsLeaves);
+  assert.deepEqual(groundRects, []);
 });
 
 test('the published model keeps both Gorrell Street trees in their planting areas', () => {
