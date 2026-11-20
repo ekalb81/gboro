@@ -98,13 +98,13 @@ export function look(spKey, doy, seed = 0.5) {
 /** Unpack trees.json into tree objects the renderer can sort and draw. */
 export function loadTrees(data) {
   if (!data || !data.T) return [];
-  return data.T.map(([gx, gy, h, r, sp, src]) => {
+  return data.T.map(([gx, gy, h, r, sp, src, pit]) => {
     const key = data.SP[sp];
     const seed = hash(gx * 3.1, gy * 7.7);
     // OSM-only trees have no measured size: plant them as young trees of their kind
     const sm = SPECIES[key]?.shape;
     if (src === 1) { h = sm === 'small' || sm === 'crape' ? 4 + seed * 2 : 6 + seed * 3; r = h * 0.35; }
-    return { kind: 'tree', gx, gy, h: Math.min(h, 32), r: Math.min(r, 9), sp: key, seed, src: data.SRC[src] };
+    return { kind: 'tree', gx, gy, h: Math.min(h, 32), r: Math.min(r, 9), sp: key, seed, src: data.SRC[src], pit };
   });
 }
 

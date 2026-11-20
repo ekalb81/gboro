@@ -17,7 +17,7 @@
 const WATER = '#49b4e4', WATER_HI = '#9fdcf2', COPING = '#ece6da';
 const SURF = {
   court: '#3f78b4', turf: '#58b34c', play: '#c9a070', sand: '#ecdba6', dogpark: '#b9a27a', platform: '#d7d1c4',
-  brick: '#bb6a4e', pavers: '#cdbfa9', seating: '#cdbfa9',
+  brick: '#bb6a4e', pavers: '#cdbfa9', seating: '#cdbfa9', lawn: '#5cb648',
 };
 const pairs = (a) => { const r = []; for (let i = 0; i < a.length; i += 2) r.push([a[i], a[i + 1]]); return r; };
 const bbOf = (q, m = 1) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of q) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return [x0 - m, y0 - m, x1 + m, y1 + m]; };
@@ -26,13 +26,17 @@ const mid = (q) => [q.reduce((a, p) => a + p[0], 0) / q.length, q.reduce((a, p) 
 
 export function makeDetails(DET, env) {
   const { settle, P, M, mix, gcol, hash, pip, fr, poly, line, circ, eq, mk, inTG, lampsOn, snowy, HI, SH } = env;
-  const none = { under() {}, over() {}, low() {}, points: [], drawProp() {}, roof() {}, wet: () => false, has: false };
+  const none = { under() {}, over() {}, low() {}, points: [], drawProp() {}, roof() {}, balconies() {}, balconyAreas: () => [], wet: () => false, has: false };
   if (!DET) return none;
   const m = (v) => v / M; // metres to grid units
   const areas = (DET.A || []).map((a) => { const q = pairs(a.p); return { ...a, q, bb: bbOf(q), c: mid(q) }; });
   const lines = (DET.L || []).map((l) => { const q = pairs(l.p); return { ...l, q, bb: bbOf(q) }; });
-  const ground = areas.filter((a) => !a.b), roofs = new Map();
-  for (const a of areas) if (a.b) { if (!roofs.has(a.b)) roofs.set(a.b, []); roofs.get(a.b).push(a); }
+  const ground = areas.filter((a) => !a.b), roofs = new Map(), terraces = new Map();
+  for (const a of areas) if (a.b) {
+    const byBuilding = a.k === 'balcony' ? terraces : roofs;
+    if (!byBuilding.has(a.b)) byBuilding.set(a.b, []);
+    byBuilding.get(a.b).push(a);
+  }
   const wetAreas = ground.filter((a) => a.k === 'pool' || a.k === 'fountain');
   const diamonds = (DET.D || []).map((d) => { const q = pairs(d.p); return { ...d, q, bb: bbOf(q) }; });
 
@@ -75,7 +79,7 @@ export function makeDetails(DET, env) {
   function surface(c, a) {
     const rubber = a.k === 'play' && /tartan|rubber|artificial/.test(a.s || '');
     const col = rubber ? '#9cbde4' : SURF[a.k];   // poured rubber is a pale periwinkle, well away from the water's blue
-    trace(c, a.q); c.fillStyle = gcol(col, a.k === 'turf' ? 'grass' : 'walk'); c.fill();
+    trace(c, a.q); c.fillStyle = gcol(col, a.k === 'turf' || a.k === 'lawn' ? 'grass' : 'walk'); c.fill();
     // a big rubber playground has turf crescents and low mounds in it (LeBauer Park's is built that way), which is
     // also what tells it apart from a pond at a glance
     const w = a.bb[2] - a.bb[0], h = a.bb[3] - a.bb[1];
@@ -149,7 +153,7 @@ export function makeDetails(DET, env) {
   const LOW = { bench: 1, table: 1, hydrant: 1, bin: 1, bike: 1, postbox: 1, bbq: 1, bookcase: 1, gate: 1 };
   // a hydrant, bin, bike rack or bus stop mapped at the real kerb can fall in the model's wider carriageway: it steps
   // out onto the sidewalk (env.settle), or is left out where there is no room for it
-  const pts = (DET.P || []).map(([k, gx, gy, x]) => { const s = settle && k !== 'gate' ? settle(gx, gy, 0.2, 0.7) : [gx, gy]; return s && { k, gx: s[0], gy: s[1], x }; }).filter(Boolean);
+  const pts = (DET.P || []).map(([k, gx, gy, x]) => { const s = settle && k !== 'gate' && k !== 'tower' ? settle(gx, gy, 0.2, 0.7) : [gx, gy]; return s && { k, gx: s[0], gy: s[1], x }; }).filter(Boolean);
   const lowPts = pts.filter((p) => LOW[p.k]);
   function low(c) {
     for (const o of lowPts) {
@@ -170,7 +174,7 @@ export function makeDetails(DET, env) {
   }
 
   // ---- tall things: static points among the buildings ----
-  const TALL = { art: [9, 1.2], memorial: [10, 1.5], busstop: [7, 0.8], play: [8, 2], fountain: [8, 1.6], tower: [94, 17] };
+  const TALL = { art: [9, 1.2], memorial: [10, 1.5], busstop: [7, 0.8], play: [8, 2], fountain: [8, 1.6], tower: [51 * env.ZPM, 14.5] };
   const points = pts.filter((p) => TALL[p.k]).map((p) => ({ kind: 'prop', what: p.k, gx: p.gx, gy: p.gy, x: p.x, ph: TALL[p.k][0], pr: TALL[p.k][1] }));
   // a jet for each fountain basin
   for (const a of wetAreas) if (a.k === 'fountain') points.push({ kind: 'prop', what: 'jet', gx: a.c[0], gy: a.c[1], ph: 8, pr: 0.8 });
@@ -186,19 +190,70 @@ export function makeDetails(DET, env) {
         if (o.what === 'fountain') { poly(c, [P(o.gx - 0.2, o.gy), P(o.gx, o.gy + 0.2), P(o.gx + 0.2, o.gy), P(o.gx, o.gy - 0.2)], WATER, gcol(COPING, 'walk')); }
         if (!snowy()) { fr(c, x, y - 7, 1, 7, '#e9f6fc'); fr(c, x - 1, y - 5, 3, 1, '#e9f6fc'); fr(c, x - 2, y - 2, 5, 1, WATER_HI); }
         break;
-      case 'tower': {            // a spheroid water tank on a fluted column
-        const top = 90, r = 30;
-        poly(c, [[x - 5, y], [x + 5, y], [x + 3, y - top + 26], [x - 3, y - top + 26]], '#e6e3dc'); poly(c, [[x, y], [x + 5, y], [x + 3, y - top + 26], [x, y - top + 26]], '#cfccc4');
-        c.fillStyle = '#f1efe9'; c.beginPath(); c.ellipse(x, y - top + 18, r, 18, 0, 0, 7); c.fill();
-        c.fillStyle = '#d6d3cb'; c.beginPath(); c.ellipse(x + 3, y - top + 22, r - 4, 13, 0, 0.1, 2.6); c.fill();
-        c.fillStyle = HI; c.beginPath(); c.ellipse(x - 8, y - top + 9, 11, 5, -0.3, 0, 7); c.fill();
-        fr(c, x, y - top - 3, 1, 4, '#8a8f99'); break;
+      case 'tower': {
+        // Bennett College tank: Guilford 2026 orthophoto, NOAA lidar tile 10786404 and the 2024 State of Downtown cover.
+        const at = (a, r, z) => P(o.gx + r * Math.cos(a) / M, o.gy + r * Math.sin(a) / M, z * env.ZPM);
+        // shortcut: column spacing is estimated from street photos, refine if a plan becomes available.
+        const legs = Array.from({ length: 16 }, (_, i) => Math.PI * (i + 0.5) / 8 - Math.PI / 4);
+        const beam = ([ax, ay], [bx, by], w, col) => poly(c, [[ax - w / 2, ay], [ax + w / 2, ay], [bx + w / 2, by], [bx - w / 2, by]], col);
+        const ring = (r, z, n) => Array.from({ length: n + 1 }, (_, i) => at(Math.PI * (i / 12 - 0.25), r, z));
+        for (const a of legs.slice(8)) beam(at(a, 13.2, 0), at(a, 13.2, 36), 3.2, '#bcbeb8');
+        const core = ring(7, 0, 12), coreTop = ring(7, 35, 12);
+        poly(c, core.concat(coreTop.slice().reverse()), '#e4e2d9');
+        for (let i = 0; i < 12; i++) poly(c, [core[i], core[i + 1], coreTop[i + 1], coreTop[i]], mix('#d7d6ce', '#f3efe6', i / 12));
+        for (const a of legs.slice(0, 8)) {
+          beam(at(a, 13.2, 0), at(a, 13.2, 36), 3.2, '#d7d8d0');
+          beam(at(a, 13.2, 0), at(a, 13.2, 36), 1.1, '#edede5');
+        }
+        const profile = [[7, 32], [13.5, 35.5], [14.5, 37], [13.6, 37.4], [13.4, 41], [12, 44], [9, 46.7], [5.5, 48.3], [1.5, 49]];
+        const colors = ['#c0c1ba', '#d7d7cf', '#eeeee5', '#e3e4dc', '#e9ebe3', '#eeeee7', '#f1f1eb', '#f5f5ed'];
+        for (let i = 1; i < profile.length; i++) {
+          const upper = ring(...profile[i], 24), lower = ring(...profile[i - 1], 12), col = colors[i - 1];
+          poly(c, upper, col);
+          poly(c, upper.slice(0, 13).concat(lower.reverse()), col);
+        }
+        c.save(); c.font = '7px Georgia, serif'; c.textAlign = 'center'; c.fillStyle = '#397a9b';
+        [...'BENNETT'].forEach((letter, i) => {
+          const a = (3 - i) * 0.22, [lx, ly] = at(Math.PI / 4 + a, 13.7, 38);
+          c.save(); c.transform(1, Math.tan(a) / 2, 0, 1, lx, ly); c.fillText(letter, 0, 0); c.restore();
+        });
+        c.restore();
+        beam(P(o.gx, o.gy, 49 * env.ZPM), P(o.gx, o.gy, o.ph), 2.4, '#a0a49f');
+        break;
       }
+    }
+  }
+
+  // The aerial establishes the deck plan. Deck height follows the top apartment floor.
+  const balconyAreas = (b) => (terraces.get(b.id) || []).map(({ q }) => ({ q, z: b.hpx * (1 - 1 / b.lv) }));
+  function balconies(c, b, behind) {
+    for (const { q, z } of balconyAreas(b)) {
+      const [start, corner, end, recess] = q;
+      if ((corner[0] + corner[1] < recess[0] + recess[1]) !== behind) continue;
+      env.drawPrism(c, q, 0, z, b.wall, '#baaa8d');
+      const rail = z + 1.05 * env.ZPM, at = (p, h) => P(p[0], p[1], h);
+      const metal = mix('#3f4246', HI, 0.15);
+      for (const [a, p] of [[start, corner], [corner, end]]) {
+        const dx = p[0] - a[0], dy = p[1] - a[1];
+        const pos = (u, h) => P(a[0] + dx * u, a[1] + dy * u, h);
+        if (dy > dx) {
+          const floor = b.hpx / b.lv;
+          for (let i = 0; i < b.lv - 1; i++) {
+            const base = (i + .3) * floor, top = base + .43 * floor;
+            poly(c, [pos(.34, base), pos(.66, base), pos(.66, top), pos(.34, top)], '#3c5668', mix(b.wall, HI, .55));
+          }
+        }
+        line(c, at(a, rail), at(p, rail), metal, .85);
+        const n = Math.ceil(Math.hypot(dx, dy) * M / .9);
+        for (let i = 0; i < n; i++) line(c, pos(i / n, z), pos(i / n, rail), metal, .65);
+      }
+      line(c, at(end, z), at(end, rail), metal, .65);
     }
   }
 
   // ---- rooftop pools and courts ----
   function roof(c, b) {
+    balconies(c, b, false);
     const list = roofs.get(b.id); if (!list) return;
     for (const a of list) {
       let z = b.hpx; if (b.tiers) for (const t of b.tiers) if (pip(a.c[0], a.c[1], t.pts)) z = Math.max(z, Math.min(250, t.h * env.ZPM));
@@ -211,5 +266,5 @@ export function makeDetails(DET, env) {
     for (const a of wetAreas) if (a.k === 'pool' && inTG(a.bb)) eq(a.q.map((p) => P(p[0], p[1])), '#8fe6ff', 0.55);
   }
   const wet = (gx, gy) => wetAreas.some((a) => gx > a.bb[0] && gx < a.bb[2] && gy > a.bb[1] && gy < a.bb[3] && pip(gx, gy, a.q));
-  return { under, over, low(c) { low(c); glow(); }, all: pts, points, drawProp, roof, wet, has: true, roofIds: roofs };
+  return { under, over, low(c) { low(c); glow(); }, all: pts, points, drawProp, roof, balconies, balconyAreas, wet, has: true, roofIds: roofs };
 }

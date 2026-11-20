@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { look, windOn, dayOfYear, loadTrees, SPECIES } from '../public/trees.js';
 
 test('day of year follows Greensboro time', () => {
@@ -37,4 +38,12 @@ test('trees.json unpacks, and OSM-only trees are planted young', () => {
   assert.equal(t[0].sp, 'willowoak');
   assert.equal(t[0].h, 14);
   assert.ok(t[1].h < 7 && t[1].src === 'osm');
+});
+
+test('the published model keeps both Gorrell Street trees in their planting areas', () => {
+  const data = JSON.parse(readFileSync(new URL('../public/model/trees.json', import.meta.url)));
+  const roots = loadTrees(data);
+  assert.deepEqual(roots.find(t => t.gx === 88.49 && t.gy === 268.32)?.pit, [1.6, 1.4]);
+  assert.deepEqual(roots.find(t => t.gx === 89.95 && t.gy === 270.07)?.pit, [1.6, 1.4]);
+  assert.ok(!roots.some(t => t.gx === 94.5 && t.gy === 262.83));
 });

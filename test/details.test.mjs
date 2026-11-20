@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { makeDetails } from '../public/details.js';
 
 const load = async (f) => JSON.parse(await readFile(new URL(`../public/model/${f}`, import.meta.url), 'utf8'));
 const map = await load('downtown.json');
@@ -34,4 +35,37 @@ test('the ballpark has its diamond and the model its brick paving', () => {
 test('rooftop details name a building that exists', () => {
   const ids = new Set(map.B.map((b) => b.id));
   for (const a of det.A) if (a.b) assert.ok(ids.has(a.b), `${a.k} on unknown building ${a.b}`);
+});
+
+test('CityView decks fill the roof setbacks and render at the top-floor level', () => {
+  const slabs = [], rails = [], windows = [];
+  const details = makeDetails(det, {
+    M: map.M, ZPM: 2, P: (x, y, z) => [x, y, z], mix: (color) => color,
+    drawPrism: (_canvas, q, base, height) => slabs.push({ q, base, height }),
+    line: (_canvas, a, b) => rails.push([a, b]),
+    poly: (_canvas, q) => windows.push(q),
+  });
+  for (const id of [414248814, 598164879]) {
+    const { p } = map.B.find((b) => b.id === id);
+    const footprint = p.filter((_, i) => i % 2 === 0).map((x, i) => [x, p[2 * i + 1]]);
+    const building = { id, hpx: 28, lv: 4 };
+    slabs.length = rails.length = windows.length = 0;
+    details.balconies(null, building, true);
+    assert.ok(slabs.length > 0 && slabs.length < 4);
+    details.roof(null, building);
+    assert.equal(slabs.length, 4);
+    for (const { q, base, height } of slabs) {
+      const [a, corner, b, recess] = q;
+      const i = footprint.findIndex(([x, y]) => x === a[0] && y === a[1]);
+      assert.ok(i >= 0);
+      assert.deepEqual(recess, footprint[(i + 1) % footprint.length]);
+      assert.deepEqual(b, footprint[(i + 2) % footprint.length]);
+      assert.notDeepEqual(corner, recess);
+      assert.equal(base, 0);
+      assert.equal(height, 21);
+    }
+    assert.ok(rails.every(([a, b]) => a[2] >= 21 && b[2] >= 21));
+    assert.equal(rails.filter(([a, b]) => a[2] > 21 && b[2] > 21).length, 8);
+    assert.ok(windows.length > 0 && windows.flat().every(([, , z]) => z > 0 && z < 21));
+  }
 });

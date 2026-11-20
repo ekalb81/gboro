@@ -83,7 +83,7 @@ def name_buildings(B,raw,g,overrides=None):
         for p in sorted((p for p in inside if p[2] is not None),key=lambda p:(p[2],p[3].lower())):
             if p[3].lower() in seen: continue
             seen.add(p[3].lower());ten.append(p[3])
-        ad=short_address(t.get('addr:housenumber'),t.get('addr:street'))
+        ad=o.get('address') or short_address(t.get('addr:housenumber'),t.get('addr:street'))
         if not ad:
             # every point inside agrees on the street: take the lowest number as the building's address
             inn=sorted(set(p[4] for p in inside if p[4]))
