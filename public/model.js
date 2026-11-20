@@ -13,7 +13,7 @@
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
 import { clockAt, nowDoing, dayRand } from './homeday.js';
 import { mowRoute } from './house.js';
-import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, treeOutlineParts, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
+import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
 import { makeBalconyPlans, makeDetails } from './details.js';
 
 export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, yards: YARDS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
@@ -752,7 +752,11 @@ const pts0=[];
 // "Where We Met" (Janet Echelman, 2016) hangs over LeBauer Park's Great Lawn, the lawn in the park's north-west, not over
 // the playground: the spot is the lawn's middle measured on the aerial, as offsets from the park's own outline
 const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return{cx:x0+(x1-x0)*.295,cy:y0+(y1-y0)*.175,rx:22/M,ry:14/M}})();
-function drawTree(c,o){drawTreeSp(c,o,{P,fr,circ,poly,line:solidLine,mix,surf,SH,HI,doy:DOY,lean:WIND.lean})}
+function drawTree(c,o){
+  const cap=c.lineCap;c.lineCap='butt';
+  drawTreeSp(c,o,{P,fr,circ,poly,line:solidLine,mix,surf,SH,HI,doy:DOY,lean:WIND.lean});
+  c.lineCap=cap;
+}
 const FLAGS=loadFlags(TREES);
 // A post-top street lamp, as on downtown's sidewalks: a footed post, a pale globe under a dark cap. Lit, the globe
 // glows and throws a soft pool on the pavement.
@@ -868,41 +872,99 @@ const scr=[mk(64,64),mk(64,64),mk(64,64)].map(c=>c.getContext('2d'));const scrIn
 // cuts: [{p: Path2D, box}] in model pixels, static origin. Only the cuts whose box meets the card are filled, and the
 // card's lit-window and glow layers are skipped while nothing has been painted on them (most people and cars by day).
 function growScr(w_,h_){if(scr[0].canvas.width<w_||scr[0].canvas.height<h_){for(const c of scr){c.canvas.width=Math.max(c.canvas.width,w_);c.canvas.height=Math.max(c.canvas.height,h_)}scrInk.fill(0)}}
-function drawCut(box,fn,cuts,dst){
+function drawCut(box,fn,cuts,dst,lens=null){
   const X0=Math.floor(BT[0]*box[0]+BT[4]),Y0=Math.floor(BT[3]*box[1]+BT[5]),X1=Math.ceil(BT[0]*box[2]+BT[4]),Y1=Math.ceil(BT[3]*box[3]+BT[5]);const w_=X1-X0,h_=Y1-Y0;if(w_<=0||h_<=0)return;
   growScr(w_,h_);
   const t0=TGT,b0=BT;BT=[b0[0],0,0,b0[3],b0[4]-X0,b0[5]-Y0];
   for(let i=0;i<3;i++){const c=scr[i];c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='source-over';c.globalAlpha=1;if(!i)c.clearRect(0,0,w_,h_);else if(scrInk[i]){c.clearRect(0,0,c.canvas.width,c.canvas.height);scrInk[i]=0}c.setTransform(...BT)}
   const T_={c:scr[0],e:scr[1],g:scr[2],de:0,dg:0};TGT=T_;fn();scrInk[1]=T_.de;scrInk[2]=T_.dg;
   const k=1/BT[0],pd=2*k+1,ax=-BT[4]*k-(ox-BOX),ay=-BT[5]*k-(oy-BOY),cb=[ax-pd,ay-pd,ax+w_*k+pd,ay+h_*k+pd];
-  for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb))c.fill(q.p);c.restore()}
+  for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const c=scr[i];c.save();c.globalCompositeOperation='destination-out';c.setTransform(...BT);c.translate(ox-BOX,oy-BOY);c.fillStyle='#000';for(const q of cuts)if(hitBox(q.box,cb)){
+      if(q.tree&&lens&&hitBox(cb,lens.box)){
+        c.save();c.clip(lens.outside,'evenodd');c.drawImage(q.mask,q.mx/VS,q.my/VS,q.mask.width/VS,q.mask.height/VS);c.restore();
+        c.save();c.clip(lens.inside);c.fill(q.trunk);c.restore();
+      }else if(q.tree)c.drawImage(q.mask,q.mx/VS,q.my/VS,q.mask.width/VS,q.mask.height/VS);else c.fill(q.p);
+    }c.restore()}
   BT=b0;TGT=t0;
   for(const d of [t0.de?dst.e:null,t0.dg?dst.g:null]){if(!d)continue;d.save();d.setTransform(1,0,0,1,0,0);d.globalCompositeOperation='destination-out';d.drawImage(scr[0].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}
-  if(scrInk[1])t0.de=1;if(scrInk[2])t0.dg=1;
+  if(scrInk[1]){t0.de=1;if(t0.ink)t0.wide=1}if(scrInk[2])t0.dg=1;
   const ds=[dst.c,dst.e,dst.g];for(let i=0;i<3;i++){if(i&&!scrInk[i])continue;const d=ds[i];d.save();d.setTransform(1,0,0,1,0,0);d.drawImage(scr[i].canvas,0,0,w_,h_,X0,Y0,w_,h_);d.restore()}}
 
 // screen boxes (model pixels, static origin) for culling, the samples that decide what stands in front of each
 // static point, and the outlines with which trees, lamps and parked cars hide whatever passes behind them
 // a tree's outline as it is drawn now (its lean in the wind, how much crown it has this time of year)
-function treeOcc(o){const o0=ox,o1=oy;ox=BOX;oy=BOY;const[x,y]=P(o.gx,o.gy);ox=o0;oy=o1;const q=new Path2D();q.addPath(treeOutline(o,WIND.lean,DOY),new DOMMatrix([1,0,0,1,Math.round(x),Math.round(y)]));
-  o.occParts=treeOutlineParts(o,WIND.lean,DOY).map(pt=>[pt,Math.round(x),Math.round(y)]);return q}
-let occFor='';
+let occFor='',treeMaskBytes=0;
+// The cache owns raster references; a cut already gathered keeps its raster even if the cache evicts it.
+const treeMasks=new Set(),treeMaskBudget=16*1024*1024;
+function dropTreeMask(q){treeMasks.delete(q);treeMaskBytes-=q.raster.bytes;q.raster=null}
+function treeCut(q){
+  if(q.raster?.season===occFor&&q.raster.scale===VS)return q.raster;
+  if(q.raster)dropTreeMask(q);
+  const [x0,y0,x1,y1]=q.box,mx=Math.floor(x0*VS)-1,my=Math.floor(y0*VS)-1;
+  const w=Math.ceil(x1*VS)+1-mx,h=Math.ceil(y1*VS)+1-my;
+  const mask=mk(w,h),c=mask.getContext('2d',{willReadFrequently:true});
+  c.setTransform(VS,0,0,VS,Math.round(q.x)*VS-mx,Math.round(q.y)*VS-my);
+  c.fill(treeOutline(q.tree,WIND.lean,DOY));
+  const pixels=c.getImageData(0,0,w,h).data,stride=w+1;
+  // Summed occupied pixels give an exact empty-box check without reading the canvas again.
+  const coverage=w*h<=65535?new Uint16Array(stride*(h+1)):new Uint32Array(stride*(h+1));
+  for(let y=0;y<h;y++){let sum=0;for(let x=0;x<w;x++){
+    sum+=+(pixels[(y*w+x)*4+3]>0);
+    coverage[(y+1)*stride+x+1]=coverage[y*stride+x+1]+sum;
+  }}
+  const maskBytes=w*h*4+coverage.byteLength;
+  while(treeMaskBytes+maskBytes>treeMaskBudget&&treeMasks.size)dropTreeMask(treeMasks.values().next().value);
+  q.raster={tree:q.tree,box:q.box,trunk:q.trunk,mask,mx,my,stride,coverage,scale:VS,season:occFor,bytes:maskBytes};
+  treeMasks.add(q);treeMaskBytes+=maskBytes;
+  return q.raster;
+}
+function treeHits(q,box){
+  const {mask,mx,my,stride,coverage}=q;
+  const clamp=(v,max)=>Math.min(Math.max(v,0),max);
+  const x0=clamp(Math.floor(box[0]*VS)-mx,mask.width),x1=clamp(Math.ceil(box[2]*VS)-mx,mask.width);
+  const y0=clamp(Math.floor(box[1]*VS)-my,mask.height)*stride,y1=clamp(Math.ceil(box[3]*VS)-my,mask.height)*stride;
+  return coverage[y1+x1]+coverage[y0+x0]>coverage[y1+x0]+coverage[y0+x1];
+}
 (function prepPoints(){for(const b of blds)silhouette(b);ox=BOX;oy=BOY;
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
   for(const b of blds){b.box=boxOf(b.footprint,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
     if(o.kind==='tree'){const hp=Math.max(9,o.h*2),rp=Math.max(3,o.r*1.9)+4;fp=[[o.gx,o.gy]];zmax=hp+4;pad=rp+1;smp=[[o.gx,o.gy,0]];
-      o.occ=treeOcc(o)}
-    else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=17;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const q=new Path2D();q.rect(Math.round(x),Math.round(y-11),1,11);q.rect(Math.round(x-1),Math.round(y-15),3,4);o.occ=q;o.occParts=[[['r',Math.round(x),Math.round(y-11),1,11],0,0],[['r',Math.round(x-1),Math.round(y-15),3,4],0,0]]}
+      const [x,y]=P(o.gx,o.gy),h=Math.min(o.h,32)*ZPM,width=h>30?2:1.4;
+      const trunk=new Path2D();trunk.rect(x+.5-width/2,y-h*.5,width,h*.5);
+      o.cut={tree:o,x,y,trunk,trunkBox:[x+.5-width/2,y-h*.5,x+.5+width/2,y]};
+    }
+    else if(o.kind==='lamp'){fp=[[o.gx,o.gy]];zmax=17;pad=16;smp=[[o.gx,o.gy,0]];const[x,y]=P(o.gx,o.gy);const X=Math.round(x),Y=Math.round(y);
+      const rects=[[X-1,Y-1,3,1],[X,Y-10,1,9],[X-1,Y-14,3,4],[X,Y-15,1,1]];
+      o.occ=new Path2D();for(const r of rects)o.occ.rect(...r);o.occParts=rects.map(r=>[['r',...r],0,0])}
     else if(o.kind==='car'){fp=o.r;zmax=5;pad=3;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]]);const h=hull(o.r.map(p=>P(p[0],p[1])).concat(o.r.map(p=>P(p[0],p[1],CARS[o.ty][3]))));o.occ=path(h);o.occParts=[[['p',h],0,0]]}
     else if(o.kind==='fountain'){const r=7/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=8;pad=2;smp=fp.map(p=>[p[0],p[1],0])}
     else if(o.kind==='prop'){const r=o.pr/M;fp=[[o.gx-r,o.gy-r],[o.gx+r,o.gy+r],[o.gx-r,o.gy+r],[o.gx+r,o.gy-r]];zmax=o.ph+4;pad=3;smp=[[o.gx,o.gy,0]]}
     else if(o.kind==='yard'){fp=o.r;zmax=10;pad=7;smp=o.r.map(p=>[p[0],p[1],0]).concat([[o.gx,o.gy,0]])}
     else{fp=[o.a,o.b];zmax=24;pad=4;smp=[[o.a[0],o.a[1],0],[o.b[0],o.b[1],0],[o.gx,o.gy,0]]}
-    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,parts:o.occParts,box:[o.box[0]-4,o.box[1]-4,o.box[2]+4,o.box[3]+4]}}})();
-const OCC=new Map();for(const o of pts0)if(o.occ){const k=Math.floor(o.gx/2)*4096+Math.floor(o.gy/2);if(!OCC.has(k))OCC.set(k,[]);OCC.get(k).push(o)}
-/** Static things standing in front of a moving thing at (gx,gy): trees, lamps and parked cars nearer the viewer. */
-function occludersAt(gx,gy){const out=[],s=gx-gy,u=gx+gy;for(let i=Math.floor(gx/2)-1;i<=Math.floor(gx/2)+3;i++)for(let j=Math.floor(gy/2)-1;j<=Math.floor(gy/2)+3;j++){const l=OCC.get(i*4096+j);if(!l)continue;for(const o of l){const du=o.gx+o.gy-u;if(du>.02&&du<6&&Math.abs(o.gx-o.gy-s)<2.6)out.push(o.cut)}}return out}
+    o.box=boxOf(fp,zmax,pad);o.bl=blockersFor(smp);if(o.occ)o.cut={p:o.occ,parts:o.occParts};if(o.cut)o.cut.box=o.box}})();
+// Index their projected bounds so tall trees can cover the road well behind their roots.
+const OCC=new Map(),occCell=64;
+function visitOccCells(box,visit){
+  for(let x=Math.floor(box[0]/occCell);x<=Math.floor(box[2]/occCell);x++)
+    for(let y=Math.floor(box[1]/occCell);y<=Math.floor(box[3]/occCell);y++)visit(x*4096+y);
+}
+for(const o of pts0)if(o.cut)visitOccCells(o.cut.box,key=>{
+  if(!OCC.has(key))OCC.set(key,[]);OCC.get(key).push(o);
+});
+let occQuery=0;
+function occludersAt(gx,gy,box,lens){
+  const out=[],depth=gx+gy;occQuery++;
+  visitOccCells(box,key=>{for(const o of OCC.get(key)||[]){
+    if(o.query===occQuery)continue;o.query=occQuery;
+    const q=o.cut;
+    if(o.hid||o.gx+o.gy<=depth||!hitBox(box,q.box))continue;
+    if(o.kind!=='tree'){out.push(q);continue}
+    const raster=treeCut(q);
+    if(treeHits(raster,box)||lens&&hitBox(lens.box,box)&&hitBox(q.trunkBox,box))out.push(raster);
+  }});
+  return out;
+}
 
 // ---------- static tiles ----------
 // The still parts of the model are rendered in TILE-pixel squares at the current scale, only where the camera looks,
@@ -1076,7 +1138,7 @@ if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)
 // 0.4 s this took each time the sun moved on)
 let gtexFor=null;
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());{const k=DOY+'|'+windKey(WIND);if(k!==occFor){occFor=k;for(const o of pts0)if(o.kind==='tree'){o.cut.p=o.occ=treeOcc(o);o.cut.parts=o.occParts;o.cut.inv=null}}}{const k=S.wx;if(k!==gtexFor||!GTEX){gtexFor=k;buildGroundTex()}}buildShadows();stver++;
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());occFor=DOY+'|'+windKey(WIND);{const k=S.wx;if(k!==gtexFor||!GTEX){gtexFor=k;buildGroundTex()}}buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
 // What the still picture depends on. The sun's position matters only while it casts shadows (see buildShadows): at
@@ -1125,8 +1187,10 @@ chains.forEach((ch,ci)=>{
 // way on (no wrong way down one-way streets, no U-turns unless it is a dead end); at the model's edge it leaves and
 // another car comes in somewhere else.
 const SHORT=1.7;
+const CARL=4.6/9, CAR_GAP=.32;
+const TRAFFIC_EDGE=.45; // Clip past the tiny street fragments at the model boundary.
 const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
-  for(const r of MAP.R){if(r.ar||r.c>4)continue;for(const p of clipLine(pairs(r.p),.3))pieces.push({p,c:r.c,ow:r.ow||r.rb,n:r.n,rb:r.rb})}
+  for(const r of MAP.R){if(r.ar||r.c>4)continue;for(const p of clipLine(pairs(r.p),TRAFFIC_EDGE))pieces.push({p,c:r.c,ow:r.ow||r.rb,n:r.n,rb:r.rb})}
   const seen=new Map();for(const pc of pieces)pc.p.forEach((q,i)=>{const k=key(q[0],q[1]);seen.set(k,(seen.get(k)||0)+(i===0||i===pc.p.length-1?1:2))});
   const nodes=new Map();const node=q=>{const k=key(q[0],q[1]);let n=nodes.get(k);if(!n){n={k,x:q[0],y:q[1],out:[],inn:[],cls:9};nodes.set(k,n)}return n};
   const lanes=[];
@@ -1135,7 +1199,8 @@ const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
         const f=mk_(cur,a,b);if(!pc.ow){const r_=mk_(cur.slice().reverse(),b,a);f.rev=r_;r_.rev=f}a.cls=Math.min(a.cls,pc.c);b.cls=Math.min(b.cls,pc.c)}}cur=[pc.p[i]]}}}
   const N=[...nodes.values()];
   // the junction's controls: real signals and stop signs from OSM, matched to the nearest junction
-  for(const n of N)n.deg=new Set([...n.out,...n.inn].map(l=>l.rev?Math.min(l.id,l.rev.id):l.id)).size;
+  for(const n of N){n.deg=new Set([...n.out,...n.inn].map(l=>l.rev?Math.min(l.id,l.rev.id):l.id)).size;
+    n.edge=Math.min(n.x,n.y,GX-n.x,GY-n.y)<=TRAFFIC_EDGE+.01}
   const near=(x,y,r)=>{let best=null,bd=r;for(const n of N){if(n.deg<3)continue;const d=Math.hypot(n.x-x,n.y-y);if(d<bd){bd=d;best=n}}return best};
   for(const[x,y,k] of (MAP.SIG||[])){if(k==='s'){const n=near(x,y,3.2);if(n)n.signal=true}}
   for(const[x,y,k] of (MAP.SIG||[])){if(k==='p'||k==='y'){// a stop or yield sign belongs to the approach it stands on
@@ -1148,6 +1213,10 @@ const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
     // side streets give way at junctions without lights, and whoever joins a roundabout gives way to those on it
     else if(n.deg>=3){const ring=n.out.some(l=>l.rb);n.rb=ring;for(const l of n.inn)if(!l.sign&&(ring?!l.rb:l.c>n.cls))l.sign='yield'}}
   const entries=lanes.filter(l=>l.from.out.length===1&&l.from.inn.length<=1&&(l.from.x<1||l.from.y<1||l.from.x>GX-1||l.from.y>GY-1));
+  // Keep unoccupied space on each ring so queued approaches cannot lock it up.
+  for(const l of lanes){if(!l.rb||l.ring)continue;const ring={lanes:[l],capacity:0};l.ring=ring;
+    for(const member of ring.lanes)for(const q of [...member.from.inn,...member.to.out])if(q.rb&&!q.ring){q.ring=ring;ring.lanes.push(q)}
+    ring.capacity=Math.max(1,Math.floor(ring.lanes.reduce((sum,q)=>sum+q.L,0)/(CARL+CAR_GAP))-2)}
   return{lanes,nodes:N,entries:entries.length?entries:lanes}})();
 // Crosswalks and stop bars, from the junctions of that graph. A signalled junction has a crosswalk on every arm; one
 // without lights only across the streets that give way (a side street meeting a main one, the entries of a roundabout),
@@ -1187,14 +1256,16 @@ function light(l){if(!l.to.signal||l.inner)return null;let t=((T+l.to.offset)%CY
 // A car waits with its nose just short of the crosswalk (crosswalks lie 0.8 to 3.6 m beyond the kerb line of the
 // widest street at the junction, the stop bar at 4.3 m); on a piece of street shorter than that, at its start.
 // SHORT: a piece of street too short to wait on (the link between a divided street's carriageways, a roundabout's ring).
-const CARL=4.6/9,stopBack=l=>Math.min((RW[l.to.cls]/2+6.9)/M,Math.max(0,l.L-.15));
+const stopBack=l=>Math.min((RW[l.to.cls]/2+6.9)/M,Math.max(0,l.L-.15));
 // Where each approach's signal or stop sign stands: at the stop line, on the right. On a short approach that spot can
 // fall in the cross street's carriageway: there the post steps out to the kerb, or is left out when there is no room.
 for(const l of TF.lanes){const s_=Math.max(0,l.L-Math.min((RW[l.to.cls]/2+4.3)/M,l.L*.45)),[gx,gy,ux,uy]=along(l.ch,s_),off=(RW[l.c]/2+1.4)/M;l.post=settle(gx-uy*off,gy+ux*off,.3,.7);if(l.post&&BLDG(l.post[0],l.post[1]))l.post=null}
-const tcars=[];if(new URLSearchParams(location.search).has('debug'))window.__tf={TF,tcars,pts0,blds,people,light,train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
+const tcars=[];if(DBG)window.__tf={TF,tcars,pts0,blds,people,light,
+  step:dt=>{T+=dt;stepCrossings(dt);stepTraffic(dt);stepTrain(dt)},
+  train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
 (function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s)}}})();
 function addCar(l,s){const c={lane:l,s,v:.6,ty:carKind(Math.random()),col:carCols[Math.floor(Math.random()*carCols.length)],v0:(l.c<=2?1.5:1.15)*(.88+Math.random()*.24),wait:0,go:false,off:null};l.cars.push(c);l.cars.sort((a,b)=>b.s-a.s);tcars.push(c);return c}
-function nextLane(c){const l=c.lane;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
+function nextLane(c){const l=c.lane;if(l.to.edge)return null;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
   // mostly straight on, sometimes a turn
   const h=(q,a)=>{const p=q.ch.p;return a?Math.atan2(p[1][1]-p[0][1],p[1][0]-p[0][0]):Math.atan2(p[p.length-1][1]-p[p.length-2][1],p[p.length-1][0]-p[p.length-2][0])};const h0=h(l,false);
   const w=opts.map(o=>{let d=Math.abs(h(o,true)-h0);d=Math.min(d,2*Math.PI-d);return(d<.5?4:1)*(o.vol||1)});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<opts.length;i++){r-=w[i];if(r<=0)return opts[i]}return opts[0]}
@@ -1223,18 +1294,21 @@ function stepTraffic(dt){
   feedCars(dt);
   for(const l of TF.lanes){
     for(let i=0;i<l.cars.length;i++){const c=l.cars[i];if(!c.next)c.next=nextLane(c);
+      // A stopped car on the ring can use a clear exit to keep circulation moving.
+      if(l.rb&&i===0&&c.v<.05&&l.L-c.s<1){const exit=l.to.out.find(o=>!o.rb&&!o.blocked&&(!o.cars.length||o.cars[o.cars.length-1].s>=CARL+.45));if(exit)c.next=exit}
       // the gap to whatever is ahead: the car in front, or the last car on the lane we turn into
       let gap=1e9,vl=0;if(i>0){gap=l.cars[i-1].s-c.s-CARL;vl=l.cars[i-1].v}else if(c.next){if(c.next.cars.length){const t=c.next.cars[c.next.cars.length-1];gap=l.L-c.s+t.s-CARL;vl=t.v}else if(c.next.L<2)[gap,vl]=tailBeyond(c.next,l.L-c.s,3)}
       // must we stop at the end of this lane?
       const sb=stopBack(l),toLine=l.L-sb-c.s;let hold=false;
       if(!c.go&&toLine>-.15){const lt=light(l);
         if(lt==='r')hold=true;else if(lt==='y')hold=c.v*c.v/(2*2.2)<toLine+.05;
-        else if(l.sign==='stop'&&l.L>=SHORT){if(c.v<.04&&toLine<.35){c.wait+=dt;if(c.wait>1.3&&(!boxBusy(l.to,c,l)||c.wait>25))c.go=true;else hold=true}else hold=true}
+        else if(l.sign==='stop'&&l.L>=SHORT){if(c.v<.04&&toLine<.35){c.wait+=dt;hold=c.wait<=1.3||(c.wait<=25&&boxBusy(l.to,c,l))}else hold=true}
         else if(l.sign){hold=toLine<1.6&&boxBusy(l.to,c,l);if(hold&&c.v<.04){c.wait+=dt;if(c.wait>25)hold=false}}
         else if(lt==null&&l.to.deg>=3&&toLine<1.2){hold=crossBusy(l.to,c,l);if(hold&&c.v<.04){c.wait+=dt;if(c.wait>12)hold=false}}
         // Keep the junction clear: no driving in while the way out is full, and where the next piece of street is too
         // short to wait on (a link between two junctions, a roundabout's ring) its light or sign is obeyed from here.
         if(!hold&&i===0&&c.next&&toLine<1.2&&l.to.deg>=3){const q=c.next,t=q.cars[q.cars.length-1];let h2=!!t&&t.v<.25&&t.s<CARL+.45;
+          if(q.ring&&!l.ring&&q.ring.lanes.reduce((sum,r)=>sum+r.cars.length,0)>=q.ring.capacity)hold=true;
           if(!h2&&q.L<SHORT&&q.sign)h2=boxBusy(q.to,c,q);
           if(h2){c.wait2=(c.wait2||0)+dt;if(c.wait2<30)hold=true}}
         if(!hold&&toLine<.4){c.go=true;c.wait2=0}}
@@ -1242,13 +1316,12 @@ function stepTraffic(dt){
       // a level crossing with its lights flashing: wait at the stop line (a car already past it clears the tracks)
       for(const x of XING)if(x.on)for(const q of x.lanes)if(q.lane===l&&q.s>c.s-.1){const d=Math.max(.001,q.s-c.s);if(d<gap){gap=d;vl=0}}
       if(hold&&toLine<gap){gap=Math.max(.001,toLine);vl=0}
-      const A=1.1,Bd=2.2,s0=.32,Th=.9;const ds=s0+c.v*Th+c.v*(c.v-vl)/(2*Math.sqrt(A*Bd));let a=A*(1-Math.pow(c.v/c.v0,4)-Math.pow(Math.max(0,ds)/Math.max(.02,gap),2));a=Math.max(-6,a);
+      const A=1.1,Bd=2.2,Th=.9;const ds=CAR_GAP+c.v*Th+c.v*(c.v-vl)/(2*Math.sqrt(A*Bd));let a=A*(1-Math.pow(c.v/c.v0,4)-Math.pow(Math.max(0,ds)/Math.max(.02,gap),2));a=Math.max(-6,a);
       c.v=Math.max(0,c.v+a*dt);c.s+=Math.min(c.v*dt,Math.max(0,gap+CARL*.1));c.stopped=c.v<.05}
     // cars that reached the end move on (or leave the model)
-    while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift();const nx=c.next;const[ox_,oy_]=lanePos(l,l.L);c.s-=l.L;c.wait=0;c.go=false;c.next=null;
+    while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift();const nx=c.next;const[ox_,oy_]=lanePos(l,l.L);c.s-=l.L;c.wait=0;c.wait2=0;c.go=false;c.next=null;
       if(nx){c.from=l;c.lane=nx;nx.cars.push(c);if(nx.cars.length>1&&nx.cars[nx.cars.length-2].s<c.s)nx.cars.sort((a,b)=>b.s-a.s);const[px,py,ux_,uy_]=lanePos(nx,0),e=along(l.ch,l.L);c.off=[ox_-px,oy_-py,Math.min(.9,nx.L),e[2],e[3]]}
-      else if(tcars.length>carTarget){tcars.splice(tcars.indexOf(c),1)}
-      else{const e=pickEntry();const tail=e.cars[e.cars.length-1];if(tail&&tail.s<CARL*2){c.lane=l;c.s=l.L-.01;c.v=0;l.cars.unshift(c);break}c.lane=e;c.s=0;c.v=.8;c.off=null;c.from=null;e.cars.push(c)}}}
+      else tcars.splice(tcars.indexOf(c),1)}}
 }
 function lanePos(l,s){const[gx,gy,ux,uy]=along(l.ch,s);const off=l.ow&&!l.rev?0:(RW[l.c]/4)/M;return[gx-uy*off,gy+ux*off,ux,uy]}
 const trainCh=clipLine(pairs(MAP.TRAIN),1.5).map(p=>mkChain(p,{})).sort((a,b)=>b.L-a.L)[0]||mkChain([[0,0],[0,0]],{});
@@ -1267,6 +1340,7 @@ const XING=(MAP.LX||[]).filter(l=>l[4]<=4).map(([ax,ay,bx,by,cl,gates])=>{const 
   for(const[px,py,dx,dy] of [[cx-ux*back,cy-uy*back,ux,uy],[cx+ux*back,cy+uy*back,-ux,-uy]])for(const l of TF.lanes){const q=projCh(l.ch,px,py);if(q.d>.15)continue;const t=along(l.ch,q.s);if(t[2]*dx+t[3]*dy>.5)x.lanes.push({lane:l,s:q.s})}
   return x});
 function stepCrossings(dt){for(const x of XING){x.on=x.td!=null&&trainD>x.td-18&&trainD-7*2.3<x.td+2.5;x.down=Math.max(0,Math.min(1,x.down+(x.on?dt/1.6:-dt/1.2)))}}
+function stepTrain(dt){if(trainD>trainCh.L+14){trainWait-=dt;if(trainWait<=0){trainD=-12;trainWait=12}}else trainD+=dt*2.2}
 
 // ---------- how busy it is ----------
 // The page (app.js, from public/activity.js) says how busy downtown is right now: an estimate from the hour, the day
@@ -1563,6 +1637,7 @@ function frame(ts){const F0=performance.now();
     else t=getTile(tx,ty,budget);
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
+  let treeLens=null;
   if(lensAt&&!drag&&!touches.size&&!ZG&&!frame.stale){const[sx,sy]=lensAt;treePts=treePts||pts0.filter(o=>o.kind==='tree');
     if(treePts.some(o=>sx>o.box[0]&&sx<o.box[2]&&sy>o.box[1]&&sy<o.box[3])){const g_=geo(),Rc=Math.round(60*W/(g_.cw||W)),S=Rc*2,Rm=Rc/VS,L=LENS;
       if(!L.c||L.S!==S){L.c=mk(S,S).getContext('2d');L.e=mk(S,S).getContext('2d');L.g=mk(S,S).getContext('2d');L.S=S;L.r=null}
@@ -1576,7 +1651,10 @@ function frame(ts){const F0=performance.now();
           for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(c,o);else if(TCLIP||o.what==='tower')clipPoint(o,tg);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);at()}}
         finally{GHOST=false;BT=b0;TGT=t0;ox=o0;oy=o1;TR=r0;TG=g0}
         L.r=r;L.vs=VS;L.ver=stver;L.t=F0;L.de=tg.de;L.dg=tg.dg}
-      const X=Math.round(L.r[0]*VS)-cx,Y=Math.round(L.r[1]*VS)-cy;w.save();w.setTransform(1,0,0,1,0,0);w.beginPath();w.arc(X+Rc,Y+Rc,Rc,0,7);w.clip();w.drawImage(L.c.canvas,X,Y);w.restore();
+      const X=Math.round(L.r[0]*VS)-cx,Y=Math.round(L.r[1]*VS)-cy;
+      const lx=(X+Rc+cx)/VS,ly=(Y+Rc+cy)/VS,inside=new Path2D(),outside=new Path2D();
+      inside.arc(lx,ly,Rm,0,Math.PI*2);outside.rect(lx-Rm-1e4,ly-Rm-1e4,2e4+2*Rm,2e4+2*Rm);outside.addPath(inside);
+      treeLens={inside,outside,box:[lx-Rm,ly-Rm,lx+Rm,ly+Rm]};w.save();w.setTransform(1,0,0,1,0,0);w.beginPath();w.arc(X+Rc,Y+Rc,Rc,0,7);w.clip();w.drawImage(L.c.canvas,X,Y);w.restore();
       // the lit windows and the glow inside the ring are the patch's own, so what the crown hid is lit too
       for(const[q,im,on] of [[E,L.e,L.de],[GL,L.g,L.dg]]){if(!on&&!(q===E?FT.de:FT.dg))continue;if(on){if(q===E)FT.de=FT.wide=1;else glowOn()}
         q.save();q.setTransform(1,0,0,1,0,0);q.beginPath();q.arc(X+Rc,Y+Rc,Rc,0,7);q.clip();q.clearRect(X,Y,S,S);if(on)q.drawImage(im.canvas,X,Y);q.restore()}
@@ -1603,7 +1681,7 @@ function frame(ts){const F0=performance.now();
   for(const k of L.closures){const[gx,gy,ux,uy]=along(k.ch,k.d);const kind=k.kind==='work'?'cone':'barrel';const n=k.full?3:1;for(let j=-n;j<=n;j++){const o=j*(RW[k.ch.c]/7)/M;dyn.push({kind,gx:gx-uy*o,gy:gy+ux*o})}
     if(k.kind==='crash')dyn.push({kind:'car',gx:gx+ux*.3,gy:gy+uy*.3,ux:uy,uy:-ux,col:C.Brick,stopped:1,haz:1})}
   for(const t of L.trucks){dyn.push({kind:'truck',gx:t.gx,gy:t.gy});for(let i=0;i<5;i++)dyn.push({kind:'pp',gx:t.gx-.35-i*.14,gy:t.gy+.5,skin:skins[(i+2)%6],shirt:shirts[(i+5)%9],f:blink(T+i,.4,.4)})}
-  if(!reduce){if(trainD>trainCh.L+14){trainWait-=dt;if(trainWait<=0){trainD=-12;trainWait=12}}else trainD+=dt*2.2}
+  if(!reduce)stepTrain(dt);
   for(let k=0;k<7;k++){const d=trainD-k*2.3;if(d<0||d>trainCh.L)continue;const[gx,gy,ux,uy]=along(trainCh,d);if(!vis(gx,gy))continue;dyn.push({kind:'train',gx,gy,ux,uy,eng:k===0,z:rideZ('rail',gx,gy)})}
   for(const x of XING)for(const[gx,gy,ax_,ay_] of x.posts)if(vis(gx,gy))dyn.push({kind:'xing',gx,gy,ax:ax_,ay:ay_,x})
   for(const f of FLAGS)if(vis(f.gx,f.gy))dyn.push(f);
@@ -1611,11 +1689,18 @@ function frame(ts){const F0=performance.now();
   BM&&bm('sim');
   const drawDyn=(o,c)=>{
     const z=o.z||0;
-    if(o.kind==='car'){const ty=o.ty||0,hl=CARS[ty][0]/2,sw=.55/M;drawCar(c,o.gx,o.gy,o.ux,o.uy,z,o.col,ty);
-      // lights at the corners: headlamps after dark, tail lamps after dark and brighter under braking, hazards at a crash
-      const lampAt=(f,sd,col,s)=>ed(P(o.gx+o.ux*f*hl/M-o.uy*sd*sw,o.gy+o.uy*f*hl/M+o.ux*sd*sw,z+1.5),col,s);
-      if(lamp&&!o.parked){lampAt(1,1,'#fff4c8',1);lampAt(1,-1,'#fff4c8',1)}if((o.stopped||lamp)&&!o.parked){const tc=o.stopped?'#ff3a2a':'#b8443c';lampAt(-1,1,tc,1);lampAt(-1,-1,tc,1)}
-      if(o.haz&&blink(T,.4,.4))for(const f of [1,-1])for(const sd of [1,-1])lampAt(f,sd,'#ffb040',1)}
+    if(o.kind==='car'){
+      const ty=o.ty||0,half=CARS[ty][0]/(2*M),side=.55/M;
+      const bumper=end=>{
+        if(o.parked)return;
+        const hazard=o.haz&&blink(T,.4,.4);
+        const color=hazard?'#ffb040':end>0?(lamp?'#fff4c8':null):o.stopped?'#ff3a2a':lamp?'#b8443c':null;
+        if(color)for(const sd of [-side,side])ed(P(o.gx+o.ux*end*half-o.uy*sd,o.gy+o.uy*end*half+o.ux*sd,z+1.5),color,1);
+      };
+      // The body hides the far bumper's lights when they project onto its paintwork.
+      const near=o.ux+o.uy>=0?1:-1;
+      bumper(-near);drawCar(c,o.gx,o.gy,o.ux,o.uy,z,o.col,ty);bumper(near);
+    }
     else if(o.kind==='flag')drawFlag(c,o,{P,fr,line,SH,T,wind:WIND});
     else if(o.kind==='pp'){const[x,y]=P(o.gx,o.gy,z);person(c,x,y-(o.bob?1:0),o.skin,o.shirt,o.f)}
     else if(o.kind==='mower'){const[x,y]=P(o.gx,o.gy);fr(c,Math.round(x-1),Math.round(y-2),3,2,'#c8372c');fr(c,Math.round(x-1),Math.round(y),3,1,SH)}
@@ -1643,12 +1728,20 @@ function frame(ts){const F0=performance.now();
   for(const o of dyn){let smp;const oz=o.z||0;if(o.kind==='car'||o.kind==='train'){const r=o.kind==='car'?rect(o.gx,o.gy,o.ux,o.uy,CARS[o.ty||0][0]/M,2/M):rect(o.gx,o.gy,o.ux,o.uy,19/M,3.4/M);smp=r.map(p=>[p[0],p[1],oz]).concat([[o.gx,o.gy,oz]])}else if(o.kind==='truck'){smp=rect(o.gx,o.gy,1,0,6.5/M,2.6/M).map(p=>[p[0],p[1],0])}else smp=[[o.gx,o.gy,oz]];
     // Same choice as before (a cut-out card whenever any building, tree, lamp or parked car stands in front), but only
     // the outlines near the thing are kept, and once one is found the far buildings need no line-of-sight test.
-    const[x,y]=P(o.gx,o.gy,oz),d=DB[o.kind]||DB.car,sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
-    const occ=o.kind!=='train'?occludersAt(o.gx,o.gy):[];let any=occ.length>0;const cuts=[];
+    const[x,y]=P(o.gx,o.gy,oz);let d=DB[o.kind]||DB.car;
+    if(o.kind==='car'){
+      // Project the shadow's wider footprint, with a pixel for rounded lamps and antialiasing.
+      const k=CARS[o.ty||0],u=Math.abs(o.ux-o.uy),v=Math.abs(o.ux+o.uy);
+      const a=(k[0]+.3)/(2*M),b=(k[1]+.3)/(2*M),dx=TW*(a*u+b*v)+.8,dy=TH*(a*v+b*u);
+      d=[dx,dy+k[3]+.8,dx,dy+1.8];
+    }
+    const sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
+    const occ=o.kind!=='train'?occludersAt(o.gx,o.gy,sb,treeLens):[];let any=occ.length>0;const cuts=[];
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
     for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;for(const p of smp)if(rayHits(b,p[0],p[1],p[2])){any=true;if(near)cuts.push(b.sil);break}}
     if(any){for(const q of occ)if(hitBox(q.box,sb))cuts.push(q);if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}}
-    if(CARD){if(any)drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL});else drawDyn(o,w);continue}
+    // One compound tree silhouette covers many overlapping leaves and branches. Cut it once on the card.
+    if(CARD||occ.some(q=>q.tree)){if(any)drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL},treeLens);else drawDyn(o,w);continue}
     // No scratch card: the thing is drawn straight onto the picture, clipped to everything except the outlines that
     // really reach its box (building outlines are tested exactly; wholly behind one, it is not drawn at all).
     const ips=[];let hid=false;

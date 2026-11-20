@@ -139,7 +139,7 @@ export function drawTree(c, o, h) {
   const s = o.seed;
 
   // leaves on the ground, blown a little downwind
-  if (lk.litter > 0.05) {
+  if (!h.skipLitter && lk.litter > 0.05) {
     // a soft carpet under the crown (an iso ellipse), a few loose leaves around its edge
     const lc = mix(lk.litterCol, '#a8865a', 0.35), n = Math.round(rp * rp * 0.26 * lk.litter);
     for (let k = 0; k < n; k++) {
@@ -318,23 +318,47 @@ export function drawTree(c, o, h) {
  * pieces: [['e', cx, cy, rx, ry]] ellipses, [['r', x, y, w, h]] rectangles, [['p', [[x, y], ...]]] polygons.
  */
 export function treeOutlineParts(o, lean = [0, 0], doy = null) {
-  const sp = SPECIES[o.sp] || SPECIES.redmaple;
-  const { hp, rp } = dims(o);
-  // a bare deciduous tree hides only its trunk; a thinning crown hides less of what is behind it
-  const leaf = sp.ever || doy == null ? 1 : look(o.sp, doy, o.seed).leaf;
-  if (leaf < 0.35) return [['r', -1, -hp * 0.4, 2, hp * 0.4]];
-  if (sp.shape === 'pine') { const cr = Math.max(4, rp * 0.8); return [['e', lean[0] * 0.75, lean[1] * 0.75 - hp * 0.75, cr * 1.1, hp * 0.22], ['r', -1, -hp * 0.6, 2, hp * 0.6]]; }
-  if (sp.shape === 'cedar' || sp.shape === 'holly') { const w = Math.max(3, rp * 0.8); return [['p', [[-w, -2], [w, -2], [lean[0], lean[1] - hp]]]]; }
-  const f = leaf < 0.7 ? 0.75 : 1;
-  return [['e', lean[0] * 0.6, lean[1] * 0.6 - hp * 0.6, rp * f, Math.min(Math.max(rp * 0.9, hp * 0.3), hp * 0.48) * f], ['r', -1, -hp * 0.4, 2, hp * 0.4]];
+  const parts = [];
+  drawTree({ globalAlpha: 1 }, o, {
+    P: () => [0, 0], doy: doy ?? 200, lean, skipLitter: true,
+    mix: (col) => col, surf: (col) => col,
+    fr: (c, x, y, w, h) => parts.push(['r', x, y, w, h]),
+    circ: (c, x, y, r) => { if (c.globalAlpha === 1) parts.push(['e', x, y, r, r]); },
+    poly: (c, points) => parts.push(['p', points]),
+    line: (c, [ax, ay], [bx, by], col, w) => {
+      const x = bx - ax, y = by - ay, length = Math.hypot(x, y);
+      if (!length) return;
+      const dx = -y * w / (2 * length), dy = x * w / (2 * length);
+      parts.push(['p', [[ax + dx, ay + dy], [ax - dx, ay - dy], [bx - dx, by - dy], [bx + dx, by + dy]]]);
+    },
+  });
+  return parts;
 }
-/** One piece of an outline (see treeOutlineParts) added to a Path2D, moved by (dx, dy). */
+
+/** Append a piece with the same winding as every other piece, so overlaps stay filled. */
 export function addOutlinePart(p, part, dx = 0, dy = 0) {
-  if (part[0] === 'e') { p.moveTo(part[1] + dx + part[3], part[2] + dy); p.ellipse(part[1] + dx, part[2] + dy, part[3], part[4], 0, 0, 7); p.closePath(); }
-  else if (part[0] === 'r') p.rect(part[1] + dx, part[2] + dy, part[3], part[4]);
-  else { part[1].forEach(([x, y], i) => (i ? p.lineTo(x + dx, y + dy) : p.moveTo(x + dx, y + dy))); p.closePath(); }
+  if (part[0] === 'e') {
+    const [, x, y, rx, ry] = part;
+    p.moveTo(x + dx + rx, y + dy);
+    p.ellipse(x + dx, y + dy, rx, ry, 0, 0, 2 * Math.PI);
+    p.closePath();
+  } else if (part[0] === 'r') {
+    p.rect(part[1] + dx, part[2] + dy, part[3], part[4]);
+  } else {
+    const points = part[1];
+    const area = points.reduce((a, [x, y], i) => {
+      const [nx, ny] = points[(i + 1) % points.length];
+      return a + x * ny - y * nx;
+    }, 0);
+    (area < 0 ? points.slice().reverse() : points).forEach(([x, y], i) => {
+      if (i) p.lineTo(x + dx, y + dy);
+      else p.moveTo(x + dx, y + dy);
+    });
+    p.closePath();
+  }
 }
-/** The tree's outline as a Path2D in model pixels relative to its base point, for cutting things out behind it. */
+
+/** The tree's opaque outline as one Path2D in model pixels relative to its base point. */
 export function treeOutline(o, lean = [0, 0], doy = null) {
   const p = new Path2D();
   for (const part of treeOutlineParts(o, lean, doy)) addOutlinePart(p, part);
