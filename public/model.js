@@ -1403,6 +1403,21 @@ function crossBusy(n,me,l){const nx=me.next,mine=l.L-me.s;
   for(const o of n.out){if(o===l.rev)continue;for(let i=o.cars.length-1;i>=0;i--){const k=o.cars[i];if(k.s>.55)break;if(k!==me&&k.v>.05&&k.from&&k.from!==l&&(!nx||k.from.rev!==nx))return true}}
   for(const m of n.inn){if(m===l||m.sign||(nx&&m.rev===nx))continue;const h=m.cars[0];if(!h)continue;const d=m.L-h.s;
     if(h.go?d<.7:h.v>.05&&d<1.2&&(d<mine-1e-3||(d<mine+1e-3&&m.id<l.id)))return true}return false}
+// The two signal phases share green with the opposite approach. Left turns yield until it has cleared.
+function greenLeftBusy(l){
+  if(l.from.signal&&l.from.offset===l.to.offset)return false; // The car is already inside the grouped junction.
+  const [,,ux,uy]=along(l.ch,l.L);
+  const opposing=m=>{if(!m||m.phase!==l.phase)return false;const [,,x,y]=along(m.ch,m.L);return ux*x+uy*y<-.5};
+  for(const m of l.to.inn){if(!opposing(m))continue;
+    const line=stopBack(m);
+    for(const c of m.cars){const d=m.L-c.s;if(d>6)break;
+      if(c.next&&maneuver(m,c.next)==='left')continue;
+      const tail=c.next&&trackTail(c.next,c.nextTrack);
+      if(c.v<.05&&d>line-.15&&tail&&tail.v<.25&&tail.s<CARL+.45)continue;
+      if(d<line+.7||d<.9+c.v*2.7)return true}}
+  for(const o of l.to.out)for(let i=o.cars.length-1;i>=0;i--){const c=o.cars[i];if(c.s>.7)break;
+    if(c.v>.05&&opposing(c.from)&&maneuver(c.from,o)!=='left')return true}
+  return false}
 // The gap to the nearest car beyond a lane that is short and empty (the pieces of a roundabout, a street split in two
 // at a junction): the last car on whichever lanes lead on from it. [gap, that car's speed]
 function tailBeyond(nx,track,base,depth,exit){let g=1e9,v=0;const turn=nx.ring&&exit&&ringTurn(nx,exit);for(const o of nx.to.out){if(o===nx.rev||(turn&&o!==turn))continue;const k=nextTrack(nx,track,o),t=trackTail(o,k);
@@ -1410,6 +1425,7 @@ function tailBeyond(nx,track,base,depth,exit){let g=1e9,v=0;const turn=nx.ring&&
   return[g,v]}
 function stepTraffic(dt){
   feedCars(dt);
+  const departures=[];
   for(const l of TF.lanes){
     if(!l.cars.length)continue;
     const leaders=[];let prior=Infinity,outOfOrder=false;
@@ -1428,6 +1444,7 @@ function stepTraffic(dt){
         if(lt==='r')hold=true;else if(lt==='y')hold=c.v*c.v/(2*2.2)<toLine+.05;
         else if(l.sign==='stop'&&l.L>=SHORT){if(c.v<.04&&toLine<.35){c.wait+=dt;hold=c.wait<=1.3||(c.wait<=25&&boxBusy(l.to,c,l))}else hold=true}
         else if(l.sign){hold=toLine<1.6&&boxBusy(l.to,c,l);if(hold&&c.v<.04){c.wait+=dt;if(c.wait>25)hold=false}}
+        else if(lt==='g'&&toLine<1.6&&c.next&&maneuver(l,c.next)==='left')hold=greenLeftBusy(l);
         else if(lt==null&&l.to.deg>=3&&toLine<1.2){hold=crossBusy(l.to,c,l);if(hold&&c.v<.04){c.wait+=dt;if(c.wait>12)hold=false}}
         // Keep the junction clear: no driving in while the way out is full, and where the next piece of street is too
         // short to wait on (a link between two junctions, a roundabout's ring) its light or sign is obeyed from here.
@@ -1442,13 +1459,15 @@ function stepTraffic(dt){
       if(hold&&toLine<gap){gap=Math.max(.001,toLine);vl=0}
       const A=1.1,Bd=2.2,Th=.9;const ds=CAR_GAP+c.v*Th+c.v*(c.v-vl)/(2*Math.sqrt(A*Bd));let a=A*(1-Math.pow(c.v/c.v0,4)-Math.pow(Math.max(0,ds)/Math.max(.02,gap),2));a=Math.max(-6,a);
       c.v=Math.max(0,c.v+a*dt);c.s+=Math.min(c.v*dt,Math.max(0,gap+CARL*.1));if(noRoute)c.s=Math.min(c.s,l.L-1e-6);c.stopped=c.v<.05;
+      if(c.s>=l.L)departures.push(c);
       if(c.s>prior)outOfOrder=true;prior=c.s}
     if(outOfOrder)l.cars.sort((a,b)=>b.s-a.s);
-    // cars that reached the end move on (or leave the model)
-    let waiting;
-    while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift(),nx=c.next,s=c.s-l.L;
+  }
+  // Transfer after every lane has advanced so a car spends the tick's travel distance only once.
+  for(const c of departures){const l=c.lane,nx=c.next,s=c.s-l.L;
       const tail=nx&&trackTail(nx,c.nextTrack);
-      if(tail&&tail.s-s<CARL){c.s=l.L-1e-6;c.v=0;c.stopped=true;(waiting??=[]).push(c);continue}
+      if(tail&&tail.s-s<CARL){c.s=l.L-1e-6;c.v=0;c.stopped=true;l.cars.sort((a,b)=>b.s-a.s);continue}
+      l.cars.splice(l.cars.indexOf(c),1);
       if(nx){
         const [ox_,oy_,ux_,uy_]=lanePos(l,l.L,c.track),track=c.nextTrack,[px,py]=lanePos(nx,0,track);
         if(nx===c.ringExit)c.ringExit=null;
@@ -1456,7 +1475,6 @@ function stepTraffic(dt){
         c.off=[ox_-px,oy_-py,Math.min(.9,nx.L),ux_,uy_];
         nx.cars.push(c);if(nx.cars.length>1&&nx.cars[nx.cars.length-2].s<c.s)nx.cars.sort((a,b)=>b.s-a.s)}
       else tcars.splice(tcars.indexOf(c),1)}
-    if(waiting){l.cars.push(...waiting);l.cars.sort((a,b)=>b.s-a.s)}}
 }
 function lanePos(l,s,track=Math.floor(l.tracks.length/2)){
   const path=l.tracks[track],[x,y,ux,uy]=along(path,s),[gx,gy,roadUx,roadUy]=along(l.ch,s);
@@ -1814,7 +1832,7 @@ function frame(ts){const F0=performance.now();
   for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;if(!l.post)continue;const[px,py]=l.post;if(!vis(px,py))continue;
     dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
   for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.d1||p.d<p.d0){p.dir=p.d>p.d1?-1:1;p.d=Math.max(p.d0,Math.min(p.d1,p.d))}}if(p.rk>=walkLv)continue;
-    const[px,py,ux,uy,gx,gy]=walkPos(p.ch,p.d,p.side);if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py,ux,uy,gx,gy)})}
+    const[px,py,ux,uy,gx,gy]=walkPos(p.ch,p.d,p.side);if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,roadX:gx,roadY:gy,ux,uy,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py,ux,uy,gx,gy)})}
   if(HD)HD.add(dyn,vis);
   const crowd=(b,n,dx,col)=>{if(!b)return;for(let i=0;i<n;i++)dyn.push({kind:'pp',gx:b.maxx+dx+(i%3)*.12,gy:b.cy-.5+i*.13,skin:skins[i%6],shirt:col||shirts[(i+2)%9],bob:blink(T*2+i,.3,.3)})};
   // crowds only where something is actually on: events at a venue, council in session, open bars after dark
@@ -1882,6 +1900,9 @@ function frame(ts){const F0=performance.now();
     const occ=o.kind!=='train'?occludersAt(o.gx,o.gy,sb,treeLens):[];let any=occ.length>0;const cuts=[];
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
     for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;
+      // Use the ramp's local height for the sidewalk, as on a flat span.
+      if(b.deck==='road'&&b.zf&&o.kind==='pp'&&oz>0&&o.roadX!=null&&b.cls&&
+        Math.abs(oz-b.zf(o.gx,o.gy))<.02&&runsAlong(b.cls,o.roadX,o.roadY,o.ux,o.uy,.18))continue;
       // The next ramp's silhouette reaches past its seam. Allow one car footprint of grade change.
       if(b.deck==='road'&&o.kind==='car'&&o.z!=null&&b.cls&&
         runsAlong(b.cls,o.gx,o.gy,o.roadUx,o.roadUy)){

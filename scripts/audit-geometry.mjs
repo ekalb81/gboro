@@ -160,7 +160,7 @@ async function checkBridgeCars(page) {
       await page.goto(`${base}/index.html?at=${(min + max) / 2},${y}&z=4&flat&debug&bench&compose=canvas&mode=sharp&time=day&weather=clear&date=2026-11-19&cut=${cut}`);
       await page.waitForFunction(() => window.__audit?.lanePos && window.__bench?.frames.length);
       const data = await page.evaluate(async ({ name, min, max, fixtures }) => {
-        const { paintFrame, TF, DECKS, lanePos, pip, rideZ, people, view } = window.__audit;
+        const { paintFrame, TF, DECKS, lanePos, pip, rideZ, people, view, chains, walkPos } = window.__audit;
         const { tcars } = window.__tf;
         const pieces = DECKS.filter(b => b.deck === 'road' && b.dk.n === name);
         const candidates = new Map();
@@ -207,8 +207,7 @@ async function checkBridgeCars(page) {
         people.length = 0;
         await paintFrame();
         const background = pixels();
-        const visible = async ({ lane, track, s }) => {
-          tcars[0] = { lane, track, s, col: '#ff00ff', ty: 0, stopped: false };
+        const magentaPixels = async () => {
           await paintFrame();
           const rgb = pixels();
           let count = 0;
@@ -217,6 +216,10 @@ async function checkBridgeCars(page) {
                 (rgb[i] !== background[i] || rgb[i + 1] !== background[i + 1] || rgb[i + 2] !== background[i + 2])) count++;
           }
           return count;
+        };
+        const visible = ({ lane, track, s }) => {
+          tcars[0] = { lane, track, s, col: '#ff00ff', ty: 0, stopped: false };
+          return magentaPixels();
         };
         const hasVisibleCar = async (options) => {
           for (const fraction of [.5, .25, .75]) {
@@ -254,6 +257,21 @@ async function checkBridgeCars(page) {
           const count = await visible({ lane, s });
           if (minPixels ? count < minPixels || z <= 0 : count !== 0 || z !== 0) {
             faults.push(`${label} at ${x.toFixed(3)},${y.toFixed(3)}: ${count} pixels, height ${z.toFixed(2)}`);
+          }
+        }
+        if (name === 'South Eugene Street' && min < 17 && max > 17) {
+          tcars.length = 0;
+          const ch = chains.find(ch => ch.n === name), walkers = new Map();
+          for (const run of ch.walks) for (let d = run.d0; d <= run.d1; d += .3) {
+            const [x, y, ux, uy, gx, gy] = walkPos(ch, d, run.side);
+            const near = x + y >= gx + gy;
+            if (Math.abs(y - (near ? 249.71 : 250.37)) >= .025) continue;
+            const z = rideZ('road', x, y, ux, uy, gx, gy);
+            if (z > 6 && z < 8 && inView({ x, y, z })) walkers.set(near, { ch, ...run, d, rk: -1, skin: '#ff00ff', shirt: '#ff00ff' });
+          }
+          for (const near of [false, true]) {
+            people[0] = walkers.get(near);
+            if (!people[0] || await magentaPixels() <= 20) faults.push(`Walker on the ${near ? 'near' : 'far'} sidewalk of the South Eugene ramp should be visible`);
           }
         }
         return { covered, pieces: pieces.map(b => b.id), checked, tracks, faults };

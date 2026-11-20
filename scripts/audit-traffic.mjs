@@ -155,6 +155,43 @@ try {
         assert.deepEqual(tracks.turns, ['East Lindsay Street', 'North Elm Street', 'West Lindsay Street'], 'cars ignored mapped turn lanes on North Elm');
         assert.ok(tracks.elevated > 0 && !tracks.wrongHeight, `${tracks.wrongHeight}/${tracks.elevated} outer bridge tracks had the wrong height`);
         assert.ok(tracks.restrictedSegments > 0 && !tracks.restrictedInGraph, 'an OSM motor-vehicle restriction is missing or its segment remains routable');
+
+        const greenLeft = await page.evaluate(() => {
+          const { TF, tcars, addCar, light, step } = window.__tf;
+          const { M } = window.__audit;
+          const junction = TF.nodes.find(n => n.k === '61.76,31.13'); // North Elm and Bessemer
+          const left = junction?.inn.find(l => l.ch.n === 'North Elm Street' && l.from.y > junction.y);
+          const opposite = junction?.inn.find(l => l.ch.n === 'North Elm Street' && l.from.y < junction.y);
+          const leftExit = junction?.out.find(l => l.ch.n === 'West Bessemer Avenue');
+          if (!left || !opposite || !leftExit) return null;
+          for (let i = 0; i < 600 && light(left) === 'g'; i++) step(.1);
+          for (let i = 0; i < 600 && light(left) !== 'g'; i++) step(.1);
+          if (light(left) !== 'g' || light(opposite) !== 'g') return null;
+          for (const l of TF.lanes) l.cars.length = 0;
+          tcars.length = 0;
+          const line = (junction.width / 2 + 6.9) / M;
+          const turning = addCar(left, left.L - line - .1, 0);
+          const straight = addCar(opposite, opposite.L - line - .2, 0);
+          Object.assign(turning, { next: leftExit, nextTrack: 0 });
+          Object.assign(straight, { next: left.rev, nextTrack: 0, v: 1.4 });
+          step(.05);
+          const yielded = !turning.go && straight.go;
+          for (let i = 0; i < 200 && turning.lane === left; i++) step(.05);
+          return { yielded, exited: turning.lane === leftExit && straight.lane !== opposite };
+        });
+        assert.deepEqual(greenLeft, { yielded: true, exited: true }, 'the green left turn did not yield to opposing through traffic and then clear the intersection');
+        const transfer = await page.evaluate(() => {
+          const { TF, tcars, addCar, step } = window.__tf;
+          for (const l of TF.lanes) l.cars.length = 0;
+          tcars.length = 0;
+          const lane = TF.lanes.find(l => !l.to.edge && l.to.out.some(q => q !== l.rev && q.id > l.id && q.L > 1));
+          const next = lane.to.out.find(q => q !== lane.rev && q.id > lane.id && q.L > 1);
+          const car = addCar(lane, lane.L - .01, 0);
+          Object.assign(car, { v: 1, v0: 1, next, nextTrack: 0, go: true });
+          step(.05);
+          return car.lane === next && Math.abs(car.s - .04) < .0001;
+        });
+        assert.ok(transfer, 'a car advancing at one tile per second exceeded its 50 ms travel distance across a lane boundary');
       }
       await page.close();
     }
