@@ -156,6 +156,22 @@ try {
         assert.ok(tracks.elevated > 0 && !tracks.wrongHeight, `${tracks.wrongHeight}/${tracks.elevated} outer bridge tracks had the wrong height`);
         assert.ok(tracks.restrictedSegments > 0 && !tracks.restrictedInGraph, 'an OSM motor-vehicle restriction is missing or its segment remains routable');
 
+        const narrowing = await page.evaluate(() => {
+          const { TF, tcars, addCar, lanePos, trafficPose, step } = window.__tf;
+          const wide = TF.lanes.find(l => l.from.k === '12.35,238.43' && l.to.k === '12.59,235.62' && l.ch.n === 'South Eugene Street');
+          const narrow = wide?.to.out.find(l => l.to.k === '13.59,224.25' && l.ch.n === wide.ch.n);
+          if (!wide || !narrow || wide.width <= narrow.width) return null;
+          for (const l of TF.lanes) l.cars.length = 0;
+          tcars.length = 0;
+          const cars = wide.tracks.map((_, track) => addCar(wide, wide.L - .5, track));
+          step(.05);
+          return cars.map((car, track) => {
+            const [x, y] = trafficPose(car, wide.L), [nx, ny] = lanePos(narrow, 0, track);
+            return car.next === narrow && car.nextTrack === track && Math.hypot(x - nx, y - ny) < .001;
+          });
+        });
+        assert.deepEqual(narrowing, [true, true], 'the two South Eugene tracks jumped or merged at the width change');
+
         const greenLeft = await page.evaluate(() => {
           const { TF, tcars, addCar, light, step } = window.__tf;
           const { M } = window.__audit;

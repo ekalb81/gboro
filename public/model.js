@@ -1338,7 +1338,7 @@ const stopBack=l=>Math.min((l.to.width/2+6.9)/M,Math.max(0,l.L-.15));
 // Where each approach's signal or stop sign stands: at the stop line, on the right. On a short approach that spot can
 // fall in the cross street's carriageway: there the post steps out to the kerb, or is left out when there is no room.
 for(const l of TF.lanes){const s_=Math.max(0,l.L-Math.min((l.to.width/2+4.3)/M,l.L*.45)),[gx,gy,ux,uy]=along(l.ch,s_),off=(l.width/2+1.4)/M;l.post=settle(gx-uy*off,gy+ux*off,.3,.7);if(l.post&&BLDG(l.post[0],l.post[1]))l.post=null}
-const tcars=[];if(DBG)window.__tf={TF,tcars,pts0,blds,people,light,addCar,lanePos,maneuver,turnAngle,
+const tcars=[];if(DBG)window.__tf={TF,tcars,pts0,blds,people,light,addCar,lanePos,trafficPose,maneuver,turnAngle,
   step:dt=>{T+=dt;stepCrossings(dt);stepTraffic(dt);stepTrain(dt)},
   train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
 (function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s,k%l.tracks.length)}}})();
@@ -1363,11 +1363,17 @@ function maneuver(l,o){
   return angle<0?'left':'right'}
 function nextTrack(l,track,o){
   if(o.tracks.length===1)return 0;
+  if(straightTrackHandoff(l,o))return track;
   const turn=maneuver(l,o);
   if(turn==='left'||o===l.rev)return 0;
   if(turn==='right')return o.tracks.length-1;
   const off=l.tracks[track].off*Math.cos(turnAngle(l,o)),a=o.tracks[0].off,b=o.tracks[1].off;
   return Math.max(0,Math.min(o.tracks.length-1,Math.round((off-a)/(b-a))))}
+function straightTrackHandoff(l,o){return l.ch.n&&l.ch.n===o.ch.n&&l.tracks.length===o.tracks.length&&Math.abs(turnAngle(l,o))<.25}
+function laneTaper(l,track,o){
+  if(!o||o.width>=l.width||!straightTrackHandoff(l,o))return null;
+  const [ax,ay]=lanePos(l,l.L,track),[bx,by]=lanePos(o,0,track);
+  return[bx-ax,by-ay,Math.min(.9,l.L)]}
 function trackTail(l,track){for(let i=l.cars.length-1;i>=0;i--)if(l.cars[i].track===track)return l.cars[i];return null}
 function nextLane(c){const l=c.lane;if(l.to.edge)return null;
   if(l.ring){
@@ -1430,7 +1436,8 @@ function stepTraffic(dt){
     if(!l.cars.length)continue;
     const leaders=[];let prior=Infinity,outOfOrder=false;
     for(const c of l.cars){
-      if(!c.next||c.next.blocked||c.ringExit?.blocked){c.next=nextLane(c);c.nextTrack=c.next?nextTrack(l,c.track,c.next):0}
+      if(!c.next||c.next.blocked||c.ringExit?.blocked){
+        c.next=nextLane(c);c.nextTrack=c.next?nextTrack(l,c.track,c.next):0;c.taper=laneTaper(l,c.track,c.next)}
       const ahead=leaders[c.track],tail=c.next&&trackTail(c.next,c.nextTrack);
       leaders[c.track]=c;
       // the gap to whatever is ahead: the car in front, or the last car on the lane we turn into
@@ -1469,10 +1476,12 @@ function stepTraffic(dt){
       if(tail&&tail.s-s<CARL){c.s=l.L-1e-6;c.v=0;c.stopped=true;l.cars.sort((a,b)=>b.s-a.s);continue}
       l.cars.splice(l.cars.indexOf(c),1);
       if(nx){
-        const [ox_,oy_,ux_,uy_]=lanePos(l,l.L,c.track),track=c.nextTrack,[px,py]=lanePos(nx,0,track);
+        const [ox_,oy_,ux_,uy_]=trafficPose(c,l.L),track=c.nextTrack,[px,py]=lanePos(nx,0,track);
+        // Settle sooner when turning into a narrow street so the incoming pose does not carry over its kerb.
+        const blend=nx.width<l.width&&maneuver(l,nx)!=='through'?nx.width/(2.5*M):.9;
         if(nx===c.ringExit)c.ringExit=null;
-        c.s=s;c.wait=0;c.wait2=0;c.go=false;c.next=null;c.from=l;c.lane=nx;c.track=track;
-        c.off=[ox_-px,oy_-py,Math.min(.9,nx.L),ux_,uy_];
+        c.s=s;c.wait=0;c.wait2=0;c.go=false;c.next=null;c.from=l;c.lane=nx;c.track=track;c.taper=null;
+        c.off=[ox_-px,oy_-py,Math.min(.9,nx.L,blend),ux_,uy_];
         nx.cars.push(c);if(nx.cars.length>1&&nx.cars[nx.cars.length-2].s<c.s)nx.cars.sort((a,b)=>b.s-a.s)}
       else tcars.splice(tcars.indexOf(c),1)}
 }
@@ -1482,6 +1491,16 @@ function lanePos(l,s,track=Math.floor(l.tracks.length/2)){
   if(path.p.length>2){const [ax,ay]=along(path,s-.3),[bx,by]=along(path,s+.3),d=Math.hypot(bx-ax,by-ay);
     if(d>1e-6)return[x,y,(bx-ax)/d,(by-ay)/d,gx,gy,roadUx,roadUy]}
   const d=Math.hypot(ux,uy)||1;return[x,y,ux/d,uy/d,gx,gy,roadUx,roadUy]}
+function trafficPose(c,s=c.s){
+  let [x,y,ux,uy,gx,gy,roadUx,roadUy]=lanePos(c.lane,s,c.track);
+  if(c.off&&s<c.off[2]){const[dx,dy,L,ax,ay]=c.off,t=1-s/L,k=t*t*(3-2*t);
+    x+=dx*k;y+=dy*k;const hx=ux+(ax-ux)*k,hy=uy+(ay-uy)*k,d=Math.hypot(hx,hy);
+    if(d>.2){ux=hx/d;uy=hy/d}}
+  // Move inward while the wider pavement still exists, keeping adjacent tracks parallel.
+  if(c.taper){const[dx,dy,L]=c.taper,t=Math.max(0,Math.min(1,1-(c.lane.L-s)/L));
+    const k=t*t*(3-2*t),slope=6*t*(1-t)/L,hx=ux+dx*slope,hy=uy+dy*slope,d=Math.hypot(hx,hy)||1;
+    x+=dx*k;y+=dy*k;ux=hx/d;uy=hy/d}
+  return[x,y,ux,uy,gx,gy,roadUx,roadUy]}
 const trainCh=clipLine(pairs(MAP.TRAIN),1.5).map(p=>mkChain(p,{})).sort((a,b)=>b.L-a.L)[0]||mkChain([[0,0],[0,0]],{});
 let trainD=-12,trainWait=4;
 // Level crossings (MAP.LX): where a street crosses the tracks at grade. Each has a post with a crossbuck and lights on
@@ -1826,7 +1845,7 @@ function frame(ts){const F0=performance.now();
   const ev=evening(),nt=night(),lamp=lampsOn();const dyn=[];
   const vis=(gx,gy)=>{if(gx<.1||gy<.1||gx>GX-.1||gy>GY-.1)return false;const[x,y]=P(gx,gy);return x>-30&&x<VWm()+30&&y>-40&&y<VHm()+60};
   if(!reduce){stepCrossings(Math.min(dt,.1));stepTraffic(Math.min(dt,.05))}
-  for(const c of tcars){let[px,py,ux,uy,roadX,roadY,roadUx,roadUy]=lanePos(c.lane,Math.min(c.s,c.lane.L),c.track);if(c.off){let k=Math.max(0,1-c.s/c.off[2]);k=k*k*(3-2*k);px+=c.off[0]*k;py+=c.off[1]*k;if(c.off[3]!=null){const hx=ux+(c.off[3]-ux)*k,hy=uy+(c.off[4]-uy)*k,hl=Math.hypot(hx,hy);if(hl>.2){ux=hx/hl;uy=hy/hl}}if(k<=0)c.off=null}if(!vis(px,py))continue;
+  for(const c of tcars){const[px,py,ux,uy,roadX,roadY,roadUx,roadUy]=trafficPose(c);if(!vis(px,py))continue;
     dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,ty:c.ty,stopped:c.stopped,roadUx,roadUy,z:rideZ('road',px,py,roadUx,roadUy,roadX,roadY)})}
   // the lights themselves, and stop signs, at the stop line on the right of each approach
   for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;if(!l.post)continue;const[px,py]=l.post;if(!vis(px,py))continue;
