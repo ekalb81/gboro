@@ -150,3 +150,37 @@ test('digests downloaded before a failure are already saved', async () => {
   await assert.rejects(newDigests(gmail, ['a', 'b'], new Map(), { save: async (f) => written.push(f.name) }), /404/);
   assert.deepEqual(written, ['2026-11-17T1002Z.txt']);
 });
+
+test('concurrent downloads preserve same-minute names and save the prefix before a later error', async () => {
+  const requested = [];
+  let finishFirst;
+  const first = new Promise((resolve) => { finishFirst = resolve; });
+  const gmail = { getMessage: async (id) => {
+    requested.push(id);
+    if (id === 'a') await first;
+    if (id === 'c') { finishFirst(); throw Error('failed c'); }
+    return digestMsg(id, '2026-11-17T10:02:00Z');
+  } };
+  const saved = new Map();
+  await assert.rejects(newDigests(gmail, ['a', 'a', 'b', 'c'], saved), /failed c/);
+  assert.deepEqual(requested, ['a', 'b', 'c']);
+  assert.deepEqual([...saved], [['2026-11-17T1002Z.txt', 'a'], ['2026-11-17T1002Z-b.txt', 'b']]);
+});
+
+test('a quota response pauses other queued Gmail requests', async () => {
+  const starts = [];
+  let resume, limited;
+  const cooling = new Promise((resolve) => { limited = resolve; });
+  const gmail = gmailClient('tok', async (url) => {
+    starts.push(url.pathname.split('/').pop());
+    return starts.length === 1 ? new Response('slow down', { status: 429 }) : Response.json({});
+  }, { gapMs: 0, waits: [10], sleep: () => new Promise((resolve) => { resume = resolve; limited(); }) });
+  const first = gmail.getMessage('a');
+  await cooling;
+  const second = gmail.getMessage('b');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(starts, ['a']);
+  resume();
+  await Promise.all([first, second]);
+  assert.deepEqual(starts, ['a', 'a', 'b']);
+});
