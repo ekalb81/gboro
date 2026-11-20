@@ -44,4 +44,3 @@ test('crowd-only updates redraw a settled reduced-motion view once without rebui
     await browser.close();
   }
 });
-
