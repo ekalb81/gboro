@@ -514,10 +514,18 @@ function rayHits(b,gx,gy,zpx){if(b.minx>gx+b.tmax+.5||b.maxx<gx-.05||b.miny>gy+b
   if(b.deck){const t1=(b.hpx-zpx)/(2*TH);if(t1<=0)return false;const t0=Math.max(0,(b.z0-zpx)/(2*TH));return segHits(gx+t0,gy+t0,t1-t0,b.pts)}
   const hit=(pts,top)=>{const t=(top-zpx)/(2*TH);return t>0&&segHits(gx,gy,t,pts)};
   if(hit(b.pts,b.hpx+(b.special==='jsb'?12:0)))return true;if(b.tiers)for(const t of b.tiers)if(hit(t.pts,Math.min(250,t.h*ZPM)))return true;return !!b.balcony&&hit(b.footprint,b.balcony.z)}
+// Index the footprint and line-of-sight reach of each building. Return candidates once in drawing order.
+let BGRID=null,bgStamp=0;const BGC=4,bgOut=[];
+function bldsNear(x0,y0,x1,y1){
+  if(!BGRID){BGRID=new Map();blds.forEach((b,i)=>{b.bi=i;b.bq=0;for(let cx=Math.floor((b.minx-b.tmax-.5)/BGC);cx<=Math.floor((b.maxx+.05)/BGC);cx++)for(let cy=Math.floor((b.miny-b.tmax-.5)/BGC);cy<=Math.floor((b.maxy+.05)/BGC);cy++){const k=cx*4096+cy;if(!BGRID.has(k))BGRID.set(k,[]);BGRID.get(k).push(b)}})}
+  const ax=Math.floor(x0/BGC),bx=Math.floor(x1/BGC),ay=Math.floor(y0/BGC),by=Math.floor(y1/BGC);if(ax===bx&&ay===by)return BGRID.get(ax*4096+ay)||bgOut0;
+  bgOut.length=0;bgStamp++;for(let cx=ax;cx<=bx;cx++)for(let cy=ay;cy<=by;cy++){const l=BGRID.get(cx*4096+cy);if(l)for(const b of l)if(b.bq!==bgStamp){b.bq=bgStamp;bgOut.push(b)}}
+  return bgOut.sort((a,b)=>a.bi-b.bi)}
+const bgOut0=[];
 /** Buildings standing between the viewer and any of the sample points [gx,gy,zpx]. */
 function blockersFor(smp){const out=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
   // rayHits' own first test, for all the samples at once
-  for(const b of blds){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;for(const[gx,gy,z] of smp)if(rayHits(b,gx,gy,z||0)){out.push(b);break}}return out}
+  for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;for(const[gx,gy,z] of smp)if(rayHits(b,gx,gy,z||0)){out.push(b);break}}return out}
 const blockers=(gx,gy,zpx=0)=>blockersFor([[gx,gy,zpx]]);
 function rect(cx,cy,dx,dy,len,wid){const L=Math.hypot(dx,dy)||1;const ux=dx/L,uy=dy/L,vx=-uy,vy=ux;const a=len/2,b=wid/2;return[[cx-ux*a-vx*b,cy-uy*a-vy*b],[cx+ux*a-vx*b,cy+uy*a-vy*b],[cx+ux*a+vx*b,cy+uy*a+vy*b],[cx-ux*a+vx*b,cy-uy*a+vy*b]]}
 
@@ -1589,16 +1597,6 @@ function fpsBox(){const fr_=BM.frames,now=performance.now(),n=fr_.length;
     `moving things ${Math.round(avg('n'))}, cut out ${Math.round(avg('cut'))}   tiles ${tiles.size} (${(mb*4/1048576).toFixed(0)} MB of ${TILE_MB})   glow ${FT.dg?'on':'off'}\n`+
     `${br}   dpr ${window.devicePixelRatio}   canvas ${W}x${H} shown ${cv.clientWidth}x${cv.clientHeight} css   scale ${+VS.toFixed(2)} (${KPX} device px a canvas px)   zoom ${+zNow().toFixed(2)}${ZG?' (on its way to '+ZL[zi]+')':''}\n`+
     `compose: ${LY?'layers':'canvas ('+LYWHY+(HASFILTER?'':'; no canvas filter')+')'}   cut: ${CARD?'card':'clip'}${SOFT?'   (software renderer found)':''}   res: ${PLAN.name} (${PLANWHY}${GV.on?', watching':''})${reduce?'   reduced motion: zoom jumps':''}`}
-// The buildings that could stand in front of something at grid box (x0,y0)-(x1,y1): a coarse grid over each building's
-// reach (its footprint plus how far its height carries up the screen), so a frame does not scan every building for
-// every moving thing. In the buildings' own order, each once.
-let BGRID=null,bgStamp=0;const BGC=4,bgOut=[];
-function bldsNear(x0,y0,x1,y1){
-  if(!BGRID){BGRID=new Map();blds.forEach((b,i)=>{b.bi=i;b.bq=0;for(let cx=Math.floor((b.minx-b.tmax-.5)/BGC);cx<=Math.floor((b.maxx+.05)/BGC);cx++)for(let cy=Math.floor((b.miny-b.tmax-.5)/BGC);cy<=Math.floor((b.maxy+.05)/BGC);cy++){const k=cx*4096+cy;if(!BGRID.has(k))BGRID.set(k,[]);BGRID.get(k).push(b)}})}
-  const ax=Math.floor(x0/BGC),bx=Math.floor(x1/BGC),ay=Math.floor(y0/BGC),by=Math.floor(y1/BGC);if(ax===bx&&ay===by)return BGRID.get(ax*4096+ay)||bgOut0;
-  bgOut.length=0;bgStamp++;for(let cx=ax;cx<=bx;cx++)for(let cy=ay;cy<=by;cy++){const l=BGRID.get(cx*4096+cy);if(l)for(const b of l)if(b.bq!==bgStamp){b.bq=bgStamp;bgOut.push(b)}}
-  return bgOut.sort((a,b)=>a.bi-b.bi)}
-const bgOut0=[];
 let FT={de:1,dg:1};const glowOn=()=>{useGlow(true);FT.dg=1};
 // How long a frame may spend drawing tiles (in the frame, for the view; then ahead, with what is left), and how often.
 // Tile drawing costs more than the time measured here: the browser's graphics process does the actual painting
