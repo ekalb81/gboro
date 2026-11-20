@@ -17,6 +17,7 @@ const C = { lawn: '#6fb650', rough: '#8fbf5f', clay: '#cf5a36', clayD: '#a84528'
 const rad = Math.PI / 180;
 const LAT = 36.0726, LON = -79.792; // downtown, as in model.js: near enough for the sun
 const TW = 12, TH = 6, ZP = 13.5; // model pixels per metre: across, down, up
+const SIDES = [['E', 'S'], ['W', 'S'], ['W', 'N'], ['E', 'N']];
 
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const mixCache = new Map();
@@ -47,7 +48,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   const CX = (lot.base[0] + lot.base[2]) / 2, CY = (lot.base[1] + lot.base[3]) / 2;
   const uv = (x, y) => { const a = x - CX, b = y - CY; return rot === 0 ? [a, b] : rot === 1 ? [b, -a] : rot === 2 ? [-a, -b] : [-b, a]; };
   const P = (x, y, z = 0) => { const [u, v] = uv(x, y); return [(u - v) * TW, (u + v) * TH - z * ZP]; };
-  const VIS = () => [['E', 'S'], ['W', 'S'], ['W', 'N'], ['E', 'N']][rot];
+  const VIS = () => SIDES[rot];
   const FACE = { S: 1, W: 0.9, E: 0.8, N: 0.68 };
 
   // ---------- the clock ----------
@@ -452,24 +453,52 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
   // ---------- draw order ----------
   // Everything that stands up has a box on the ground. A thing is drawn before another when it lies wholly behind it
   // along either ground axis as seen from this corner; only pairs that can overlap on screen are compared.
-  function sortObjs(objs) {
-    for (const o of objs) { const c = [uv(o.x0, o.y0), uv(o.x1, o.y0), uv(o.x1, o.y1), uv(o.x0, o.y1)]; o.u0 = Math.min(...c.map((p) => p[0])); o.u1 = Math.max(...c.map((p) => p[0])); o.v0 = Math.min(...c.map((p) => p[1])); o.v1 = Math.max(...c.map((p) => p[1]));
-      const pad = o.pad || 0; o.sx0 = (o.u0 - o.v1) * TW - pad; o.sx1 = (o.u1 - o.v0) * TW + pad; o.sy0 = (o.u0 + o.v0) * TH - (o.h || 0) * ZP - pad; o.sy1 = (o.u1 + o.v1) * TH + 2; o.n = 0; o.after = []; }
+  const orderByView = [];
+  function projected(o) {
+    const [u, v] = uv(o.x0, o.y0), [U, V] = uv(o.x1, o.y1);
+    const u0 = Math.min(u, U), u1 = Math.max(u, U), v0 = Math.min(v, V), v1 = Math.max(v, V), pad = o.pad || 0;
+    return { ...o, u0, u1, v0, v1, sx0: (u0 - v1) * TW - pad, sx1: (u1 - v0) * TW + pad,
+      sy0: (u0 + v0) * TH - (o.h || 0) * ZP - pad, sy1: (u1 + v1) * TH + 2, depth: u0 + v0 + u1 + v1 };
+  }
+  function orderLinks(objs, from, counts) {
+    const links = [];
     const E = 0.01;
-    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++) {
+    for (let i = 0; i < objs.length; i++) for (let j = Math.max(i + 1, from); j < objs.length; j++) {
       const a = objs[i], b = objs[j]; if (a.sx1 < b.sx0 || b.sx1 < a.sx0 || a.sy1 < b.sy0 || b.sy1 < a.sy0) continue;
       const ab = a.u1 <= b.u0 + E || a.v1 <= b.v0 + E, ba = b.u1 <= a.u0 + E || b.v1 <= a.v0 + E;
-      let first = ab && !ba ? a : ba && !ab ? b : null;
-      if (!first && !ab && !ba) first = a.u0 + a.v0 + a.u1 + a.v1 <= b.u0 + b.v0 + b.u1 + b.v1 ? a : b; // overlapping footprints: nearer middle last
-      if (!first) continue; const second = first === a ? b : a; first.after.push(second); second.n++;
+      if (ab && ba) continue;
+      const aFirst = ab || (!ba && a.depth <= b.depth); // overlapping footprints: nearer middle last
+      (links[aFirst ? i : j] ??= []).push(aFirst ? j : i);
+      counts[aFirst ? j : i]++;
     }
-    const out = [], ready = objs.filter((o) => !o.n), left = new Set(objs);
-    const key = (o) => o.u0 + o.v0 + o.u1 + o.v1;
+    return links;
+  }
+  function sortObjs(moving) {
+    let graph = orderByView[rot];
+    if (!graph) {
+      const objs = fixed.map(projected), counts = objs.map(() => 0);
+      graph = orderByView[rot] = { objs, counts, links: orderLinks(objs, 0, counts) };
+    }
+    if (!moving.length && graph.sorted) return graph.sorted;
+    const objs = graph.objs.concat(moving.map(projected));
+    const counts = graph.counts.concat(moving.map(() => 0));
+    const extra = orderLinks(objs, fixed.length, counts);
+    const out = [], ready = [], left = new Set();
+    for (let i = 0; i < objs.length; i++) { left.add(i); if (!counts[i]) ready.push(i); }
+    const consume = (links) => {
+      if (links) for (const i of links) if (--counts[i] === 0 && left.has(i)) ready.push(i);
+    };
     while (left.size) {
-      if (!ready.length) { let m = null; for (const o of left) if (!m || key(o) < key(m)) m = o; m.n = 0; ready.push(m); }
-      ready.sort((a, b) => key(b) - key(a)); const o = ready.pop(); if (!left.has(o)) continue; left.delete(o); out.push(o);
-      for (const k of o.after) if (--k.n === 0 && left.has(k)) ready.push(k);
+      if (!ready.length) { let m; for (const i of left) if (m == null || objs[i].depth < objs[m].depth) m = i; counts[m] = 0; ready.push(m); }
+      ready.sort((a, b) => objs[b].depth - objs[a].depth);
+      const i = ready.pop();
+      if (!left.delete(i)) continue;
+      out.push(objs[i]);
+      // The original pair order puts each fixed object's static edges before its moving edges.
+      consume(graph.links[i]);
+      consume(extra[i]);
     }
+    if (!moving.length) graph.sorted = out;
     return out;
   }
 
@@ -601,7 +630,7 @@ export function startHouse({ canvas, lot, weather = null, onSay = () => {} }) {
     }
 
     // everything standing, back to front
-    const objs = fixed.slice();
+    const objs = [];
     for (const car of who.cars) { const x = lot.street[0] + 1.5, y = car.y; objs.push({ x0: x - 0.9, y0: y - 2.2, x1: x + 0.9, y1: y + 2.2, h: 1.6, draw: () => {
       box([x - 0.9, y - 2.2, x + 0.9, y + 2.2], 0.25, 0.95, car.col); box([x - 0.8, y - 1.1, x + 0.8, y + 1.3], 0.95, 1.5, mix(C.glass, C.plum, 0.35), mix(car.col, C.hi, 0.15));
       for (const yy of [y - 1.4, y + 1.4]) for (const xx of [x - 0.9, x + 0.9]) disc(xx, yy, 0.2, 0.22, T('#26232e')); } }); }
