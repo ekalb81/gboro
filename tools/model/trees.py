@@ -18,12 +18,14 @@ it is, and whether it keeps its leaves in winter. Two steps:
    under a building are dropped; OSM natural=tree nodes the lidar does not show (planted since, such as
    LeBauer Park's) are added as young trees; man_made=flagpole nodes become flags.
    Buildings the lidar found are read from the model (prep.py's output; public/model/downtown.json unless given).
+   Reviewed crown-to-root corrections and measured planting openings come from data/model/osm/tree-roots.json.
 
 Species: no public inventory of downtown Greensboro's trees exists (the City has only neighbourhood studies),
 so each tree gets a species typical of Piedmont NC plantings for what we do know about it: evergreen or not,
 height, crown width, and whether it stands along a street or in a park or yard. The choice is stable per tree.
 """
 import os, json, math, sys, glob
+from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -208,15 +210,28 @@ def merge_step():
         t['sp'] = sp
     trees.sort(key=lambda t: t['gx'] + t['gy'])
     SP = sorted({t['sp'] for t in trees})
+    with (Path(__file__).resolve().parents[2] / 'data/model/osm/tree-roots.json').open() as f:
+        corrections = {(x, y): root for sites in json.load(f)['sites'].values() for x, y, root in sites}
+    rows = []
+    for t in trees:
+        point = (round(t['gx'], 2), round(t['gy'], 2))
+        src = 0 if t['src'] == 'lidar' else 1
+        root = corrections.get(point, point)
+        if root is None:
+            continue
+        row = [*root[:2], round(t['h'], 1), round(t['r'], 1), SP.index(t['sp']), src]
+        if len(root) > 2:
+            row.append(root[2:])
+        rows.append(row)
     out = {
-        'about': 'Downtown Greensboro trees. Positions, heights (m) and crown radii (m) from the NC 2024 Phase 3 lidar (flown 2024-02-03) plus OpenStreetMap natural=tree for trees planted since; trees under buildings dropped. Evergreen vs deciduous from the 2022-02-09 leaf-off NC OneMap aerial. Species inferred (no public inventory): typical Piedmont NC plantings by evergreen, size and setting.',
-        'cols': ['gx', 'gy', 'h', 'r', 'sp', 'src'], 'SP': SP, 'SRC': ['lidar', 'osm'],
-        'T': [[round(t['gx'], 2), round(t['gy'], 2), round(t['h'], 1), round(t['r'], 1), SP.index(t['sp']), 0 if t['src'] == 'lidar' else 1] for t in trees],
+        'about': 'Downtown Greensboro trees. NC 2024 Phase 3 lidar (flown 2024-02-03) records the crowns, and OpenStreetMap adds mapped tree locations. Root positions and planting openings reviewed against Guilford County GIS 2026 Orthos are listed in data/model/osm/tree-roots.json. Evergreen vs deciduous from the 2022-02-09 leaf-off NC OneMap aerial. Species inferred from size and setting.',
+        'cols': ['gx', 'gy', 'h', 'r', 'sp', 'src', 'pit'], 'SP': SP, 'SRC': ['lidar', 'osm'],
+        'T': rows,
         'F': flags,
     }
     json.dump(out, open(OUT, 'w'), separators=(',', ':'))
     from collections import Counter
-    print(len(trees), 'trees;', under, 'lidar crowns under buildings;', added, 'from OSM only;', dict(Counter(t['sp'] for t in trees)), 'flags', len(flags))
+    print(len(rows), 'trees;', under, 'lidar crowns under buildings;', added, 'from OSM only;', dict(Counter(SP[r[4]] for r in rows)), 'flags', len(flags))
 
 
 lidar_step() if LIDAR else merge_step()

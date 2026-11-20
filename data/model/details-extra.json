@@ -1,6 +1,15 @@
 {
  "about": "Things OpenStreetMap does not have, checked against the NC OneMap 2024 aerial unless the entry names another source. Longitude, latitude. Read by tools/model/details.py.",
  "areas": [
+  {"k": "lawn", "note": "Lawn under the Bennett water tower. The overhanging tank hides the ground in the 2026 orthophoto, and the Greenway street photograph confirms grass at the base.", "source_url": "https://www.wafcomills.com/news-at-wafco-mills/have-you-explored-the-downtown-greenway-yet", "ll": [[-79.78480043, 36.06767498], [-79.78443334, 36.06765789], [-79.78442134, 36.06737789], [-79.78443234, 36.06734452], [-79.78481443, 36.06735022]]},
+  {"k": "balcony", "building": 414248814, "note": "200 King St upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78725502, 36.06730708], [-79.78725402, 36.06734859], [-79.78721301, 36.06734778], [-79.78721401, 36.06730627]]},
+  {"k": "balcony", "building": 414248814, "note": "200 King St upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78702897, 36.06734534], [-79.78698696, 36.06734452], [-79.78698796, 36.06730952], [-79.78702997, 36.06731034]]},
+  {"k": "balcony", "building": 414248814, "note": "200 King St upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78699696, 36.066835], [-79.78699796, 36.06678942], [-79.78703797, 36.06679023], [-79.78703697, 36.06683581]]},
+  {"k": "balcony", "building": 414248814, "note": "200 King St upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78722402, 36.06679267], [-79.78725902, 36.06679349], [-79.78725802, 36.06684151], [-79.78722302, 36.0668407]]},
+  {"k": "balcony", "building": 598164879, "note": "308 Victor Place upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.7867539, 36.06756347], [-79.7867529, 36.06759114], [-79.78669889, 36.06759033], [-79.78669989, 36.06756266]]},
+  {"k": "balcony", "building": 598164879, "note": "308 Victor Place upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78612875, 36.06757975], [-79.78607674, 36.06757894], [-79.78607774, 36.06754719], [-79.78612975, 36.06754801]]},
+  {"k": "balcony", "building": 598164879, "note": "308 Victor Place upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78608174, 36.06739987], [-79.78608274, 36.06735836], [-79.78612575, 36.06735917], [-79.78612475, 36.06740068]]},
+  {"k": "balcony", "building": 598164879, "note": "308 Victor Place upper-floor corner terrace, matched to the roof notch in Guilford County 2026 Orthos.", "ll": [[-79.78671889, 36.06737057], [-79.7867589, 36.06737138], [-79.7867579, 36.06740882], [-79.78671789, 36.06740801]]},
   {
    "k": "court",
    "s": "basketball",

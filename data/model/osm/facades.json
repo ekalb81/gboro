@@ -1,4 +1,30 @@
 {
+ "414248814": {
+  "address": "200 King Street",
+  "wall_hex": "#84725f",
+  "upper_wall_hex": "#ddd6c5",
+  "material": "brick",
+  "floors": 4,
+  "storefront": false,
+  "window_style": "punched",
+  "confidence": "medium",
+  "source": "Guilford County EagleView oblique viewer, 2026",
+  "source_url": "https://gisdv.guilfordcountync.gov/PictometryIPA/?Lat=36.066829171&Lon=-79.7871800319",
+  "notes": "Brown masonry below a light-clad fourth floor. The palette approximates the viewed materials."
+ },
+ "598164879": {
+  "address": "308 Victor Place",
+  "wall_hex": "#82715f",
+  "upper_wall_hex": "#ded8ca",
+  "material": "brick",
+  "floors": 4,
+  "storefront": false,
+  "window_style": "punched",
+  "confidence": "medium",
+  "source": "Guilford County EagleView oblique viewer, 2026",
+  "source_url": "https://gisdv.guilfordcountync.gov/PictometryIPA/?Lat=36.06747848&Lon=-79.78641445",
+  "notes": "Brown masonry below a light-clad fourth floor. The palette approximates the viewed materials."
+ },
  "207915704": {
   "name": "XO Lounge",
   "street": "South Elm Street",

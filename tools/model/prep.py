@@ -200,12 +200,14 @@ try:
         b['rc']='#%02x%02x%02x'%tuple(int(round(v*255)) for v in med)
 except FileNotFoundError: pass
 
-# facade readings from Mapillary street photos (2018/2021)
+# facade readings from street photos and county obliques
 try:
     FC=json.load(open(INP+'osm/facades.json'))
     for b in B:
         f=FC.get(str(b['id']))
-        if f: b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
+        if f:
+            b['f']={k:f.get(k) for k in ('wall_hex','trim_hex','material','floors','storefront','awning_hex','window_style','confidence')}
+            if f.get('upper_wall_hex'): b['f']['upper_wall_hex']=f['upper_wall_hex']
 except FileNotFoundError: pass
 # facade readings from Wikimedia Commons photos (mostly a 2019 walk along Elm and Market streets, straight-on and
 # CC0); committed in data/model/facades-commons.json. One replaces a Mapillary reading unless that one is surer.

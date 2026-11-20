@@ -10,8 +10,8 @@ The model's bounds are read from the model file itself
 (public/model/downtown.json, GEO), so when the model grows this only needs running again, after prep.py.
 
 Writes, in the model's grid units (one unit = 9 m, x east, y south, from the north-west corner):
-  A  areas:  pool, fountain, court, turf, play, sand, dogpark, platform, brick, pavers, seating; `b` = the building a
-             rooftop pool or court sits on
+  A  areas:  pool, fountain, court, turf, play, sand, dogpark, platform, brick, pavers, seating, balcony, lawn;
+             `b` = the building a rooftop feature belongs to
   L  lines:  fence, wall, stream, brickpath
   P  points: [kind, x, y, extra]: bench, table, art, memorial, flag, busstop, hydrant, bin, bike, postbox, fountain, play,
              gate, tower (water tower), bookcase, bbq
@@ -125,6 +125,8 @@ for e in raw:
         kind = next((v for (k, val), v in PT_KIND.items() if t.get(k) == val), None)
         if 'playground' in t or (t.get('leisure') == 'pitch' and t.get('sport') in ('table_tennis', 'gaga')): kind = 'play'
         if not kind: continue
+        if kind == 'tower' and e['id'] == 4154138087:  # NOAA 2015 lidar, centre of the tank's circular rim
+            x, y = g(-79.7845892, 36.0675079)
         if kind != 'tower' and building_at(x, y): continue          # indoors, or on a roof where it would not be seen
         extra = t.get('direction', '')
         if kind == 'play': extra = t.get('playground') or t.get('sport') or ''
@@ -176,7 +178,7 @@ if os.path.exists(EXTRA):
         if not inreg(cx, cy): continue
         rec = {'k': a['k'], 'p': flat(q)}
         if a.get('s'): rec['s'] = a['s']
-        b = building_at(cx, cy)
+        b = a.get('building') or building_at(cx, cy)
         if b: rec['b'] = b
         A_.append(rec)
     for d in X.get('diamonds', []):

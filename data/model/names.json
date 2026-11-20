@@ -1,6 +1,11 @@
 {
-  "_note": "Corrections to building names for tools/model/prep.py, keyed by OpenStreetMap way id. Only for typos and gaps upstream; everything else comes from OpenStreetMap by itself.",
+  "_note": "Corrections to building names and addresses, keyed by OpenStreetMap way ID.",
   "buildings": {
-    "208189131": { "name": "Elm Street Center" }
+    "208189131": { "name": "Elm Street Center" },
+    "598164879": {
+      "address": "308 Victor Pl",
+      "source": "Guilford County Situs Addresses",
+      "source_url": "https://gcgis.guilfordcountync.gov/arcgis/rest/services/GISDV/Base_Map/MapServer"
+    }
   }
 }
