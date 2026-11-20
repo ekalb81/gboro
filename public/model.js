@@ -12,7 +12,7 @@
 //
 // map is public/model/downtown.json (tools/model/prep.py). Drop in a newer one and nothing here changes.
 import { clockAt, nowDoing, dayRand } from './homeday.js';
-import { mowRoute } from './house.js';
+import { mowRoute } from './house-routes.js';
 import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, addOutlinePart, dayOfYear, look, windOn, windKey, makeBlowing, drawFlag } from './trees.js';
 import { makeBalconyPlans, makeDetails } from './details.js';
 
