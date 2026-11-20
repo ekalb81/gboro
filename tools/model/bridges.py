@@ -205,10 +205,30 @@ def road_decks(R, RL, X, GX, GY, M, widths=None):
             quad = quad.buffer(0)
         # each roadway a little longer than the piece at both ends, so the cuts decide where it stops and the
         # pieces meet without gaps
+        mark = [substring(F, s0, s1) for F, s0, s1, h, w, ow in lanes]
+        sections = []
+        lanes = list(lanes)
+        for k, (F, s0, s1, h, w, ow) in enumerate(lanes):
+            # A ramp can cross an OSM way boundary where the lane count changes.
+            sample = [mark[k].interpolate(f, normalized=True) for f in (.2, .5, .8)]
+            source, road = min(ways, key=lambda way: sum(way[0].distance(pt) for pt in sample))
+            lane_tag = str(road.get('ln', ''))
+            tagged = int(lane_tag) if lane_tag.isascii() and lane_tag.isdigit() else 0
+            shared = road.get('lc', 0)
+            total = max(2, (tagged or 2) - shared)
+            forward = (road.get('lf') or tagged or 1) if ow else road.get('lf') or max(1, total - road.get('lb', total // 2))
+            back = 0 if ow else road.get('lb') or max(1, total - forward)
+            count = forward + shared + back
+            if source.project(sample[0]) > source.project(sample[-1]): back = forward
+            road_width = max(RWm[road['c']], 3 * count)
+            spacing = road_width / count
+            if tagged or road.get('lf') or road.get('lb') or shared: spacing = min(3.6, spacing)
+            sections.append((count, back, shared, spacing))
+            width = max(w, road_width)
+            lanes[k] = (F, s0, s1, h + (width - w) * Mi / 2, width, ow)
         body = unary_union([substring(F, max(0, s0 - .5), min(F.length, s1 + .5)).buffer(h, cap_style='flat', join_style='mitre')
                             for F, s0, s1, h, w, ow in lanes])
         shape = body.intersection(quad).intersection(board)
-        mark = [substring(F, s0, s1) for F, s0, s1, h, w, ow in lanes]
         mid = None
         if len(lanes) == 2 and mark[0].distance(mark[1]) < lanes[0][3] + lanes[1][3]:
             n = 8       # the decks touch: one roadway, a gold line down the middle
@@ -220,9 +240,11 @@ def road_decks(R, RL, X, GX, GY, M, widths=None):
             long_ = substring(F, max(0, s0 - .5), min(F.length, s1 + .5))
             cl.append(flat(list(ln.coords)))
             # paint lines are given whole (the renderer clips them to the piece), so dashes keep step across the cuts
-            (wl if ow else gl).append(flat(list(F.coords)))
-            if w >= 17:
-                wl += [flat(list(m.coords)) for sd in (1, -1) for m in lines(F.offset_curve(sd * w / 4 * Mi))]
+            count, back, shared, spacing = sections[k]
+            for divider in range(1, count):
+                paint = gl if not ow and back <= divider <= back + shared else wl
+                offset = (divider - count / 2) * spacing * Mi
+                paint.extend(flat(list(m.coords)) for m in lines(F.offset_curve(offset) if offset else F))
             for sd in (1, -1):
                 e = long_.offset_curve(sd * (h - .3 * Mi))
                 for j, o in enumerate(lanes):

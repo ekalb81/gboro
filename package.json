@@ -21,6 +21,7 @@
     "crime": "node scripts/fetch-crime.mjs",
     "bench": "node scripts/bench.mjs",
     "audit:geometry": "node scripts/audit-geometry.mjs",
+    "audit:traffic": "node scripts/audit-traffic.mjs",
     "audit:tiles": "node scripts/audit-tiles.mjs",
     "check:site": "node scripts/check-site.mjs",
     "smoke": "node scripts/smoke.mjs",
