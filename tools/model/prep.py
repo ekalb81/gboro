@@ -150,18 +150,21 @@ except ImportError: pass
 # 3D building parts (from the unfiltered OSM extract)
 PT=[]
 try:
-    raw=json.load(open(INP+'osm/downtown-raw.json'))['elements']
-    nd={e['id']:e for e in raw if e['type']=='node'}
+    with open(INP+'osm/downtown-raw.json') as f:
+        raw_el=json.load(f)['elements']
+except FileNotFoundError:
+    raw_el=None
+if raw_el is not None:
+    ndr={e['id']:e for e in raw_el if e['type']=='node'}
     def num(v):
         try: return float(str(v).split()[0])
         except: return None
-    for e in raw:
+    for e in raw_el:
         t=e.get('tags',{})
         if e['type']!='way' or 'building:part' not in t: continue
-        pts=[g(nd[i]) for i in e['nodes'] if i in nd]
+        pts=[g(ndr[i]) for i in e['nodes'] if i in ndr]
         if pts and pts[0]==pts[-1]: pts=pts[:-1]
         PT.append({'id':e['id'],'p':flat(pts),'h':num(t.get('height')),'mh':num(t.get('min_height')),'l':num(t.get('building:levels')),'rs':t.get('roof:shape',''),'rc':t.get('roof:colour',''),'ra':num(t.get('roof:angle')),'n':t.get('name',''),'a':t.get('amenity','')})
-except FileNotFoundError: pass
 
 # Roof colours from roof_colours.py, with an optional vegetation mask from the older aerial.
 try:
@@ -266,9 +269,7 @@ print('houses north of downtown',nh)
 # laid out along the mapped parking aisles at the stall angle read from the aerial (imagery/ground.json from
 # tools/model/ground.py); and the aerial's ground classes for everything else.
 FW=[];GA=[];SR=[];GC=None;SIG=[]
-try:
-    raw_el=json.load(open(INP+'osm/downtown-raw.json'))['elements']
-    ndr={e['id']:e for e in raw_el if e['type']=='node'}
+if raw_el is not None:
     wyr={e['id']:e for e in raw_el if e['type']=='way'}
     lots=[];aisles=[]
     for e in raw_el:
@@ -310,24 +311,34 @@ try:
     GA.sort(key=lambda a:a['k']!='plaza')
     if lots: PL=[flat(q) for _,q in lots]
     try:
-        from shapely.geometry import Polygon,LineString,Point
+        from shapely.geometry import Polygon,LineString
         from shapely.ops import unary_union
-        from shapely.strtree import STRtree
+        try:
+            from shapely import contains_xy
+        except ImportError:
+            from shapely.vectorized import contains as contains_xy
         gd=json.load(open(INP+'imagery/ground.json'))
         st=gd['stripes'];SF={}
         for j,row in enumerate(st['rows']):
             for i in range(0,len(row),2):
                 if row[i]!='-': SF[(i//2,j)]=(int(row[i],36)*5+2.5,int(row[i+1]))
+        stripe_r=st['r']
+        def stripes_inside(shape):
+            x0,y0,x1,y1=shape.bounds
+            samples=[((i+.5)/stripe_r,(j+.5)/stripe_r,v)
+                     for i in range(int(x0*stripe_r),int(x1*stripe_r)+1)
+                     for j in range(int(y0*stripe_r),int(y1*stripe_r)+1)
+                     if (v:=SF.get((i,j)))]
+            if samples:
+                xs,ys,values=zip(*samples)
+                yield from (v for v,inside in zip(values,contains_xy(shape,xs,ys)) if inside)
         def stripe_angle(band,phi):
             """painted-line direction relative to the aisle inside a band beside it (degrees, 90 = square to it), or None"""
-            x0,y0,x1,y1=band.bounds;hist={};tot=0
-            for i in range(int(x0*st['r']),int(x1*st['r'])+1):
-                for j in range(int(y0*st['r']),int(y1*st['r'])+1):
-                    v=SF.get((i,j))
-                    if not v or not band.contains(Point((i+.5)/st['r'],(j+.5)/st['r'])): continue
-                    rel=(v[0]-phi)%180
-                    if rel<25 or rel>155: continue
-                    b=int(rel//10);hist[b]=hist.get(b,0)+v[1];tot+=v[1]
+            hist={};tot=0
+            for angle,weight in stripes_inside(band):
+                rel=(angle-phi)%180
+                if rel<25 or rel>155: continue
+                b=int(rel//10);hist[b]=hist.get(b,0)+weight;tot+=weight
             if tot<8: return None
             sc=lambda q:hist.get(q,0)+.6*hist.get(q-1,0)+.6*hist.get(q+1,0)
             b=max(hist,key=sc);rel=b*10+5
@@ -347,6 +358,18 @@ try:
             elif r['c']<=4: obst.append(ln.buffer(([16,14,12,10,8][r['c']]/2+.3)*Mi));RDL.append((ln,([16,14,12,10,8][r['c']]/2+.4)*Mi))
         OB=unary_union([o for o in obst if o.is_valid])
         placed=[]
+        stall_cells=defaultdict(list)
+        def stall_cell_ranges(bounds):
+            left,top,right,bottom=map(math.floor,bounds)
+            return range(left,right+1),range(top,bottom+1)
+        def nearby_stalls(bounds):
+            xs,ys=stall_cell_ranges(bounds)
+            if len(xs)*len(ys)>len(placed):
+                yield from placed
+                return
+            # Keep placement order for overlap checks and for the lot's remaining area.
+            for i in sorted({i for x in xs for y in ys for i in stall_cells.get((x,y),())}):
+                yield placed[i]
         def place_along(line,usable,lot_i,AH=AH):
             L=line.length
             if L<WD: return
@@ -371,10 +394,14 @@ try:
                         d=off+(k_+.5)*sp;ex,ey=a_[0]+ax*d+nx*AH,a_[1]+ay*d+ny*AH
                         poly_=Polygon([(ex-ax*sp/2,ey-ay*sp/2),(ex+ax*sp/2,ey+ay*sp/2),(ex+ax*sp/2+ux*DP,ey+ay*sp/2+uy*DP),(ex-ax*sp/2+ux*DP,ey-ay*sp/2+uy*DP)])
                         if poly_.intersection(usable).area<poly_.area*.88: cur=None;continue
-                        left,top,right,bottom=poly_.bounds
-                        if any(poly_.intersection(q).area>poly_.area*.12 for q,(x0,y0,x1,y1) in placed
+                        bounds=poly_.bounds
+                        left,top,right,bottom=bounds
+                        if any(poly_.intersection(q).area>poly_.area*.12 for q,(x0,y0,x1,y1) in nearby_stalls(bounds)
                                if x0<right and x1>left and y0<bottom and y1>top): cur=None;continue
-                        placed.append((poly_,(left,top,right,bottom)))
+                        xs,ys=stall_cell_ranges(bounds)
+                        for x in xs:
+                            for y in ys: stall_cells[x,y].append(len(placed))
+                        placed.append((poly_,bounds))
                         cx,cy=ex+ux*DP/2,ey+uy*DP/2;au_d=round(math.degrees(math.atan2(uy,ux)))
                         if cur and cur['au']==au_d and abs(cx-(cur['x']+cur['dx']*cur['n']))<1e-6+.02 and abs(cy-(cur['y']+cur['dy']*cur['n']))<.02: cur['n']+=1
                         else:
@@ -406,17 +433,15 @@ try:
             for a,h in mine: place_along(a,usable,li,h)
             # whatever the mapped aisles leave over gets rows along the lot's long side (or the aisles' direction), back
             # to back with an aisle between each pair; most lots downtown have no aisles mapped at all
-            rest=usable.difference(unary_union([a.buffer(h) for a,h in mine]+[q for q,_ in placed if q.intersects(lot)])) if mine else usable
+            rest=usable.difference(unary_union([a.buffer(h) for a,h in mine]+[q for q,_ in nearby_stalls(lot.bounds) if q.intersects(lot)])) if mine else usable
             if rest.area>WD*DP*4:
                 if mine:  # follow the mapped aisles
                     sg=max(((p_,q_) for a,h in mine for p_,q_ in zip(list(a.coords),list(a.coords)[1:])),key=lambda e:math.dist(*e));phi=math.atan2(sg[1][1]-sg[0][1],sg[1][0]-sg[0][0])
                 else:
                     # rows run square to the painted stall lines seen in the lot; failing that, along its longest side
-                    x0_,y0_,x1_,y1_=lot.bounds;hist={}
-                    for i in range(int(x0_*st['r']),int(x1_*st['r'])+1):
-                        for j in range(int(y0_*st['r']),int(y1_*st['r'])+1):
-                            v=SF.get((i,j))
-                            if v and lot.contains(Point((i+.5)/st['r'],(j+.5)/st['r'])): b_=int(v[0]//10)%18;hist[b_]=hist.get(b_,0)+v[1]
+                    hist={}
+                    for angle,weight in stripes_inside(lot):
+                        b_=int(angle//10)%18;hist[b_]=hist.get(b_,0)+weight
                     if sum(hist.values())>=12:
                         b_=max(hist,key=lambda q:hist[q]+.6*hist.get((q-1)%18,0)+.6*hist.get((q+1)%18,0));phi=math.radians(b_*10+5+90)
                     else:
@@ -469,7 +494,6 @@ try:
             GC={'r':gr,'w':gw,'h':gh,'rows':rows}
         except ImportError as ex: print('ground classes left as read:',ex)
     except (FileNotFoundError,NameError): pass
-except FileNotFoundError: pass
 # ---- bridges and railroad crossings (OpenStreetMap bridge=yes ways and railway=level_crossing nodes) ----
 # The model's ground is flat, so each bridge is a slab ("deck") the renderer stands on it:
 #   road over rail or road: the span is a slab on piers, and the road climbs to it on ramps of fill (bridges.py)
@@ -496,7 +520,7 @@ try:
     DK+=road_decks(R,RL,X,GX,GY,M)
     # rail bridges: neighbouring tracks share one deck
     rb=[];
-    for e in raw_el:
+    for e in raw_el or ():
         t=e.get('tags',{})
         if e['type']=='way' and t.get('railway')=='rail' and t.get('bridge') in ('yes','viaduct'):
             pts=[g(ndr[i]) for i in e['nodes'] if i in ndr]
@@ -515,7 +539,7 @@ try:
                 for piece in lines(q.intersection(deck.buffer(far*Mi)).difference(deck)): dips.append([flat(list(piece.coords)),o['c']])
         DK.append({'k':'rail','p':ring(deck),'z0':0,'z1':2.2,'rl':[flat(list(q.coords)) for q in g_],'dip':dips})
     # covered footbridges between buildings
-    for e in raw_el:
+    for e in raw_el or ():
         t=e.get('tags',{})
         if e['type']=='way' and t.get('highway')=='footway' and t.get('bridge')=='yes' and t.get('footway')!='sidewalk':
             pts=[g(ndr[i]) for i in e['nodes'] if i in ndr]
@@ -524,7 +548,7 @@ try:
             if q.length*M<8: continue
             DK.append({'k':'foot','p':ring(q.buffer(1.7*Mi,cap_style='flat')),'z0':5.5,'z1':8.6,'cv':1 if t.get('covered')=='yes' else 0})
     # level crossings
-    lxn=[e for e in raw_el if e['type']=='node' and e.get('tags',{}).get('railway')=='level_crossing']
+    lxn=[e for e in raw_el or () if e['type']=='node' and e.get('tags',{}).get('railway')=='level_crossing']
     for q,o in roadl:
         if o['c']>5 or o.get('br'): continue
         on=sorted((q.project(Point(g(e))),e) for e in lxn if q.distance(Point(g(e)))<.01)
@@ -548,13 +572,12 @@ print('decks',[(d_['k'],d_['z1']) for d_ in DK if d_.get('sp') or d_['k']!='road
 print('footpaths',len(FW),'areas',len(GA),'lots',len(PL),'stall rows',len(SR),'stalls',sum(r[4] for r in SR),'signals/stops',len(SIG))
 
 # names: the building's own, who is inside it, and its street address (tools/model/names.py)
-try:
+if raw_el is not None:
     sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
     import names
     try: NOV=json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','data','model','names.json'))).get('buildings',{})
     except FileNotFoundError: NOV={}
-    RAWN=json.load(open(INP+'osm/downtown-raw.json'))['elements']
-    names.name_buildings(B,RAWN,g,NOV)
+    names.name_buildings(B,raw_el,g,NOV)
     # a street address, from the State's address points and parcels, for whatever OpenStreetMap left with nothing
     REPO=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..')
     AD=next((f for f in (INP+'addresses.json',os.path.join(REPO,'data','model','addresses.json')) if os.path.exists(f)),None)
@@ -565,9 +588,10 @@ try:
             HL=json.load(open(os.path.join(REPO,'public','model','house.json')));hx,hy=HL['at'];hb=HL['base'];QM=12.0
             quiet=(hx+(hb[0]-QM)/M,hy+(hb[1]-QM)/M,hx+(hb[2]+QM)/M,hy+(hb[3]+QM)/M)
         except (FileNotFoundError,KeyError): pass
-        print('addresses from the State for',names.state_addresses(B,json.load(open(AD)),g,RAWN,quiet),'buildings')
+        try:
+            print('addresses from the State for',names.state_addresses(B,json.load(open(AD)),g,raw_el,quiet),'buildings')
+        except FileNotFoundError: pass
     print('names',names.coverage(B))
-except FileNotFoundError: pass
 
 # Outlines the lidar found are checked against what is mapped around them (gboro issue #41):
 #   - one lying mostly on a mapped footbridge or bridge deck is that bridge seen from above, and goes;
