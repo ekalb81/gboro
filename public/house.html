@@ -58,10 +58,12 @@
 <script type="module">
 import { startHouse } from './house.js';
 const Q = new URLSearchParams(location.search);
-const get = async (u) => { try { const r = await fetch(u, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch { return null; } };
-const lot = await get('model/house.json');
+const get = async (u) => { try { const r = await fetch(u, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; } };
 const pre = Q.get('weather');
-const weather = pre ? { precip: ['rain', 'snow', 'storm'].includes(pre) ? pre : 'none', sky: pre === 'clear' ? 'clear' : 'cloudy', tempF: pre === 'snow' ? 30 : 58, windMph: 8 } : await get('data/weather.json');
+const [lot, weather] = await Promise.all([
+  get('model/house.json'),
+  pre ? { precip: ['rain', 'snow', 'storm'].includes(pre) ? pre : 'none', sky: pre === 'clear' ? 'clear' : 'cloudy', tempF: pre === 'snow' ? 30 : 58, windMph: 8 } : get('data/weather.json'),
+]);
 const $ = (id) => document.getElementById(id);
 const hhmm = (min) => { const h = Math.floor(min / 60) % 24, m = Math.floor(min % 60); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
 const NEXT = { run: 'a run', walk: 'a walk', mow: 'the lawn', garden: 'the front beds', coffee: 'coffee outside', read: 'a book in the yard', fire: 'friends round the fire' };
