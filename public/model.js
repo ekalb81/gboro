@@ -1216,6 +1216,7 @@ const TF=(()=>{const key=(x,y)=>x.toFixed(2)+','+y.toFixed(2);const pieces=[];
   // Keep unoccupied space on each ring so queued approaches cannot lock it up.
   for(const l of lanes){if(!l.rb||l.ring)continue;const ring={lanes:[l],capacity:0};l.ring=ring;
     for(const member of ring.lanes)for(const q of [...member.from.inn,...member.to.out])if(q.rb&&!q.ring){q.ring=ring;ring.lanes.push(q)}
+    for(const member of ring.lanes)member.ringNext=member.to.out.find(q=>q.ring===ring);
     ring.capacity=Math.max(1,Math.floor(ring.lanes.reduce((sum,q)=>sum+q.L,0)/(CARL+CAR_GAP))-2)}
   return{lanes,nodes:N,entries:entries.length?entries:lanes}})();
 // Crosswalks and stop bars, from the junctions of that graph. A signalled junction has a crosswalk on every arm; one
@@ -1265,10 +1266,31 @@ const tcars=[];if(DBG)window.__tf={TF,tcars,pts0,blds,people,light,
   train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
 (function seedCars(){for(const l of TF.lanes){const n=Math.floor(l.L/(l.c<=2?6:10)+Math.random()*.7);for(let k=0;k<n;k++){const s=(k+.3+Math.random()*.4)*l.L/Math.max(1,n);addCar(l,s)}}})();
 function addCar(l,s){const c={lane:l,s,v:.6,ty:carKind(Math.random()),col:carCols[Math.floor(Math.random()*carCols.length)],v0:(l.c<=2?1.5:1.15)*(.88+Math.random()*.24),wait:0,go:false,off:null};l.cars.push(c);l.cars.sort((a,b)=>b.s-a.s);tcars.push(c);return c}
-function nextLane(c){const l=c.lane;if(l.to.edge)return null;const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
+function pickLane(opts,weights){
+  let r=Math.random()*weights.reduce((a,b)=>a+b,0);
+  for(let i=0;i<opts.length;i++){r-=weights[i];if(r<=0)return opts[i]}
+  return opts[0]}
+const ringTurn=(l,exit)=>exit?.from===l.to?exit:l.ringNext;
+function ringExits(l){
+  const exits=[];
+  for(let q=l,i=0;q&&i<l.ring.lanes.length;i++,q=q.ringNext){
+    if(q!==l&&q.blocked)break;
+    for(const o of q.to.out)if(!o.ring&&!o.blocked)exits.push(o)}
+  return exits}
+function nextLane(c){const l=c.lane;if(l.to.edge)return null;
+  if(l.ring){
+    // Pick a reachable exit once so a car does not keep choosing another lap at each fork.
+    const exits=ringExits(l);if(!exits.length)return null;
+    if(!exits.includes(c.ringExit))c.ringExit=pickLane(exits,exits.map(o=>o.vol||1));
+    return ringTurn(l,c.ringExit)}
+  const opts=l.to.out.filter(o=>o!==l.rev&&!o.blocked);if(!opts.length)return l.to.out.find(o=>o===l.rev&&!o.blocked)||null;
   // mostly straight on, sometimes a turn
   const h=(q,a)=>{const p=q.ch.p;return a?Math.atan2(p[1][1]-p[0][1],p[1][0]-p[0][0]):Math.atan2(p[p.length-1][1]-p[p.length-2][1],p[p.length-1][0]-p[p.length-2][0])};const h0=h(l,false);
-  const w=opts.map(o=>{let d=Math.abs(h(o,true)-h0);d=Math.min(d,2*Math.PI-d);return(d<.5?4:1)*(o.vol||1)});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<opts.length;i++){r-=w[i];if(r<=0)return opts[i]}return opts[0]}
+  const angle=o=>{const d=Math.abs(h(o,true)-h0);return Math.min(d,2*Math.PI-d)};
+  // Divided one-way carriageways can share an endpoint without being marked as reverse lanes.
+  const onward=opts.filter(o=>!(l.ow&&o.ow&&l.ch.n&&l.ch.n===o.ch.n&&angle(o)>2*Math.PI/3));
+  const choices=onward.length?onward:opts;
+  return pickLane(choices,choices.map(o=>(angle(o)<.5?4:1)*(o.vol||1)))}
 // Is the junction taken, for a car that must give way (stop sign, yield, joining a roundabout)? Yes while someone from
 // another street is crossing it, or is about to: already past their line, or coming on a street with the right of way
 // and a second or so off.
@@ -1287,20 +1309,18 @@ function crossBusy(n,me,l){const nx=me.next,mine=l.L-me.s;
     if(h.go?d<.7:h.v>.05&&d<1.2&&(d<mine-1e-3||(d<mine+1e-3&&m.id<l.id)))return true}return false}
 // The gap to the nearest car beyond a lane that is short and empty (the pieces of a roundabout, a street split in two
 // at a junction): the last car on whichever lanes lead on from it. [gap, that car's speed]
-function tailBeyond(nx,base,depth){let g=1e9,v=0;for(const o of nx.to.out){if(o===nx.rev)continue;const t=o.cars[o.cars.length-1];
-    if(t){const d=base+nx.L+t.s-CARL;if(d<g){g=d;v=t.v}}else if(depth>1&&o.L<2&&base+nx.L<3){const r=tailBeyond(o,base+nx.L,depth-1);if(r[0]<g){g=r[0];v=r[1]}}}
+function tailBeyond(nx,base,depth,exit){let g=1e9,v=0;const turn=nx.ring&&exit&&ringTurn(nx,exit);for(const o of nx.to.out){if(o===nx.rev||(turn&&o!==turn))continue;const t=o.cars[o.cars.length-1];
+    if(t){const d=base+nx.L+t.s-CARL;if(d<g){g=d;v=t.v}}else if(depth>1&&o.L<2&&base+nx.L<3){const r=tailBeyond(o,base+nx.L,depth-1,exit);if(r[0]<g){g=r[0];v=r[1]}}}
   return[g,v]}
 function stepTraffic(dt){
   feedCars(dt);
   for(const l of TF.lanes){
-    for(let i=0;i<l.cars.length;i++){const c=l.cars[i];if(!c.next)c.next=nextLane(c);
-      // A stopped car on the ring can use a clear exit to keep circulation moving.
-      if(l.rb&&i===0&&c.v<.05&&l.L-c.s<1){const exit=l.to.out.find(o=>!o.rb&&!o.blocked&&(!o.cars.length||o.cars[o.cars.length-1].s>=CARL+.45));if(exit)c.next=exit}
+    for(let i=0;i<l.cars.length;i++){const c=l.cars[i];if(!c.next||(l.ring&&(c.next.blocked||c.ringExit?.blocked)))c.next=nextLane(c);
       // the gap to whatever is ahead: the car in front, or the last car on the lane we turn into
-      let gap=1e9,vl=0;if(i>0){gap=l.cars[i-1].s-c.s-CARL;vl=l.cars[i-1].v}else if(c.next){if(c.next.cars.length){const t=c.next.cars[c.next.cars.length-1];gap=l.L-c.s+t.s-CARL;vl=t.v}else if(c.next.L<2)[gap,vl]=tailBeyond(c.next,l.L-c.s,3)}
+      let gap=1e9,vl=0;if(i>0){gap=l.cars[i-1].s-c.s-CARL;vl=l.cars[i-1].v}else if(c.next){if(c.next.cars.length){const t=c.next.cars[c.next.cars.length-1];gap=l.L-c.s+t.s-CARL;vl=t.v}else if(c.next.L<2)[gap,vl]=tailBeyond(c.next,l.L-c.s,3,c.ringExit)}
       // must we stop at the end of this lane?
-      const sb=stopBack(l),toLine=l.L-sb-c.s;let hold=false;
-      if(!c.go&&toLine>-.15){const lt=light(l);
+      const sb=stopBack(l),toLine=l.L-sb-c.s,ringClosed=l.ring&&!l.to.edge&&!c.next;let hold=ringClosed;
+      if(!hold&&!c.go&&toLine>-.15){const lt=light(l);
         if(lt==='r')hold=true;else if(lt==='y')hold=c.v*c.v/(2*2.2)<toLine+.05;
         else if(l.sign==='stop'&&l.L>=SHORT){if(c.v<.04&&toLine<.35){c.wait+=dt;hold=c.wait<=1.3||(c.wait<=25&&boxBusy(l.to,c,l))}else hold=true}
         else if(l.sign){hold=toLine<1.6&&boxBusy(l.to,c,l);if(hold&&c.v<.04){c.wait+=dt;if(c.wait>25)hold=false}}
@@ -1308,7 +1328,7 @@ function stepTraffic(dt){
         // Keep the junction clear: no driving in while the way out is full, and where the next piece of street is too
         // short to wait on (a link between two junctions, a roundabout's ring) its light or sign is obeyed from here.
         if(!hold&&i===0&&c.next&&toLine<1.2&&l.to.deg>=3){const q=c.next,t=q.cars[q.cars.length-1];let h2=!!t&&t.v<.25&&t.s<CARL+.45;
-          if(q.ring&&!l.ring&&q.ring.lanes.reduce((sum,r)=>sum+r.cars.length,0)>=q.ring.capacity)hold=true;
+          if(q.ring&&!l.ring&&(q.ring.lanes.reduce((sum,r)=>sum+r.cars.length,0)>=q.ring.capacity||!ringExits(q).length))hold=true;
           if(!h2&&q.L<SHORT&&q.sign)h2=boxBusy(q.to,c,q);
           if(h2){c.wait2=(c.wait2||0)+dt;if(c.wait2<30)hold=true}}
         if(!hold&&toLine<.4){c.go=true;c.wait2=0}}
@@ -1317,10 +1337,10 @@ function stepTraffic(dt){
       for(const x of XING)if(x.on)for(const q of x.lanes)if(q.lane===l&&q.s>c.s-.1){const d=Math.max(.001,q.s-c.s);if(d<gap){gap=d;vl=0}}
       if(hold&&toLine<gap){gap=Math.max(.001,toLine);vl=0}
       const A=1.1,Bd=2.2,Th=.9;const ds=CAR_GAP+c.v*Th+c.v*(c.v-vl)/(2*Math.sqrt(A*Bd));let a=A*(1-Math.pow(c.v/c.v0,4)-Math.pow(Math.max(0,ds)/Math.max(.02,gap),2));a=Math.max(-6,a);
-      c.v=Math.max(0,c.v+a*dt);c.s+=Math.min(c.v*dt,Math.max(0,gap+CARL*.1));c.stopped=c.v<.05}
+      c.v=Math.max(0,c.v+a*dt);c.s+=Math.min(c.v*dt,Math.max(0,gap+CARL*.1));if(ringClosed)c.s=Math.min(c.s,l.L-1e-6);c.stopped=c.v<.05}
     // cars that reached the end move on (or leave the model)
     while(l.cars.length&&l.cars[0].s>=l.L){const c=l.cars.shift();const nx=c.next;const[ox_,oy_]=lanePos(l,l.L);c.s-=l.L;c.wait=0;c.wait2=0;c.go=false;c.next=null;
-      if(nx){c.from=l;c.lane=nx;nx.cars.push(c);if(nx.cars.length>1&&nx.cars[nx.cars.length-2].s<c.s)nx.cars.sort((a,b)=>b.s-a.s);const[px,py,ux_,uy_]=lanePos(nx,0),e=along(l.ch,l.L);c.off=[ox_-px,oy_-py,Math.min(.9,nx.L),e[2],e[3]]}
+      if(nx){if(nx===c.ringExit)c.ringExit=null;c.from=l;c.lane=nx;nx.cars.push(c);if(nx.cars.length>1&&nx.cars[nx.cars.length-2].s<c.s)nx.cars.sort((a,b)=>b.s-a.s);const[px,py,ux_,uy_]=lanePos(nx,0),e=along(l.ch,l.L);c.off=[ox_-px,oy_-py,Math.min(.9,nx.L),e[2],e[3]]}
       else tcars.splice(tcars.indexOf(c),1)}}
 }
 function lanePos(l,s){const[gx,gy,ux,uy]=along(l.ch,s);const off=l.ow&&!l.rev?0:(RW[l.c]/4)/M;return[gx-uy*off,gy+ux*off,ux,uy]}
@@ -1402,6 +1422,7 @@ function setActivity(scene){if(scene.volumes!==undefined)setVolumes(scene.volume
   walkLv=a.walk;setTraffic(a.hourShare,first);return setParking(a)}
 // ?debug: the model's own lists, for scripts/audit-geometry.mjs (what stands where, after all placement rules have run)
 if(DBG)window.__audit={MAP,DET,blds,pts0,people,chains,TF,XWALK,XING,ST,RW,M,GX,GY,DECKS,DT,along,pip,rideZ,walkOff,
+  paintFrame:()=>new Promise(done=>requestAnimationFrame(ts=>{frame(ts);done()})),
   view:()=>{const g=(mx,my)=>{const a=(mx-BOX)/TW,b=(my-BOY)/TH;return[(a+b)/2,(b-a)/2]};return{c:g(camX+VWm()/2,camY+VHm()/2),tl:g(camX,camY),br:g(camX+VWm(),camY+VHm()),vs:VS}}};
 if(DBG)window.__busy=()=>({cars:tcars.length,carTarget,seed:SEED,walkers:people.filter(p=>p.rk<walkLv).length,walkersAll:people.length,parked:lotCars.filter(o=>!o.hid).length,stalls:ST.length,act:ACT});
 
@@ -1738,7 +1759,11 @@ function frame(ts){const F0=performance.now();
     const sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
     const occ=o.kind!=='train'?occludersAt(o.gx,o.gy,sb,treeLens):[];let any=occ.length>0;const cuts=[];
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
-    for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;for(const p of smp)if(rayHits(b,p[0],p[1],p[2])){any=true;if(near)cuts.push(b.sil);break}}
+    for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;
+      // The next ramp's silhouette reaches past its seam. Allow one car footprint of grade change.
+      if(b.deck==='road'&&o.kind==='car'&&o.z!=null&&b.cls&&
+        runsAlong(b.cls,o.gx,o.gy,o.ux,o.uy)&&Math.abs(oz-(b.zf?b.zf(o.gx,o.gy):b.hpx))<=1.5)continue;
+      for(const p of smp)if(rayHits(b,p[0],p[1],p[2])){any=true;if(near)cuts.push(b.sil);break}}
     if(any){for(const q of occ)if(hitBox(q.box,sb))cuts.push(q);if(BM){bmF.cut=(bmF.cut||0)+1;bmF.cuts=(bmF.cuts||0)+cuts.length}}
     // One compound tree silhouette covers many overlapping leaves and branches. Cut it once on the card.
     if(CARD||occ.some(q=>q.tree)){if(any)drawCut([x-d[0],y-d[1],x+d[2],y+d[3]],()=>drawDyn(o,TGT.c),cuts,{c:w,e:E,g:GL},treeLens);else drawDyn(o,w);continue}
