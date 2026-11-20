@@ -7,6 +7,7 @@
 //
 // Needs Playwright with Chromium (see scripts/bench.mjs).
 import { spawn } from 'node:child_process';
+import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -106,13 +107,54 @@ function checks() {
   return { findings: F, counts: { buildings: solid.length, points: pts0.length, streets: streets.length, lanes: TF.lanes.length, stalls: ST.length, crosswalks: XWALK.cw.length } };
 }
 
+async function checkBridgeCars(page) {
+  await page.setViewportSize({ width: 1680, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(`http://localhost:${port}/index.html?at=62.4,6.9&z=4&flat&debug&bench&compose=canvas&mode=sharp&time=day&weather=clear&date=2026-11-19`);
+  await page.waitForFunction(() => window.__audit && window.__bench?.frames.length);
+  const samples = await page.evaluate(async () => {
+    const { paintFrame, TF } = window.__audit;
+    const { tcars } = window.__tf;
+    const canvas = document.querySelector('#village'), ctx = canvas.getContext('2d');
+    const pixels = () => ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    tcars.length = 0;
+    await paintFrame();
+    const background = pixels();
+    const samples = [];
+    for (const [label, from, to, s] of [
+      ['up the Wendover ramp', '52.61,7.91', '61.06,8.46', 5.85],
+      ['across the Wendover span', '61.06,8.46', '65.59,8.72', 2.35],
+      ['down the Wendover ramp', '65.59,8.72', '74.54,9.20', 2.35],
+      ['under the span on North Elm', '62.78,14.99', '64.24,0.45', 7.35],
+    ]) {
+      const lane = TF.lanes.find((l) => l.from.k === from && l.to.k === to);
+      if (!lane || lane.L <= s) throw new Error(`Missing bridge audit lane ${from} → ${to}`);
+      tcars[0] = { lane, s, col: '#ff00ff', ty: 0, stopped: false };
+      await paintFrame();
+      const rgb = pixels();
+      let visible = 0;
+      for (let i = 0; i < rgb.length; i += 4) {
+        if (rgb[i] - rgb[i + 1] > 40 && rgb[i + 2] - rgb[i + 1] > 40 &&
+            (rgb[i] !== background[i] || rgb[i + 1] !== background[i + 1] || rgb[i + 2] !== background[i + 2])) visible++;
+      }
+      samples.push({ label, visible });
+    }
+    return samples;
+  });
+  for (const { label, visible } of samples.slice(0, -1)) assert.ok(visible > 50, `Car ${label} should be visible (${visible} pixels)`);
+  const under = samples.at(-1);
+  assert.equal(under.visible, 0, `Car ${under.label} should be hidden`);
+  console.log('Checked bridge car visibility on the Wendover ramps, span and North Elm underpass');
+}
+
 let code = 0;
 try {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
-  await page.goto(`http://localhost:${port}/?debug&bench&time=day&date=2026-11-17`);
+  await page.goto(`http://localhost:${port}/index.html?debug&bench&time=day&date=2026-11-17`);
   await page.waitForFunction(() => window.__audit && window.__bench && window.__bench.frames.length > 0, null, { timeout: 120000 });
   const res = await page.evaluate(checks);
+  await checkBridgeCars(page);
   await browser.close();
   const seen = new Set(); res.findings = res.findings.filter((f) => { const k = f.check + f.gx + ',' + f.gy; if (seen.has(k)) return false; seen.add(k); return true; });
   const by = {}; for (const f of res.findings) (by[f.check] ||= []).push(f);
