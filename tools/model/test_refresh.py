@@ -1,5 +1,8 @@
 """Tests for tools/model/refresh.py. Run: python3 -m unittest tools/model/test_refresh.py"""
-import copy, json, os, sys, unittest
+import copy, datetime as dt, io, json, os, sys, tempfile, unittest, warnings
+from contextlib import redirect_stdout
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import refresh as R
@@ -130,6 +133,131 @@ class Staleness(unittest.TestCase):
     def test_inputs_hash_is_stable(self):
         self.assertEqual(R.inputs_hash(), R.inputs_hash())
         self.assertEqual(len(R.inputs_hash()), 16)
+
+
+class PublishRetry(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.inputs = self.root / 'inputs'
+        self.inputs.mkdir()
+        self.sources = self.inputs / 'sources.json'
+        self.sources.write_text(json.dumps({'monthly_checked': dt.date.today().isoformat()}))
+        self.raw = raw_extract()
+        self.committed = dict(model(bld(30, n='Committed')), GEO={
+            'north': BOX['n'], 'south': BOX['s'], 'west': BOX['w'], 'east': BOX['e'],
+            'mPerDegLon': BOX['kx'], 'mPerDegLat': BOX['ky'],
+        })
+        self.rebuilt = dict(self.committed, B=[bld(30, n='Rebuilt')])
+        self.calls = []
+        self.fingerprint = 'survey-and-code-v1'
+        self.fail_details = True
+        self.enterContext(patch.object(R, 'inputs_hash', side_effect=lambda: self.fingerprint))
+        self.enterContext(patch.object(R, 'fetch_osm', side_effect=self.fetch_osm))
+        self.enterContext(patch.object(R, 'run_step', side_effect=self.run_step))
+        self.enterContext(patch.object(R.importlib.util, 'find_spec', return_value=True))
+        self.enterContext(patch.object(R, 'INPUTS', str(self.inputs)))
+        self.enterContext(patch.object(R, 'SOURCES', str(self.sources)))
+        import addresses
+        self.enterContext(patch.object(addresses, 'fetch', side_effect=self.fetch_addresses))
+        self.enterContext(patch.dict(os.environ, {'GITHUB_OUTPUT': '', 'GITHUB_STEP_SUMMARY': ''}))
+        self.enterContext(warnings.catch_warnings())
+        warnings.filterwarnings('ignore', category=ResourceWarning, module=R.__name__)
+
+    def fetch_osm(self, _):
+        self.calls.append('osm')
+        return self.raw, 'fixture'
+
+    def fetch_addresses(self, *_args, **_kwargs):
+        self.calls.append('addresses')
+        return {'points': [], 'parcels': []}
+
+    def run_step(self, args):
+        name = Path(args[0]).name
+        self.calls.append(name)
+        if name == 'details.py' and self.fail_details:
+            raise RuntimeError('fixture details failure')
+        target = args[2] if name == 'trees.py' else args[3]
+        payload = self.rebuilt if name == 'prep.py' else {'version': 'rebuilt', 'BK': {}}
+        Path(target).write_text(json.dumps(payload))
+
+    def publish_checkout(self, cache, force=False):
+        with tempfile.TemporaryDirectory(dir=self.root) as work:
+            pub = Path(work) / 'public/model'
+            pub.mkdir(parents=True)
+            (pub / 'downtown.json').write_text(json.dumps(self.committed))
+            for name in ('trees.json', 'details.json'):
+                (pub / name).write_text('{"version":"committed"}')
+            with patch.object(R, 'PUB', str(pub)), patch.object(R, 'MODEL', str(pub / 'downtown.json')):
+                with redirect_stdout(io.StringIO()):
+                    status = R.publish(SimpleNamespace(cache=cache, force=force, monthly=False, osm_raw=None))
+            self.assertEqual(status, 0)
+            return {name: json.loads((pub / name).read_bytes()) for name in R.OUTPUTS}
+
+    def retry_due(self, cache, *, stale=False):
+        marker = cache / 'built.json'
+        state = json.loads(marker.read_bytes())
+        now = dt.datetime.now(dt.timezone.utc)
+        state['failed_at'] = (now - dt.timedelta(hours=R.RETRY_HOURS + 1)).isoformat()
+        if stale:
+            state['built_at'] = (now - dt.timedelta(days=R.MAX_AGE_DAYS + 1)).isoformat()
+        marker.write_text(json.dumps(state))
+        return state
+
+    def test_partial_build_survives_clean_checkouts_and_retries_only_the_failed_output(self):
+        cache = self.root / 'cache'
+        first = self.publish_checkout(cache)
+        self.assertEqual(self.calls, ['osm', 'addresses', 'prep.py', 'trees.py', 'details.py'])
+        self.assertEqual(first['downtown.json'], self.rebuilt)
+        self.assertEqual(first['trees.json']['version'], 'rebuilt')
+        self.assertEqual(first['details.json']['version'], 'committed')
+        self.assertCountEqual([p.name for p in cache.iterdir()], [*R.OUTPUTS, 'built.json', 'sources.json'])
+        self.calls.clear()
+        self.assertEqual(self.publish_checkout(cache), first)
+        self.assertEqual(self.calls, [])
+
+        state = self.retry_due(cache)
+        self.assertEqual(state['partial']['files'], ['details.json'])
+        self.assertEqual(self.publish_checkout(cache), first)
+        self.assertEqual(self.calls, ['osm', 'details.py'])
+        self.calls.clear()
+        self.fail_details = False
+        self.retry_due(cache)
+        recovered = self.publish_checkout(cache)
+        self.assertEqual(self.calls, ['osm', 'details.py'])
+        self.assertEqual(recovered['details.json']['version'], 'rebuilt')
+        self.assertEqual(recovered['downtown.json'], first['downtown.json'])
+        self.assertEqual(recovered['trees.json'], first['trees.json'])
+        final = json.loads((cache / 'built.json').read_bytes())
+        self.assertEqual(final['built_at'], state['built_at'])
+        self.assertNotIn('partial', final)
+        self.assertNotIn('failed_at', final)
+        self.calls.clear()
+        self.assertEqual(self.publish_checkout(cache), recovered)
+        self.assertEqual(self.calls, [])
+
+    def test_rebuilds_when_a_pending_snapshot_is_obsolete(self):
+        for changed in ('inputs', 'osm', 'output', 'missing', 'age', 'force'):
+            with self.subTest(changed=changed):
+                cache = self.root / changed
+                self.fingerprint = 'survey-and-code-v1'
+                self.fail_details = True
+                self.raw = raw_extract()
+                self.publish_checkout(cache)
+                if changed not in ('inputs', 'force'):
+                    self.retry_due(cache, stale=changed == 'age')
+                self.calls.clear()
+                self.fail_details = False
+                if changed == 'inputs':
+                    self.fingerprint = 'survey-and-code-v2'
+                if changed == 'osm':
+                    self.raw['elements'][0]['tags'] = {'natural': 'tree'}
+                if changed == 'output':
+                    (cache / 'downtown.json').write_text('{}')
+                if changed == 'missing':
+                    (cache / 'trees.json').unlink()
+                self.publish_checkout(cache, force=changed == 'force')
+                self.assertEqual(self.calls, ['osm', 'addresses', 'prep.py', 'trees.py', 'details.py'])
+                self.assertNotIn('partial', json.loads((cache / 'built.json').read_bytes()))
 
 
 class Addresses(unittest.TestCase):
