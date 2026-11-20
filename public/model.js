@@ -17,7 +17,9 @@ import { loadTrees, loadFlags, drawTree as drawTreeSp, treeOutline, addOutlinePa
 import { makeBalconyPlans, makeDetails } from './details.js';
 
 export function startModel({ canvas: cv0, map: MAP, trees: TREES = null, home: HOME = null, details: DET = null, roofs: ROOFS = null, yards: YARDS = null, onPick = () => {}, onHover = () => {}, onView = () => {} }) {
-MAP = JSON.parse(JSON.stringify(MAP)); // the tower fix-up below edits it
+// Only these records receive model-specific building fixes, traffic data or ground bounds.
+MAP = {...MAP, B:MAP.B.map(b=>({...b})), PL:MAP.PL.map(p=>p.slice())};
+for(const key of ['R','RL','PK','FW','GA'])if(MAP[key])MAP[key]=MAP[key].map(o=>({...o}));
 const PAL=[
  ['Pine night','#1d2a2b','letterbox, deep shade'],['Loblolly','#2b7448','pine trees'],['Pine','#3d9a4f','leafy trees'],['Bermuda','#5cb648','lawn'],['Fescue','#8ad05a','lawn light'],
  ['Red clay','#cf5a36','bare ground, rail bed'],['Clay light','#f0965a','paths'],['Old brick','#b23f2c','mills, depot'],['Brick','#e05a3c','storefronts'],['Mortar','#f5dba6','sidewalks, trim'],
@@ -276,7 +278,11 @@ function runsAlong(cls,gx,gy,ux,uy,distance=Infinity){let bd=1e9,dot=0;for(const
   const n=blds.length;const sr=blds.map(b=>{let s0=1e9,s1=-1e9,u0=1e9,u1=-1e9;for(const[x,y] of b.footprint){const s=x-y,u=x+y;if(s<s0)s0=s;if(s>s1)s1=s;if(u<u0)u0=u;if(u>u1)u1=u}return{s0,s1,u0,u1,top:(b.htop||b.hpx)+24}});
   const cut=(b,sv)=>{const us=[];const p=b.footprint;for(let k=0;k<p.length;k++){const a=p[k],q=p[(k+1)%p.length];const sa=a[0]-a[1],sb=q[0]-q[1];if((sa<sv)!==(sb<sv)){const t=(sv-sa)/(sb-sa);us.push(a[0]+a[1]+t*(q[0]+q[1]-a[0]-a[1]))}}return us.sort((x,y)=>x-y)};
   const after=blds.map(()=>[]),indeg=new Array(n).fill(0);
-  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const A=sr[i],B=sr[j];const s0=Math.max(A.s0,B.s0),s1=Math.min(A.s1,B.s1);if(s1<=s0)continue;
+  const left=sr.map((_,i)=>i).sort((i,j)=>sr[i].s0-sr[j].s0);
+  for(let l=0;l<n;l++)for(let k=l+1;k<n;k++){
+    const a=left[l],b=left[k];if(sr[b].s0>=sr[a].s1)break;
+    const i=Math.min(a,b),j=Math.max(a,b),A=sr[i],B=sr[j],s0=sr[b].s0,s1=Math.min(A.s1,B.s1);
+    if(s1<=s0)continue;
     // screen-y overlap (model pixels): footprint u range times TH, raised by the height
     if(A.u1*TH<B.u0*TH-B.top||B.u1*TH<A.u0*TH-A.top)continue;
     let va=0,vb=0;for(let k=1;k<=7;k++){const sv=s0+(s1-s0)*k/8;const ua=cut(blds[i],sv),ub=cut(blds[j],sv);if(ua.length<2||ub.length<2)continue;
@@ -285,8 +291,11 @@ function runsAlong(cls,gx,gy,ux,uy,distance=Infinity){let bd=1e9,dot=0;for(const
         const ma=(ua[0]+ua[ua.length-1])/2,mb=(ub[0]+ub[ub.length-1])/2;if(ma<mb)va+=.5;else vb+=.5}}
     if(!va&&!vb)continue;if(va>=vb){after[i].push(j);indeg[j]++}else{after[j].push(i);indeg[i]++}}
   const done=new Array(n).fill(false),out=[];
-  for(let c=0;c<n;c++){let best=-1;for(let i=0;i<n;i++)if(!done[i]&&indeg[i]===0&&(best<0||blds[i].key<blds[best].key))best=i;
-    if(best<0)for(let i=0;i<n;i++)if(!done[i]&&(best<0||blds[i].key<blds[best].key))best=i; // a cycle: break it at the farthest
+  // blds starts in stable depth order. Its first ready entry is the farthest eligible building.
+  let first=0;
+  for(let c=0;c<n;c++){while(done[first])first++;
+    let best=first;while(best<n&&(done[best]||indeg[best]))best++;
+    if(best===n)best=first; // a cycle: break it at the farthest
     done[best]=true;out.push(blds[best]);for(const j of after[best])indeg[j]--}
   blds.length=0;blds.push(...out);blds.forEach((b,i)=>b.i=i)})();
 
@@ -585,11 +594,11 @@ function aerialGround(x,y){
   return GCa[Math.floor(y*g.r)*g.w+Math.floor(x*g.r)];
 }
 const plantable=(x,y)=>{const a=aerialGround(x,y);return a>=2&&a<=4};
-let GTEX=null,GCLS=null;
+let GTEX=null,groundTexels=null;
 function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),gh=Math.ceil(GY*R);
   const kinds=['walk','road','grass','grass','grass','road','walk','walk'];const pal=GC_COL.map((c0,k)=>hex(gcol(c0,kinds[k])));const lawn2=hex(gcol(mix(C.Bermuda,C.Fescue,.3),'grass'));
   // the kind of ground in each cell, worked out once (the colours change with the light, the kinds do not)
-  const cls=GCLS||(GCLS=(()=>{const cls=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)cls[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
+  if(!groundTexels){const cls=(()=>{const cls=new Uint8Array(gw*gh);for(let j=0;j<gh;j++)for(let i=0;i<gw;i++)cls[j*gw+i]=GCa?GCa[Math.min(j,MAP.GC.h-1)*MAP.GC.w+Math.min(i,MAP.GC.w-1)]:VG&&isVeg((i+.5)/R,(j+.5)/R)?2:0;
   // a work yard read from the aerial (yards.json) stands on dirt, whatever specks of lawn and paving the cells there held
   if(YARDS&&YARDS.r===R)for(const[j,i0,n]of YARDS.runs)for(let i=i0;i<i0+n;i++){const q=j*gw+i;if(j<gh&&i<gw&&cls[q]!==1&&cls[q]!==7)cls[q]=4}
   // The aerial's "asphalt" away from anything mapped as paved (a street, a drive, a parking lot) is mostly shadow, bare
@@ -613,15 +622,42 @@ function buildGroundTex(){const R=MAP.GC?MAP.GC.r:VG?VG.r:6,gw=Math.ceil(GX*R),g
         if(any){let k=2,best=0;for(let c=0;c<8;c++)if(cnt[c]>best){best=cnt[c];k=c}set.push(q,k)}else next.push(q)}
       if(!set.length)break;for(let k=0;k<set.length;k+=2)cls[set[k]]=set[k+1];todo=next}
     for(const q of todo)cls[q]=2}
-  return cls})());
+  return cls})();
   // The picture has two texels to each surveyed cell, and where two neighbours of a cell agree with each other but
   // not with it, that corner of the cell takes their kind (the "scale2x" rule), so the edge of a lawn or a patch of
   // paving runs in a line or a curve, not in 1.5 m stair-steps.
-  const w2=gw*2,h2=gh*2,cnv=mk(w2,h2),g=cnv.getContext('2d'),img=g.createImageData(w2,h2),d=img.data;
+  const w2=gw*2,h2=gh*2;
+  groundTexels=new Uint8Array(w2*h2);
   for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const e=cls[j*gw+i],u=j?cls[(j-1)*gw+i]:e,dn=j<gh-1?cls[(j+1)*gw+i]:e,l=i?cls[j*gw+i-1]:e,r=i<gw-1?cls[j*gw+i+1]:e,sq=u!==dn&&l!==r;
-    for(let q=0;q<4;q++){const k=!sq?e:q===0?(l===u?l:e):q===1?(u===r?r:e):q===2?(l===dn?l:e):(dn===r?r:e),I=i*2+(q&1),J=j*2+(q>>1);
-      let col=pal[k];if(k===2&&hash(i+7,j+3)<.4)col=lawn2;const n=(hash(I*.37+11,J*.71+5)-.5)*(k===0||k===6?8:k===1?5:11);const o=(J*w2+I)*4;d[o]=col[0]+n;d[o+1]=col[1]+n;d[o+2]=col[2]+n;d[o+3]=255}}
-  g.putImageData(img,0,0);GTEX={c:cnv,R:R*2}}
+    const lawn=(e===2||sq&&(l===2||r===2))&&hash(i+7,j+3)<.4?8:2;
+    const material=k=>k===2?lawn:k,o=j*2*w2+i*2;
+    groundTexels[o]=material(sq&&l===u?l:e);
+    groundTexels[o+1]=material(sq&&u===r?r:e);
+    groundTexels[o+w2]=material(sq&&l===dn?l:e);
+    groundTexels[o+w2+1]=material(sq&&dn===r?r:e);
+  }
+  const grain=[8,5,11,11,11,11,8,11,11],xPhase=Float64Array.from({length:w2},(_,x)=>(x*.37+11)*12.9898);
+  for(let y=0;y<h2;y++){const yPhase=(y*.71+5)*78.233;
+    for(let x=0,o=y*w2;x<w2;x++,o++){
+      const k=groundTexels[o],v=Math.sin(xPhase[x]+yPhase)*43758.5453;
+      const noise=(v-Math.floor(v)-.5)*grain[k],round=Math.round(noise);
+      // A half step preserves Uint8ClampedArray's round-to-even for each palette channel.
+      groundTexels[o]=k*25+12+2*round-(round-noise===.5?1:0);
+    }
+  }}
+  // Geometry and grain stay fixed. A change of weather only recolours the survey.
+  pal.push(lawn2);
+  const colors=new Uint8ClampedArray(pal.length*25*4);
+  for(let k=0;k<pal.length;k++)for(let j=0;j<25;j++){
+    const o=(25*k+j)*4,n=(j-12)/2;
+    for(let c=0;c<3;c++)colors[o+c]=pal[k][c]+n;
+    colors[o+3]=255;
+  }
+  if(!GTEX)GTEX={c:mk(gw*2,gh*2),R:R*2};
+  const g=GTEX.c.getContext('2d'),img=g.createImageData(gw*2,gh*2);
+  const rgba=new Uint32Array(colors.buffer),out=new Uint32Array(img.data.buffer);
+  for(let i=0;i<out.length;i++)out[i]=rgba[groundTexels[i]];
+  g.putImageData(img,0,0)}
 function drawGround(c){
   setT(c);c.fillStyle='#3a2c26';c.fillRect(0,0,BW,BH);
   // table weave
@@ -644,13 +680,13 @@ function drawGround(c){
   for(const f of (MAP.FW||[])){if(!inTG(f._bb))continue;polyPath(c,f.p);c.strokeStyle=gcol(f.k==='steps'?'#c9c2b4':'#dcd6ca','walk');c.lineWidth=(f.k==='cycleway'?2.4:1.8)/M;c.stroke()}
   MAP.PL.forEach(p=>{if(!inTG(p._bb))return;polyPath(c,p);c.closePath();c.fillStyle=gcol(mix(C.Asphalt,C.Concrete,.4),'road');c.fill();c.strokeStyle=gcol('#d8d4ca','walk');c.lineWidth=1.2/M;c.stroke()});
   // painted stalls in the surface lots
-  if(ST.length){c.strokeStyle=gcol('#eeeae2','road');c.lineWidth=.035;c.lineCap='butt';c.beginPath();for(const s of ST){const[x,y,ux,uy,ax,ay]=stallFrame(s);if(TG&&(x<TG[0]||x>TG[2]||y<TG[1]||y>TG[3]))continue;for(const sd of [-.5,.5]){const bx=x+ax*sd*s[4],by=y+ay*sd*s[4];c.moveTo(bx-ux*s[5]/2,by-uy*s[5]/2);c.lineTo(bx+ux*s[5]/2,by+uy*s[5]/2)}}c.stroke();c.lineCap='round'}
+  if(ST.length){c.strokeStyle=gcol('#eeeae2','road');c.lineWidth=.035;c.lineCap='butt';c.beginPath();for(const s of ST){if(TG&&(s[0]<TG[0]||s[0]>TG[2]||s[1]<TG[1]||s[1]>TG[3]))continue;const[x,y,ux,uy,ax,ay]=stallFrame(s);for(const sd of [-.5,.5]){const bx=x+ax*sd*s[4],by=y+ay*sd*s[4];c.moveTo(bx-ux*s[5]/2,by-uy*s[5]/2);c.lineTo(bx+ux*s[5]/2,by+uy*s[5]/2)}}c.stroke();c.lineCap='round'}
   const Rs=MAP.R.filter(r=>inTG(r._bb)&&!r.br);
   Rs.filter(r=>r.ar).forEach(r=>{polyPath(c,r.p);c.closePath();c.fillStyle=gcol('#d8d4ca','walk');c.fill()});
   Rs.filter(r=>!r.ar&&r.c<=4).forEach(r=>{polyPath(c,r.p);c.strokeStyle=gcol('#c8c3b8','walk');c.lineWidth=(roadWidth(r)+8)/M;c.stroke()});
   Rs.filter(r=>!r.ar&&r.c<=4).forEach(r=>{polyPath(c,r.p);c.strokeStyle=gcol('#d8d4ca','walk');c.lineWidth=(roadWidth(r)+6.6)/M;c.stroke()});
   Rs.filter(r=>!r.ar&&r.c===6).forEach(r=>{polyPath(c,r.p);c.strokeStyle=gcol('#cdc8bd','walk');c.lineWidth=4/M;c.stroke()});
-  for(const {gx,gy,pit} of pts0){if(!pit||!inTG([gx-.2,gy-.2,gx+.2,gy+.2]))continue;
+  for(const {gx,gy,pit} of treePits){if(!inTG([gx-.2,gy-.2,gx+.2,gy+.2]))continue;
     const [w,h]=pit;c.fillStyle=gcol('#816347','grass');c.fillRect(gx-w/(2*M),gy-h/(2*M),w/M,h/M);
   }
   const RLs=MAP.RL.filter(r=>inTG(r._bb));
@@ -718,20 +754,21 @@ const carCols=['#e6e6ea','#ecebe6','#c4c8d0','#b9bec8','#9aa0aa','#6b7280','#4a4
 const GLASS='#33405e',carKind=u=>u<.46?0:u<.8?1:u<.93?2:3;
 const pts0=[];
 (function place(){
-  const R=6,mw=Math.ceil(GX*R),mh=Math.ceil(GY*R);const mkMask=()=>{const mc=mk(mw,mh),m=mc.getContext('2d');m.fillStyle='#fff';m.fillRect(0,0,mw,mh);m.setTransform(R,0,0,R,0,0);m.lineCap='round';m.strokeStyle='#000';m.fillStyle='#000';return[mc,m]};
-  const[fc,m]=mkMask();
-  MAP.R.forEach(r=>{polyPath(m,r.p);if(r.ar){m.closePath();m.fill()}else{m.lineWidth=(roadWidth(r)+(r.c<=4?9:3))/M;m.stroke()}});
-  MAP.RL.forEach(r=>{polyPath(m,r.p);m.lineWidth=8/M;m.stroke()});
-  MAP.PL.forEach(p=>{polyPath(m,p);m.closePath();m.fill()});
-  const[bc,bm]=mkMask();
-  blds.forEach(b=>{for(const mm of [m,bm]){mm.beginPath();b.footprint.forEach((p,i)=>i?mm.lineTo(p[0],p[1]):mm.moveTo(p[0],p[1]));mm.closePath();mm.fill();mm.lineWidth=2.5/M;mm.stroke()}});
-  const[rc,rm]=mkMask();MAP.R.forEach(r=>{if(r.ar||r.c>5)return;polyPath(rm,r.p);rm.lineWidth=(roadWidth(r)+.6)/M;rm.stroke()});
-  const px=m.getImageData(0,0,mw,mh).data,bpx=bm.getImageData(0,0,mw,mh).data,rpx=rm.getImageData(0,0,mw,mh).data;
+  const R=6,mw=Math.ceil(GX*R),mh=Math.ceil(GY*R);const mkMask=()=>{const mc=mk(mw,mh),m=mc.getContext('2d');m.fillStyle='#fff';m.fillRect(0,0,mw,mh);m.setTransform(R,0,0,R,0,0);m.lineCap='round';m.strokeStyle='#000';m.fillStyle='#000';return m};
+  const real=loadTrees(TREES),m=real.length?null:mkMask(),bm=mkMask(),rm=mkMask();
+  if(m){
+    MAP.R.forEach(r=>{polyPath(m,r.p);if(r.ar){m.closePath();m.fill()}else{m.lineWidth=(roadWidth(r)+(r.c<=4?9:3))/M;m.stroke()}});
+    MAP.RL.forEach(r=>{polyPath(m,r.p);m.lineWidth=8/M;m.stroke()});
+    MAP.PL.forEach(p=>{polyPath(m,p);m.closePath();m.fill()});
+  }
+  for(const mm of m?[m,bm]:[bm])for(const b of blds){mm.beginPath();b.footprint.forEach((p,i)=>i?mm.lineTo(p[0],p[1]):mm.moveTo(p[0],p[1]));mm.closePath();mm.fill();mm.lineWidth=2.5/M;mm.stroke()}
+  MAP.R.forEach(r=>{if(r.ar||r.c>5)return;polyPath(rm,r.p);rm.lineWidth=(roadWidth(r)+.6)/M;rm.stroke()});
+  const px=m?.getImageData(0,0,mw,mh).data,bpx=bm.getImageData(0,0,mw,mh).data,rpx=rm.getImageData(0,0,mw,mh).data;
   const at=(d,x,y)=>{if(x<=.3||y<=.3||x>=GX-.3||y>=GY-.3)return false;const i=((Math.floor(y*R))*mw+Math.floor(x*R))*4;return d[i]>128};
-  const parks=MAP.PK.map(p=>pairs(p.p));
+  const parks=!real.length&&MAP.PK.map(p=>pairs(p.p));
   let s=3;const rnd=()=>{s=(s*16807)%2147483647;return s/2147483647};
   // the real trees (public/model/trees.json); without that file, fall back to the old guessed ones
-  const real=loadTrees(TREES);
+
   const railNear=(x,y,r)=>MAP.RL.some(l=>{const b=l._bb;if(b&&(x<b[0]||y<b[1]||x>b[2]||y>b[3]))return false;const q=l.p;for(let i=0;i<q.length-2;i+=2){const dx=q[i+2]-q[i],dy=q[i+3]-q[i+1],L=dx*dx+dy*dy;let t=L?((x-q[i])*dx+(y-q[i+1])*dy)/L:0;t=Math.max(0,Math.min(1,t));if(Math.hypot(x-q[i]-dx*t,y-q[i+1]-dy*t)*M<r)return true}return false});
   // Lidar gives a crown peak. When it overlaps a drawn carriageway, look on the same side for plantable ground.
   if(real.length){for(const t of real){
@@ -779,6 +816,7 @@ const pts0=[];
   for(let i=pts0.length-1;i>=0;i--){const o=pts0[i];if((o.kind==='car'||o.kind==='tree')&&DT.wet(o.gx,o.gy)){pts0.splice(i,1);continue}if(DECKS.some(b=>b.deck!=='foot'&&o.gx>b.minx&&o.gx<b.maxx&&o.gy>b.miny&&o.gy<b.maxy&&pip(o.gx,o.gy,b.pts)))pts0.splice(i,1)}
   pts0.sort((a,b)=>(a.gx+a.gy)-(b.gx+b.gy));
 })();
+const treePits=pts0.filter(o=>o.pit);
 // "Where We Met" (Janet Echelman, 2016) hangs over LeBauer Park's Great Lawn, the lawn in the park's north-west, not over
 // the playground: the spot is the lawn's middle measured on the aerial, as offsets from the park's own outline
 const NET=(()=>{const lb=MAP.PK.find(p=>p.n==='Lebauer Park');if(!lb)return null;const q=pairs(lb.p);const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);return{cx:x0+(x1-x0)*.295,cy:y0+(y1-y0)*.175,rx:22/M,ry:14/M}})();
@@ -854,7 +892,14 @@ function drawYard(c,o){let q=o.r.map(p=>[p[0],p[1]]);let A=0;for(let k=0;k<q.len
 // LeBauer Park's fabric sculpture, drawn above everything: four masts, and between them two layers of netting that sag
 // into a deep bowl, coloured in rings from blue at the rim through white and gold to red at the bottom, as the real one is
 const NETC=['#2f6fd0','#5aa2e6','#bfe0f4','#fff3d6','#ffc24d','#ff8a3c','#ef4f3c','#c8324a'];
-function drawNet(c){if(!NET)return;const{cx,cy,rx,ry}=NET;const lit=lampsOn(),N=14,MH=38;
+// The masts enclose both sheets, their cables and bulbs from pavement to masthead.
+const netBox=NET&&(()=>{const {cx,cy,rx,ry}=NET,[x,y]=P(cx,cy),dx=(rx+ry)*1.18*TW,dy=(rx+ry)*1.18*TH;return[x-dx-3,y-dy-41,x+dx+3,y+dy+3]})();
+function drawNet(c){if(!NET)return;
+  if(!hitBox(netBox,TR)){
+    // Keep the night tile's light canvas in its usual pool order. Reused 2D contexts retain drawing state.
+    if(lampsOn())TGT.de=1;
+    return
+  }const{cx,cy,rx,ry}=NET;const lit=lampsOn(),N=14,MH=38;
   const bowl=(u,v)=>(1-u*u)*(1-v*v),dip=(u,v)=>Math.exp(-((u-.18)*(u-.18)+(v+.1)*(v+.1))/.09);
   const mast=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v])=>[cx+u*rx*1.18,cy+v*ry*1.18]);
   // the two masts at the back first, the net, then the two in front
@@ -987,7 +1032,7 @@ function treeHits(q,box){
   const y0=clamp(Math.floor(box[1]*VS)-my,mask.height)*stride,y1=clamp(Math.ceil(box[3]*VS)-my,mask.height)*stride;
   return coverage[y1+x1]+coverage[y0+x0]>coverage[y1+x0]+coverage[y0+x1];
 }
-(function prepPoints(){for(const b of blds)silhouette(b);ox=BOX;oy=BOY;
+(function prepPoints(){ox=BOX;oy=BOY;
   const boxOf=(pts,zmax,pad)=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const[gx,gy] of pts)for(const z of [0,zmax]){const[x,y]=P(gx,gy,z);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return[x0-pad,y0-pad,x1+pad,y1+pad]};
   for(const b of blds){b.box=boxOf(b.footprint,(b.htop||b.hpx)+40,8)}
   for(const o of pts0){let fp,zmax,pad,smp;
@@ -1056,6 +1101,29 @@ function giveCanvas(c){if(c!==NIL)pool.push(c)}
 function freeSpare(){const c=pool.pop();c.canvas.width=c.canvas.height=0;csLog('freed')}
 const dropTile=t=>{giveCanvas(t.c);giveCanvas(t.e);giveCanvas(t.g);t.c=t.e=t.g=NIL};
 const hitBox=(bx,r)=>!(bx[0]>r[2]||bx[2]<r[0]||bx[1]>r[3]||bx[3]<r[1]);
+// A cell keeps painter order. Queries crossing cells merge by the original index, even when tile jobs interleave.
+function projectedIndex(items,boxOf=o=>o.box){
+  const cells=new Map(),size=256,cellKey=(x,y)=>x*4096+y;
+  for(let i=0;i<items.length;i++){
+    const [x0,y0,x1,y1]=boxOf(items[i]);
+    for(let x=Math.floor(x0/size);x<=Math.floor(x1/size);x++)for(let y=Math.floor(y0/size);y<=Math.floor(y1/size);y++){
+      const key=cellKey(x,y);let ids=cells.get(key);if(!ids)cells.set(key,ids=[]);ids.push(i);
+    }
+  }
+  return (r)=>{
+    const x0=Math.floor(r[0]/size),y0=Math.floor(r[1]/size),x1=Math.floor(r[2]/size),y1=Math.floor(r[3]/size);
+    if(x0===x1&&y0===y1)return cells.get(cellKey(x0,y0))||[];
+    const ids=new Set();
+    for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)for(const i of cells.get(cellKey(x,y))||[])ids.add(i);
+    return [...ids].sort((a,b)=>a-b);
+  };
+}
+const buildingIds=projectedIndex(blds,b=>{
+  if(!b.balcony)return b.box;
+  const box=b.box.slice();
+  for(const [x,y] of buildingHull(b)){box[0]=Math.min(box[0],x);box[1]=Math.min(box[1],y);box[2]=Math.max(box[2],x);box[3]=Math.max(box[3],y)}
+  return box;
+}),pointIds=projectedIndex(pts0);
 let TR=null;const scales=new Set();
 // A tile is drawn in small steps (the ground, then one building, tree, lamp or parked car at a time), so the work can be
 // spread over frames; run straight through, the steps are exactly the drawing a tile always had.
@@ -1067,9 +1135,9 @@ function* tileSteps(tx,ty,t,vs){scales.add(vs);
   const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]};const cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
   TG=[Math.min(...cs.map(c=>c[0])),Math.min(...cs.map(c=>c[1])),Math.max(...cs.map(c=>c[0])),Math.max(...cs.map(c=>c[1]))];
   drawGround(t.c);drawShadows(t.c);TG=null;yield;at();
-  for(const b of blds)if(hitBox(b.box,r)){drawBuilding(t.c,b);yield;at()}
+  for(const i of buildingIds(r)){const b=blds[i];if(!hitBox(b.box,r))continue;drawBuilding(t.c,b);yield;at()}
   // Draw the tank on the tile so its solid surfaces can erase lights already painted there.
-  for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(t.c,o);else if(TCLIP||o.what==='tower')clipPoint(o,tg);else{t.cards++;CS.cards++;drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}yield;at()}
+  for(const i of pointIds(r)){const o=pts0[i];if(!hitBox(o.box,r))continue;if(!o.bl.length)drawPoint(t.c,o);else if(TCLIP||o.what==='tower')clipPoint(o,tg);else{t.cards++;CS.cards++;drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT)}yield;at()}
   drawNet(t.c);
   // a layer with nothing painted on it is not kept: its canvas goes back to the pool for the next tile
   t.de=tg.de;t.dg=tg.dg;if(!t.de){giveCanvas(t.e);t.e=NIL}if(!t.dg){giveCanvas(t.g);t.g=NIL}
@@ -1195,12 +1263,12 @@ function trimTiles(keep){let n=nLoose();const cap=TILE_MB*262144;
   for(;;){if(usedPx()-Math.min(pool.length,3)*TILE*TILE<=cap)break;if(pool.length>3)freeSpare();else if(!dropOldest())break}
   while(pool.length>POOL)freeSpare()}
 if(BM){BM.cs=CS;BM.flags={tilecut:TCLIP?'clip':'card',ahead:AHEAD}}
-if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,k:KPX,plan:PLAN.name,planWhy:PLANWHY,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
+if(BM)BM.mem=()=>{const px=c=>c?c.width*c.height*4:0;let b=(LY?3+(LY.gOn?1:0):5)*W*H*4+px(TSG)+sparePx()*4;for(const t of tiles.values())b+=px(t.c.canvas)+px(t.e.canvas)+px(t.g.canvas);for(const c of scr)b+=px(c.canvas);b+=px(GTEX&&GTEX.c)+px(SHM&&SHM.c);return{canvasMB:b/1048576,tiles:tiles.size,W,H,VS,BW,BH,k:KPX,plan:PLAN.name,planWhy:PLANWHY,camX:Math.round(camX),camY:Math.round(camY),zoom:zNow(),level:ZL[zi],gliding:!!ZG,budget:TB}};
 // (the ground texture's colours change only with the weather, so it is rebuilt only then: it was most of the
 // 0.4 s this took each time the sun moved on)
 let gtexFor=null;
 function renderStatic(){const T0=performance.now();
-  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());occFor=DOY+'|'+windKey(WIND);{const k=S.wx;if(k!==gtexFor||!GTEX){gtexFor=k;buildGroundTex()}}buildShadows();stver++;
+  SUN=sunPos(sceneDate());DOY=dayOfYear(sceneDate0());occFor=DOY+'|'+windKey(WIND);{const k=S.wx==='snow'||S.wx==='pollen'?S.wx:'clear';if(k!==gtexFor||!GTEX){gtexFor=k;buildGroundTex()}}buildShadows();stver++;
   renderedFor=stateKey();if(BM)BM.staticMs+=performance.now()-T0;if(DBG)console.log('[dbg] static',Math.round(performance.now()-T0)+'ms')
 }
 // What the still picture depends on. The sun's position matters only while it casts shadows (see buildShadows): at
@@ -1346,6 +1414,7 @@ const stopBack=l=>Math.min((l.to.width/2+6.9)/M,Math.max(0,l.L-.15));
 // Where each approach's signal or stop sign stands: at the stop line, on the right. On a short approach that spot can
 // fall in the cross street's carriageway: there the post steps out to the kerb, or is left out when there is no room.
 for(const l of TF.lanes){const s_=Math.max(0,l.L-Math.min((l.to.width/2+4.3)/M,l.L*.45)),[gx,gy,ux,uy]=along(l.ch,s_),off=(l.width/2+1.4)/M;l.post=settle(gx-uy*off,gy+ux*off,.3,.7);if(l.post&&BLDG(l.post[0],l.post[1]))l.post=null}
+const signalPosts=TF.lanes.filter(l=>l.post&&(l.to.signal&&!l.inner||l.sign==='stop'));
 const tcars=[];if(DBG)window.__tf={TF,tcars,pts0,blds,people,light,addCar,lanePos,trafficPose,maneuver,turnAngle,
   step:dt=>{T+=dt;stepCrossings(dt);stepTraffic(dt);stepTrain(dt)},
   train:d=>{if(d!=null)trainD=d;return{d:trainD,L:trainCh.L,x:XING.map(x=>({td:x.td,on:x.on,down:x.down,lanes:x.lanes.length}))}}};
@@ -1574,7 +1643,7 @@ function setTraffic(share,first){let n=0;for(const l of TF.lanes)n+=laneCars(l,s
 // what each row of stalls serves: the buildings within about 120 m, nearer and larger ones counting for more
 const LOTKIND={apartments:'home',residential:'home',house:'home',detached:'home',dormitory:'home',hotel:'home',church:'church',retail:'retail',commercial:'retail',office:'office',government:'office',public:'office',university:'office',school:'office',industrial:'office',train_station:'office',yes:'mixed'};
 const rowMix=(MAP.SR||[]).map(r=>{const x=r[0]+r[2]*(r[4]-1)/2,y=r[1]+r[3]*(r[4]-1)/2;const m={office:0,retail:0,home:0,church:0};
-  for(const b of blds){const d=Math.hypot(b.cx-x,b.cy-y);if(d>13)continue;const k=LOTKIND[b.t];if(!k)continue;const w=Math.sqrt(b.area*Math.max(1,b.lv))/(1+(d/4)*(d/4));if(k==='mixed'){m.office+=w*.5;m.retail+=w*.5}else m[k]+=w}
+  for(const b of bldsNear(x-13,y-13,x+13,y+13)){const d=Math.hypot(b.cx-x,b.cy-y);if(d>13)continue;const k=LOTKIND[b.t];if(!k)continue;const w=Math.sqrt(b.area*Math.max(1,b.lv))/(1+(d/4)*(d/4));if(k==='mixed'){m.office+=w*.5;m.retail+=w*.5}else m[k]+=w}
   const s=m.office+m.retail+m.home+m.church;if(!s)return{x,y,office:.6,retail:.4,home:0,church:0};for(const k in m)m[k]/=s;return{x,y,...m}});
 const lotCars=pts0.filter(o=>o.kind==='car'&&o.u!=null);const NOBOX=[1e9,1e9,1e9,1e9],NOPATH=new Path2D();
 /** Show or hide each parked car for the lots' shares in use. True when any car changed (the still tiles are stale). */
@@ -1667,16 +1736,16 @@ cv.addEventListener('pointerdown',timed(e=>{touches.set(e.pointerId,[e.clientX,e
 // motion it steps a level at a time, as before)
 cv.addEventListener('pointermove',timed(e=>{if(touches.has(e.pointerId))touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2&&pinch0){const[a,b]=[...touches.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);
   if(!reduce&&started)zoomLive(pinchZ*d/pinch0);else if(d/pinch0>1.4||d/pinch0<.7){zoomBy(d>pinch0?1:-1);pinch0=d;onView()}return}if(!drag)return;const s=W/cv.clientWidth/VS;camX=clampX(drag.cx-(e.clientX-drag.x)*s);camY=clampY(drag.cy-(e.clientY-drag.y)*s);tgtX=camX;tgtY=camY;glide=false;zdir=0;if(reduce)requestAnimationFrame(frame)}));
-let lensAt=null;const LENS={c:null,e:null,g:null,de:0,dg:0,r:null,vs:0,ver:-1,t:0,S:0};let treePts=null;
+let lensAt=null;const LENS={c:null,e:null,g:null,de:0,dg:0,r:null,vs:0,ver:-1,t:0,S:0};const treePts=pts0.filter(o=>o.kind==='tree');
 const toStatic=e=>{const r=cv.getBoundingClientRect();return[((e.clientX-r.left)*W/r.width+Math.round(camX*VS))/VS,((e.clientY-r.top)*H/r.height+Math.round(camY*VS))/VS]};
 function buildingHull(b){if(b.hull)return b.hull;const o0=ox,o1=oy;ox=BOX;oy=BOY;
   const at=(pts,z)=>pts.map(([x,y])=>P(x,y,z)),q=at(b.footprint,0).concat(at(b.pts,b.htop||b.hpx));
   if(b.balcony)q.push(...at(b.footprint,b.balcony.z));ox=o0;oy=o1;return b.hull=hull(q)}
-function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);for(let i=blds.length-1;i>=0;i--){const b=blds[i];if(pip(sx,sy,buildingHull(b)))return b}return null}
+function pickAt(e){const r=cv.getBoundingClientRect(),qx=(e.clientX-r.left)*W/r.width/LS,qy=(e.clientY-r.top)*H/r.height/LS;for(const g of signRects)if(qx>=g.x-2&&qx<=g.x+g.w+2&&qy>=g.y-2&&qy<=g.y+g.h+2)return{sign:g.id,name:g.name};const[sx,sy]=toStatic(e);const ids=buildingIds([sx,sy,sx,sy]);for(let i=ids.length-1;i>=0;i--){const b=blds[ids[i]];if(pip(sx,sy,buildingHull(b)))return b}return null}
 const endDrag=timed(e=>{if(e)touches.delete(e.pointerId);if(touches.size<2){if(pinch0)zoomSettle();pinch0=0}if(drag&&e&&e.type==='pointerup'&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5){const b=pickAt(e);onPick(b)}if(drag)TB=Math.min(TB,2);drag=null;cv.style.cursor='grab'});cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 // (with reduced motion nothing draws unless asked, so the lens asks for one frame each time it moves or goes)
-let lensAsk=0;const lensKick=()=>{if(reduce&&!lensAsk)lensAsk=requestAnimationFrame(ts=>{lensAsk=0;frame(ts)})};
-cv.addEventListener('mousemove',timed(e=>{if(drag){lensAt=null;return}lensAt=toStatic(e);const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b)}lensKick()}));cv.addEventListener('mouseleave',()=>{hoverB=null;lensAt=null;onHover(null);lensKick()});
+let stillFrame=0;const requestStillFrame=()=>{if(reduce&&!stillFrame)stillFrame=requestAnimationFrame(ts=>{stillFrame=0;frame(ts)})};
+cv.addEventListener('mousemove',timed(e=>{if(drag){lensAt=null;return}lensAt=toStatic(e);const b=pickAt(e);if(b!==hoverB){hoverB=b;onHover(b)}requestStillFrame()}));cv.addEventListener('mouseleave',()=>{hoverB=null;lensAt=null;onHover(null);requestStillFrame()});
 
 // ---------- light grading from the sun ----------
 const GD={dawn:{m:[1.03,.9,.92],a:[18,4,16],d:-.05},day:{m:[1.02,1.01,1],a:[0,0,0],d:-.12},dusk:{m:[1.04,.82,.76],a:[16,0,18],d:-.05},night:{m:[.40,.45,.70],a:[6,8,24],d:.2}};
@@ -1790,6 +1859,19 @@ function tileBudget(now){const iv=now-tbLast,inF=tbEnd-tbLast,tw=tbTw;tbLast=now
   return other<base*.5?Math.min(TB,Math.max(1.5,base-other-3)):TB}
 let TSG=null,VGR=null,last=0,lastCheck=0,flash=0,hoverB=null,hiB=null,FOGP=null,LS=2;const HASFILTER='filter' in ctx;
 // ?flat: no tilt-shift blur and no vignette, so every part of a screenshot is equally sharp (scripts/audit-tiles.mjs)
+// The wind advances particles each frame, but the list of trees shedding them only changes with the view or season.
+let blowingView=null;
+function visibleBlowingTrees(){
+  const width=VWm(),height=VHm();
+  if(blowingView&&blowingView.x===ox&&blowingView.y===oy&&blowingView.w===width&&blowingView.h===height&&blowingView.day===DOY)return blowingView.trees;
+  const trees=[];
+  for(const o of treePts){
+    const [x,y]=P(o.gx,o.gy);if(x<-20||x>width+20||y<-10||y>height+80)continue;
+    if(o.lkD!==DOY){o.lkD=DOY;o.lk=look(o.sp,DOY,o.seed)}
+    if(o.lk.dropping||o.lk.petals)trees.push({x,y,hp:o.h*2,rp:o.r*1.9,look:o.lk});
+  }
+  blowingView={x:ox,y:oy,w:width,h:height,day:DOY,trees};return trees;
+}
 const FLAT=QS.has('flat');if(FLAT&&LY)for(const e of [LY.bt,LY.bb,LY.vig])e.style.visibility='hidden';
 function frame(ts){const F0=performance.now();
   if(BM){bmT=performance.now();bmF={t:bmT,fit:tm.fit,inp:tm.inp,ml:tm.ml,pl:tm.pl,ev:evs.splice(0)};tm.fit=tm.inp=tm.ml=tm.pl=0}
@@ -1819,8 +1901,8 @@ function frame(ts){const F0=performance.now();
     if(t.ah){t.ah=0;growScr(t.sw,t.sh)}
     if(t.ver!==stver)frame.stale=true;w.drawImage(t.c.canvas,X,Y);if(t.de){FT.de=FT.wide=1;E.drawImage(t.e.canvas,X,Y)}if(t.dg){glowOn();GL.drawImage(t.g.canvas,X,Y)}}
   let treeLens=null;
-  if(lensAt&&!drag&&!touches.size&&!ZG&&!frame.stale){const[sx,sy]=lensAt;treePts=treePts||pts0.filter(o=>o.kind==='tree');
-    if(treePts.some(o=>sx>o.box[0]&&sx<o.box[2]&&sy>o.box[1]&&sy<o.box[3])){const g_=geo(),Rc=Math.round(60*W/(g_.cw||W)),S=Rc*2,Rm=Rc/VS,L=LENS;
+  if(lensAt&&!drag&&!touches.size&&!ZG&&!frame.stale){const[sx,sy]=lensAt;
+    if(pointIds([sx,sy,sx,sy]).some(i=>{const o=pts0[i];return o.kind==='tree'&&sx>o.box[0]&&sx<o.box[2]&&sy>o.box[1]&&sy<o.box[3]})){const g_=geo(),Rc=Math.round(60*W/(g_.cw||W)),S=Rc*2,Rm=Rc/VS,L=LENS;
       if(!L.c||L.S!==S){L.c=mk(S,S).getContext('2d');L.e=mk(S,S).getContext('2d');L.g=mk(S,S).getContext('2d');L.S=S;L.r=null}
       if(!L.r||L.vs!==VS||L.ver!==stver||(Math.hypot(L.r[0]+Rm-sx,L.r[1]+Rm-sy)*VS>2&&F0-L.t>40)){
         const c=L.c,b0=BT,t0=TGT,o0=ox,o1=oy,r0=TR,g0=TG,r=[Math.round((sx-Rm)*VS)/VS,Math.round((sy-Rm)*VS)/VS,0,0];r[2]=r[0]+2*Rm;r[3]=r[1]+2*Rm;
@@ -1828,8 +1910,8 @@ function frame(ts){const F0=performance.now();
         for(const q of [c,L.e,L.g]){q.setTransform(1,0,0,1,0,0);q.globalAlpha=1;q.globalCompositeOperation='source-over';q.clearRect(0,0,S,S)}
         at();setT(c,L.e,L.g);const inv=(x,y)=>{const a=(x-ox)/TW,b=(y-oy)/TH;return[(a+b)/2,(b-a)/2]},cs=[inv(r[0],r[1]),inv(r[2],r[1]),inv(r[0],r[3]),inv(r[2],r[3])];
         TG=[Math.min(...cs.map(q=>q[0])),Math.min(...cs.map(q=>q[1])),Math.max(...cs.map(q=>q[0])),Math.max(...cs.map(q=>q[1]))];
-        GHOST=true;try{drawGround(c);drawShadows(c);TG=null;at();for(const b of blds)if(hitBox(b.box,r)){drawBuilding(c,b);at()}
-          for(const o of pts0)if(hitBox(o.box,r)){if(!o.bl.length)drawPoint(c,o);else if(TCLIP||o.what==='tower')clipPoint(o,tg);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);at()}}
+        GHOST=true;try{drawGround(c);drawShadows(c);TG=null;at();for(const i of buildingIds(r)){const b=blds[i];if(hitBox(b.box,r)){drawBuilding(c,b);at()}}
+          for(const i of pointIds(r)){const o=pts0[i];if(!hitBox(o.box,r))continue;if(!o.bl.length)drawPoint(c,o);else if(TCLIP||o.what==='tower')clipPoint(o,tg);else drawCut(o.box,()=>drawPoint(TGT.c,o),o.bl.map(silhouette),TGT);at()}}
         finally{GHOST=false;BT=b0;TGT=t0;ox=o0;oy=o1;TR=r0;TG=g0}
         L.r=r;L.vs=VS;L.ver=stver;L.t=F0;L.de=tg.de;L.dg=tg.dg}
       const X=Math.round(L.r[0]*VS)-cx,Y=Math.round(L.r[1]*VS)-cy;
@@ -1849,7 +1931,7 @@ function frame(ts){const F0=performance.now();
   for(const c of tcars){const[px,py,ux,uy,roadX,roadY,roadUx,roadUy]=trafficPose(c);if(!vis(px,py))continue;
     dyn.push({kind:'car',gx:px,gy:py,ux,uy,col:c.col,ty:c.ty,stopped:c.stopped,roadUx,roadUy,z:rideZ('road',px,py,roadUx,roadUy,roadX,roadY)})}
   // the lights themselves, and stop signs, at the stop line on the right of each approach
-  for(const l of TF.lanes){const lt=light(l);if(!lt&&l.sign!=='stop')continue;if(!l.post)continue;const[px,py]=l.post;if(!vis(px,py))continue;
+  for(const l of signalPosts){const[px,py]=l.post;if(!vis(px,py))continue;const lt=light(l);
     dyn.push(lt?{kind:'sig',gx:px,gy:py,lt}:{kind:'stopsign',gx:px,gy:py})}
   for(const p of people){if(!reduce){p.d+=p.dir*p.v*dt;if(p.d>p.d1||p.d<p.d0){p.dir=p.d>p.d1?-1:1;p.d=Math.max(p.d0,Math.min(p.d1,p.d))}}if(p.rk>=walkLv)continue;
     const[px,py,ux,uy,gx,gy]=walkPos(p.ch,p.d,p.side);if(!vis(px,py))continue;dyn.push({kind:'pp',gx:px,gy:py,roadX:gx,roadY:gy,ux,uy,skin:p.skin,shirt:p.shirt,f:blink(T*3+p.d,.5,.5),z:rideZ('road',px,py,ux,uy,gx,gy)})}
@@ -1919,7 +2001,7 @@ function frame(ts){const F0=performance.now();
     const sb=[x-d[0]-sx0-pd,y-d[1]-sy0-pd,x+d[2]-sx0+pd,y+d[3]-sy0+pd];
     const occ=o.kind!=='train'?occludersAt(o.gx,o.gy,sb,treeLens):[];let any=occ.length>0;const cuts=[];
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of smp){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
-    for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(b.sil.box,sb);if(!near&&any)continue;
+    for(const b of bldsNear(x0,y0,x1,y1)){if(b.minx>x1+b.tmax+.5||b.maxx<x0-.05||b.miny>y1+b.tmax+.5||b.maxy<y0-.05)continue;const near=hitBox(silhouette(b).box,sb);if(!near&&any)continue;
       // Use the ramp's local height for the sidewalk, as on a flat span.
       if(b.deck==='road'&&b.zf&&o.kind==='pp'&&oz>0&&o.roadX!=null&&b.cls&&
         Math.abs(oz-b.zf(o.gx,o.gy))<.02&&runsAlong(b.cls,o.roadX,o.roadY,o.ux,o.uy,.18))continue;
@@ -1952,7 +2034,7 @@ function frame(ts){const F0=performance.now();
   // (the depot has no clock face; the tower clock above Lincoln Financial is the town clock)
   for(const t of L.trucks){const[sx,sy]=P(t.gx,t.gy,13);for(let i=0;i<5;i++){const ph=(T*.5+i/5)%1;w.globalAlpha=(1-ph)*.55;w.fillStyle='#f2eee6';w.beginPath();w.arc(sx+ph*10+Math.sin(ph*6+i)*2,sy-ph*26,2+ph*4,0,7);w.fill()}w.globalAlpha=1}
   // leaves and petals blowing off the trees on screen, in the wind's real direction (model pixels)
-  {const on=[];for(const o of pts0){if(o.kind!=='tree')continue;const[x,y]=P(o.gx,o.gy);if(x<-20||x>VWm()+20||y<-10||y>VHm()+80)continue;if(o.lkD!==DOY){o.lkD=DOY;o.lk=look(o.sp,DOY,o.seed)}const lk=o.lk;if(!lk.dropping&&!lk.petals)continue;on.push({x,y,hp:o.h*2,rp:o.r*1.9,look:lk})}blowing.step(w,dt,{onScreen:on,wind:WIND,reduce,W:VWm(),H:VHm()})}
+  if(!reduce)blowing.step(w,dt,{onScreen:visibleBlowingTrees(),wind:WIND,reduce,W:VWm(),H:VHm()});
   BM&&bm('blow');
   // weather in screen pixels
   w.setTransform(1,0,0,1,0,0);const ps=Math.max(1,Math.round(VS));
@@ -1981,7 +2063,25 @@ function frame(ts){const F0=performance.now();
   if(FT.de)ctx.drawImage(Ec,0,0);if(FT.dg){ctx.globalCompositeOperation='lighter';ctx.drawImage(Gc,0,0);ctx.globalCompositeOperation='source-over'}
   BM&&bm('grade');
   // tilt-shift: blur the top and bottom bands so it reads as a small model
-  if(HASFILTER&&!FLAT){const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4;tc.clearRect(0,0,W,b1+12);tc.clearRect(0,b2-12,W,H-b2+12);tc.filter=`blur(${(1.6*Math.max(.6,VS)*.8).toFixed(2)}px)`;tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);tc.filter='none';tc.globalCompositeOperation='destination-in';if(!TSG||TSG.H!==H){TSG=tc.createLinearGradient(0,0,0,H);TSG.addColorStop(0,'rgba(0,0,0,1)');TSG.addColorStop(.3,'rgba(0,0,0,0)');TSG.addColorStop(.68,'rgba(0,0,0,0)');TSG.addColorStop(1,'rgba(0,0,0,1)');TSG.H=H}tc.fillStyle=TSG;tc.fillRect(0,0,W,H);tc.globalCompositeOperation='source-over';
+  if(HASFILTER&&!FLAT){
+    const b1=Math.ceil(H*.3)+4,b2=Math.floor(H*.68)-4,radius=1.6*Math.max(.6,VS)*.8;
+    tc.filter=`blur(${radius.toFixed(2)}px)`;
+    if(b2-b1>16*radius+4){
+      // The working scene is finished for this frame. Leave the gap transparent and blur both bands in one pass.
+      w.save();w.globalCompositeOperation='copy';w.drawImage(cv,0,0,W,b1,0,0,W,b1);
+      w.globalCompositeOperation='source-over';w.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);w.restore();
+      tc.globalCompositeOperation='copy';tc.drawImage(Wc,0,0);
+    }else{
+      // On a very short canvas the bands' blur fringes can overlap. Keep their individual compositing order.
+      tc.clearRect(0,0,W,H);tc.drawImage(cv,0,0,W,b1,0,0,W,b1);tc.drawImage(cv,0,b2,W,H-b2,0,b2,W,H-b2);
+    }
+    tc.filter='none';tc.globalCompositeOperation='destination-in';
+    if(!TSG||TSG.width!==W||TSG.height!==H){
+      TSG=mk(W,H);const mask=TSG.getContext('2d'),fade=mask.createLinearGradient(0,0,0,H);
+      fade.addColorStop(0,'black');fade.addColorStop(.3,'transparent');fade.addColorStop(.68,'transparent');fade.addColorStop(1,'black');
+      mask.fillStyle=fade;mask.fillRect(0,0,W,H);
+    }
+    tc.drawImage(TSG,0,0);tc.globalCompositeOperation='source-over';
     // the mask is clear between 30% and 68% of the height, so only the two bands are laid on
     const m1=Math.ceil(H*.3)+1,m2=Math.floor(H*.68)-1;ctx.drawImage(Tc,0,0,W,m1,0,0,W,m1);ctx.drawImage(Tc,0,m2,W,H-m2,0,m2,W,H-m2)}
   }
@@ -2004,7 +2104,7 @@ function frame(ts){const F0=performance.now();
     if(!labW){labW=true;
       // a building whose roof is hidden behind a nearer one is not named (the tag would sit on the wrong building); landmarks always are
       const o0=ox,o1=oy;ox=BOX;oy=BOY;
-      for(const b of LAB){if(!b.lt)continue;const q=P(b.cx,b.cy,b.htop||b.hpx);for(let j=b.i+1;j<blds.length;j++)if(pip(q[0],q[1],buildingHull(blds[j]))){b.lhid=1;break}}ox=o0;oy=o1;
+      for(const b of LAB){if(!b.lt)continue;const q=P(b.cx,b.cy,b.htop||b.hpx);for(const j of buildingIds([q[0],q[1],q[0],q[1]]))if(j>b.i&&pip(q[0],q[1],buildingHull(blds[j]))){b.lhid=1;break}}ox=o0;oy=o1;
       for(const b of LAB){ctx.font=b.lt>1?LFONT2:LFONT;b.lw=Math.ceil(Math.max(...b.ll.map(t=>ctx.measureText(t).width)))+(b.lt>1?6:8)}ctx.font=LFONT}
     // f: label pixels per model pixel. Far out only the landmarks are named; names, then tenants, then addresses join on the way in.
     const f=VS*kx/LS,maxT=f<.3?0:f<.45?1:f<.95?2:3,put=[],said=new Set(),gap=f<.55?5:3;
@@ -2058,6 +2158,7 @@ function update(scene){
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   const busy=setActivity(scene);
   if(key!==prevKey||windKey(WIND)!==pw||busy){L.version++;if(started)restatic()}
+  else if(started)requestStillFrame();
 }
 // Each area's signpost goes where a line from the middle of the model toward that area leaves the model,
 // a little inside the base, nudged off buildings and away from the other signs.
