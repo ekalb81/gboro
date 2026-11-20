@@ -46,10 +46,22 @@ for e in d['elements']:
         if t['highway'] not in rcls: continue
         if not any(inreg(x,y,3) for x,y in pts): continue
         area=t.get('area')=='yes' or (t['highway']=='pedestrian' and pts[0]==pts[-1])
-        R.append({'c':rcls[t['highway']],'n':t.get('name',''),'p':flat(pts),'ar':1 if area else 0,'ow':1 if t.get('oneway')=='yes' else 0})
+        reverse=t.get('oneway')=='-1'
+        R.append({'c':rcls[t['highway']],'n':t.get('name',''),'p':flat(reversed(pts) if reverse else pts),'ar':1 if area else 0,'ow':int(t.get('oneway') in ('yes','1','true','-1'))})
+        if not area and R[-1]['c']<=4:
+            access=next((t[k] for k in ('motorcar','motor_vehicle','vehicle','access') if k in t),'')
+            if access in ('no','private'): R[-1]['noCars']=1
+            forward,backward=('backward','forward') if reverse else ('forward','backward')
+            for tag,key in [('lanes','ln'),('lanes:'+forward,'lf'),('lanes:'+backward,'lb'),('lanes:both_ways','lc')]:
+                value=t.get(tag,'')
+                if value.isascii() and value.isdigit(): R[-1][key]=int(value)
+            for direction,key in [(forward,'tf'),(backward,'tb')]:
+                turns=t.get('turn:lanes:'+direction)
+                if not turns and key=='tf' and R[-1]['ow']: turns=t.get('turn:lanes')
+                if turns: R[-1][key]=turns
         # a roundabout's ring: one way round (OpenStreetMap leaves the oneway tag off), and no crosswalks painted on it
         if t.get('junction') in ('roundabout','circular') and not area: R[-1]['rb']=1
-        if t.get('bridge') in ('yes','viaduct') and not area: R[-1]['br']=1;R[-1]['ln']=t.get('lanes','')
+        if t.get('bridge') in ('yes','viaduct') and not area: R[-1]['br']=1
     elif t.get('railway')=='rail':
         if not any(inreg(x,y,3) for x,y in pts): continue
         RL.append({'n':t.get('name',''),'p':flat(pts),'sv':1 if t.get('service') else 0})
@@ -532,7 +544,6 @@ try:
                 near[0:4]=[round(far[0][0],2),round(far[0][1],2),round(far[1][0],2),round(far[1][1],2)];near[5]=max(near[5],gates);continue
             LX.append([round(a_.x,2),round(a_.y,2),round(b_.x,2),round(b_.y,2),o['c'],gates])
 except (ImportError,NameError) as ex: print('no bridges or crossings:',ex)
-for r in R: r.pop('ln',None)
 print('decks',[(d_['k'],d_['z1']) for d_ in DK if d_.get('sp') or d_['k']!='road'],'ramp pieces',sum(1 for d_ in DK if d_['k']=='road' and not d_.get('sp')),'crossings',LX)
 print('footpaths',len(FW),'areas',len(GA),'lots',len(PL),'stall rows',len(SR),'stalls',sum(r[4] for r in SR),'signals/stops',len(SIG))
 

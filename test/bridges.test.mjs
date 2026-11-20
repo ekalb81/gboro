@@ -13,9 +13,21 @@ test('every road deck has an outline, centre lines and paint', () => {
   for (const d of decks) {
     assert.ok(d.p.length >= 6 && d.p.length % 2 === 0, 'outline');
     assert.ok(Array.isArray(d.cl) && d.cl.length >= 1 && d.cl.every((l) => Array.isArray(l) && l.length >= 4), 'centre lines');
-    assert.ok(d.gl.length + d.wl.length >= 1, 'paint lines');
+    assert.ok(Array.isArray(d.gl) && Array.isArray(d.wl), 'paint lines');
     assert.ok(d.n, 'street name');
   }
+});
+
+test('Wendover has three marked lanes per carriageway and Bessemer has an offset directional divider', () => {
+  const span = name => decks.find(d => d.sp && d.n === name);
+  const wendover = span('West Wendover Avenue');
+  assert.equal(wendover.cl.length, 2);
+  assert.equal(wendover.wl.length, 4);
+  const bessemer = span('East Bessemer Avenue');
+  assert.equal(bessemer.wl.length, 2);
+  const road = model.R.find(r => r.br && r.n === bessemer.n);
+  assert.deepEqual([road.lf, road.lb].sort(), [1, 3]);
+  assert.notDeepEqual(bessemer.gl[0], bessemer.cl[0]);
 });
 
 test('spans stand on open air, ramps and fill on the ground', () => {

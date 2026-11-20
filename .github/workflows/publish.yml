@@ -103,6 +103,10 @@ jobs:
             exit "$status"
           fi
 
+      - name: Check the refreshed model in Chrome
+        if: steps.model.outputs.changed == 'true' && steps.model.outcome == 'success'
+        uses: ./.github/actions/audit-model
+
       - name: Save model build
         if: steps.model.outputs.changed == 'true' && hashFiles('data/model-build/built.json') != ''
         uses: actions/cache/save@v6

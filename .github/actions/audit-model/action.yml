@@ -1,0 +1,11 @@
+name: Audit the downtown model
+description: Exercise geometry, vehicle routing and rendering in the runner's Chrome.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        npm install --no-save --package-lock=false playwright@1.64.1
+        export CHROME="$(command -v google-chrome)"
+        npm run audit:geometry
+        npm run audit:traffic
