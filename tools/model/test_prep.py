@@ -1,4 +1,4 @@
-"""Geometry regression for prep.py. Run with Shapely installed."""
+"""Geometry regression for prep.py. Run with NumPy, Pillow and Shapely installed."""
 import importlib.util
 import json
 from pathlib import Path
@@ -11,7 +11,8 @@ import unittest
 PREP = Path(__file__).with_name('prep.py').resolve()
 
 
-@unittest.skipUnless(importlib.util.find_spec('shapely'), 'requires Shapely')
+@unittest.skipUnless(all(importlib.util.find_spec(m) for m in ('numpy', 'PIL', 'shapely')),
+                     'requires NumPy, Pillow and Shapely')
 class PrepTests(unittest.TestCase):
     def test_overlapping_lots_share_stall_occupancy(self):
         geo = json.loads((PREP.parents[2] / 'public/model/downtown.json').read_text())['GEO']
@@ -38,7 +39,7 @@ class PrepTests(unittest.TestCase):
 
             def build(ways):
                 (base / 'osm/downtown-raw.json').write_text(json.dumps({'elements': nodes + ways}))
-                subprocess.run([sys.executable, str(PREP), str(source), tmp, str(output)], check=True, capture_output=True)
+                subprocess.run([sys.executable, str(PREP), str(source), tmp, str(output)], check=True, stdout=subprocess.DEVNULL)
                 return json.loads(output.read_text())
 
             first = build([lot, aisle])

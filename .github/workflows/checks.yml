@@ -68,7 +68,7 @@ jobs:
       - name: Check parking geometry
         if: steps.changed.outputs.prep == 'true'
         run: |
-          python3 -m pip install --quiet shapely
+          python3 -m pip install --quiet numpy pillow shapely
           python3 -m unittest tools/model/test_prep.py
       - name: Check modeled streets and traffic in Chrome
         if: steps.changed.outputs.model == 'true'
