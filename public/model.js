@@ -1283,7 +1283,14 @@ function clipLine(p,m=.6){const out=[];let cur=[];const x0=m,y0=m,x1=GX-m,y1=GY-
     if(!ok){if(cur.length>1)out.push(cur);cur=[];continue}
     const A=[a[0]+dx*t0,a[1]+dy*t0],B=[a[0]+dx*t1,a[1]+dy*t1];if(!cur.length)cur.push(A);cur.push(B);if(t1<1){out.push(cur);cur=[]}}
   if(cur.length>1)out.push(cur);return out}
-const mkChain=(p,extra)=>{const cum=[0];for(let i=1;i<p.length;i++)cum.push(cum[i-1]+Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]));return{...extra,p,cum,L:cum[cum.length-1]}};
+const mkChain=(p,extra)=>{
+  const cum=[0];let [x0,y0]=p[0]||[],x1=x0,y1=y0;
+  for(let i=1;i<p.length;i++){
+    const [x,y]=p[i];cum.push(cum[i-1]+Math.hypot(x-p[i-1][0],y-p[i-1][1]));
+    x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);
+  }
+  return {...extra,p,cum,L:cum[cum.length-1],x0,y0,x1,y1};
+};
 const chains=MAP.TR.flatMap(t=>clipLine(pairs(t.p)).map(p=>mkChain(p,{n:t.n,c:t.c}))).filter(ch=>ch.L>2);
 function along(ch,d){d=Math.max(0,Math.min(ch.L-1e-6,d));let i=1;while(i<ch.cum.length-1&&ch.cum[i]<d)i++;const a=ch.p[i-1],b=ch.p[i];const seg=ch.cum[i]-ch.cum[i-1]||1;const t=(d-ch.cum[i-1])/seg;return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,(b[0]-a[0])/seg,(b[1]-a[1])/seg]}
 // Walkers keep to the sidewalk, two metres out from the drawn kerb; where a narrow street's shopfronts stand closer
@@ -1587,14 +1594,31 @@ let trainD=-12,trainWait=4;
 // the right of each approach and, where OSM maps a barrier, a gate arm. When the model's train comes the lights flash,
 // the arms come down and cars wait at the stop line. (The train itself is for show: no public feed says when real
 // trains pass, so its timing is made up.)
-const projCh=(ch,x,y)=>{let best={d:1e9,s:0};for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((x-a0)*dx+(y-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-x,a1+dy*t-y);if(d<best.d)best={d,s:ch.cum[i-1]+Math.sqrt(L2)*t}}return best};
+function projCh(ch,x,y,r=Infinity){
+  // Roundoff at a segment endpoint must not exclude an exact-distance tie.
+  const pad=r+1e-9;
+  if(x<ch.x0-pad||x>ch.x1+pad||y<ch.y0-pad||y>ch.y1+pad)return null;
+  let d=1e9,s=0;
+  for(let i=1;i<ch.p.length;i++){
+    const [ax,ay]=ch.p[i-1],[bx,by]=ch.p[i],dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+    const t=L2?Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L2)):0;
+    const dist=Math.hypot(ax+dx*t-x,ay+dy*t-y);
+    if(dist<d){d=dist;s=ch.cum[i-1]+Math.sqrt(L2)*t}
+  }
+  return d<=r?{d,s}:null;
+}
+function nearestRoad(roads,x,y,r){
+  let best=null;
+  for(const road of roads){const q=projCh(road.ch||road,x,y,r);if(q&&q.d<r){r=q.d;best={road,s:q.s}}}
+  return best;
+}
 const XING=(MAP.LX||[]).filter(l=>l[4]<=4).map(([ax,ay,bx,by,cl,gates])=>{const L=Math.hypot(bx-ax,by-ay)||1,ux=(bx-ax)/L,uy=(by-ay)/L,cx=(ax+bx)/2,cy=(ay+by)/2,back=L/2+4.6/M,side=(RW[cl]/2+1.3)/M;
   const tp=projCh(trainCh,cx,cy);const x={cx,cy,ux,uy,cl,gates,td:tp.d<L/2+1?tp.s:null,down:0,on:false,lanes:[],
     // a post on the right of each approach: [x, y, which way the arm reaches (toward the street's middle)]
     posts:[[ax-ux*3/M-uy*side,ay-uy*3/M+ux*side,uy,-ux],[bx+ux*3/M+uy*side,by+uy*3/M-ux*side,-uy,ux]]};
   // each approach's stop line is found on whichever lane really holds it and heads for the tracks (a street is often
   // split into two segments inside the crossing, so the lane through the middle is not always the one to stop on)
-  for(const[px,py,dx,dy] of [[cx-ux*back,cy-uy*back,ux,uy],[cx+ux*back,cy+uy*back,-ux,-uy]])for(const l of TF.lanes){const q=projCh(l.ch,px,py);if(q.d>.15)continue;const t=along(l.ch,q.s);if(t[2]*dx+t[3]*dy>.5)x.lanes.push({lane:l,s:q.s})}
+  for(const[px,py,dx,dy] of [[cx-ux*back,cy-uy*back,ux,uy],[cx+ux*back,cy+uy*back,-ux,-uy]])for(const l of TF.lanes){const q=projCh(l.ch,px,py,.15);if(!q)continue;const t=along(l.ch,q.s);if(t[2]*dx+t[3]*dy>.5)x.lanes.push({lane:l,s:q.s})}
   return x});
 function stepCrossings(dt){for(const x of XING){x.on=x.td!=null&&trainD>x.td-18&&trainD-7*2.3<x.td+2.5;x.down=Math.max(0,Math.min(1,x.down+(x.on?dt/1.6:-dt/1.2)))}}
 function stepTrain(dt){if(trainD>trainCh.L+14){trainWait-=dt;if(trainWait<=0){trainD=-12;trainWait=12}}else trainD+=dt*2.2}
@@ -1620,11 +1644,12 @@ for(const l of TF.lanes)l.aadt=AADT_CLASS[l.c]||1500;
 const laneVol=l=>l.aadt/(l.rev?2:1);
 function setLaneVols(){const top=Math.max(...TF.lanes.map(laneVol));for(const l of TF.lanes)l.vol=Math.max(.05,laneVol(l)/top);entryW=null}
 setLaneVols();
+const namedLanes=TF.lanes.filter(l=>l.ch.n);
 /** NCDOT count stations ({gx,gy,aadt}): a station sets the traffic of the whole street it stands on. */
 function setVolumes(list){if(list===volFor)return;volFor=list;const by=new Map();
   for(const l of TF.lanes)l.aadt=AADT_CLASS[l.c]||1500;
-  for(const st of list||[]){if(!(st.aadt>0))continue;let best=null,bd=3;for(const l of TF.lanes){if(!l.ch.n)continue;const ch=l.ch;for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((st.gx-a0)*dx+(st.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-st.gx,a1+dy*t-st.gy);if(d<bd){bd=d;best=l}}}
-    if(best){const k=best.ch.n;if(!by.has(k))by.set(k,[]);by.get(k).push(st.aadt)}}
+  for(const st of list||[]){if(!(st.aadt>0))continue;const best=nearestRoad(namedLanes,st.gx,st.gy,3);
+    if(best){const k=best.road.ch.n;if(!by.has(k))by.set(k,[]);by.get(k).push(st.aadt)}}
   for(const l of TF.lanes){const v=by.get(l.ch.n);if(v)l.aadt=v.reduce((a,b)=>a+b,0)/v.length}
   setLaneVols();if(DBG)console.log('[dbg] street volumes',[...by].map(([k,v])=>k+' '+Math.round(v.reduce((a,b)=>a+b,0)/v.length)).join(', '))}
 /** The cars a lane should hold when `share` of the day's traffic passes in this hour. */
@@ -2149,11 +2174,11 @@ function update(scene){
   S.wx=L.wx==='storm'?'rain':L.wx;L.storm=L.wx==='storm';
   const pw=windKey(WIND);WIND=windOn(L.windMph,L.windGustMph,L.windFromDeg);
   // closures snap to the nearest street the cars drive on
-  L.closures=(scene.roads||[]).map(r=>{let best=null;for(const ch of chains){for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((r.gx-a0)*dx+(r.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-r.gx,a1+dy*t-r.gy);if(!best||d<best.dist)best={ch,dist:d,d:ch.cum[i-1]+Math.sqrt(L2)*t}}}return best&&best.dist<4?{...r,ch:best.ch,d:best.d}:null}).filter(Boolean);
+  L.closures=(scene.roads||[]).map(r=>{const best=nearestRoad(chains,r.gx,r.gy,4);return best?{...r,ch:best.road,d:best.s}:null}).filter(Boolean);
   // and onto the traffic lanes: a full closure blocks both directions there, so cars queue before it and route round it
   for(const l of TF.lanes)l.blocked=false;
-  for(const k of L.closures){k.lanes=[];let best=null;for(const l of TF.lanes){const ch=l.ch;for(let i=1;i<ch.p.length;i++){const[a0,a1]=ch.p[i-1],[b0,b1]=ch.p[i];const dx=b0-a0,dy=b1-a1,L2=dx*dx+dy*dy;const t=L2?Math.max(0,Math.min(1,((k.gx-a0)*dx+(k.gy-a1)*dy)/L2)):0;const d=Math.hypot(a0+dx*t-k.gx,a1+dy*t-k.gy);if(!best||d<best.d)best={l,d,s:ch.cum[i-1]+Math.sqrt(L2)*t}}}
-    if(best&&best.d<4){k.lanes.push({lane:best.l,s:best.s});if(best.l.rev)k.lanes.push({lane:best.l.rev,s:best.l.L-best.s});if(k.full)for(const q of k.lanes)q.lane.blocked=true}}
+  for(const k of L.closures){k.lanes=[];const best=nearestRoad(TF.lanes,k.gx,k.gy,4);
+    if(best){const l=best.road;k.lanes.push({lane:l,s:best.s});if(l.rev)k.lanes.push({lane:l.rev,s:l.L-best.s});if(k.full)for(const q of k.lanes)q.lane.blocked=true}}
   if(scene.signs)L.signs=placeSigns(scene.signs);
   const key=JSON.stringify([L.wx,L.cloudy,[...L.lit],[...L.strings],L.council.lit]);
   const busy=setActivity(scene);
